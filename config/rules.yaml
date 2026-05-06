@@ -1,0 +1,36 @@
+historical_mappings:
+  "APPLE.COM/BILL": "Apple Cloud"
+  "FITNESS": "Fitness center membership (monthly)"
+  "GOOGLE": "Google Cloud"
+  "DISNEY": "Disney+"
+  "LOUIS NIELSEN": "Louis Nielsen"
+
+rules:
+  - category: "Rent (monthly)"
+    match_keywords: ["rent", "husleje"]
+    direction: "expense"
+    confidence: 0.95
+  - category: "Food& Drinks (monthly)"
+    match_keywords: ["netto", "rema", "foetex", "føtex", "bilka", "lidl", "meny"]
+    direction: "expense"
+    confidence: 0.90
+  - category: "Shopping (monthly)"
+    match_keywords: ["amazon", "zalando", "magasin"]
+    direction: "expense"
+    confidence: 0.85
+  - category: "Mobile phone (monthly)"
+    match_keywords: ["telmore", "yousee", "telenor", "3 mobil"]
+    direction: "expense"
+    confidence: 0.95
+  - category: "Full-time job (net)"
+    match_keywords: ["salary", "payroll", "løn", "loen"]
+    direction: "income"
+    confidence: 0.95
+
+fixed_rows:
+  - "Rent (monthly)"
+  - "Disney+"
+  - "Apple Cloud"
+  - "Fitness center membership (monthly)"
+  - "Max (yearly)"
+  - "House insurance Tryg (yearly, in Jan)"
