@@ -19,6 +19,14 @@ This project handles sensitive personal finance data. Real statements, tracker w
 
 `bank-statement.pdf` and `Net Worth Tracker.xlsx` are local reference files and should not be committed. Parser tests should use only redacted fixtures, named like `tests/fixtures/nordea_account_statement.redacted.pdf`.
 
+Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules.
+
+The committed Nordea fixture is synthetic and redacted. Regenerate it with:
+
+```bash
+.venv/bin/python scripts/generate_redacted_nordea_fixture.py
+```
+
 ## Setup
 
 This workspace is pinned to Python 3.12 through `.python-version`.
@@ -38,6 +46,8 @@ uv run wealth-tracker \
 ```
 
 Dry-run parses the statement, categorizes transactions, resolves workbook target cells, and writes local outputs under `reports/`. It does not modify the workbook.
+
+The run fails before categorization if the Nordea statement currency is not DKK or if any parsed transaction falls outside the requested `--year`/`--month`.
 
 ## Commit Mode
 

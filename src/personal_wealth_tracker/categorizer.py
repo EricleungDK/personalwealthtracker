@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .config import AppConfig, Rule
+from .config import AppConfig, RecurringRule, Rule
 from .models import CategorizedTransaction, Transaction
 from .utils import normalize_text
 
@@ -17,6 +17,18 @@ def _categorize(transaction: Transaction, config: AppConfig) -> CategorizedTrans
     historical = _match_historical(normalized_description, config.historical_mappings)
     if historical:
         return _result(transaction, historical, 0.98, "historical", False, "Historical mapping match.")
+
+    recurring = _match_recurring(transaction, normalized_description, config.recurring_rules)
+    if recurring:
+        review_required = recurring.confidence < config.auto_write_threshold
+        return _result(
+            transaction,
+            recurring.category,
+            recurring.confidence,
+            "recurring",
+            review_required,
+            "Recurring amount/date rule match.",
+        )
 
     rule = _match_rule(transaction, normalized_description, config.rules)
     if rule:
@@ -53,6 +65,30 @@ def _match_rule(transaction: Transaction, description: str, rules: tuple[Rule, .
             continue
         if any(normalize_text(keyword) in description for keyword in rule.match_keywords):
             return rule
+    return None
+
+
+def _match_recurring(
+    transaction: Transaction,
+    description: str,
+    rules: tuple[RecurringRule, ...],
+) -> RecurringRule | None:
+    for rule in rules:
+        if rule.direction and rule.direction != transaction.direction:
+            continue
+        if rule.day_min is not None and transaction.date.day < rule.day_min:
+            continue
+        if rule.day_max is not None and transaction.date.day > rule.day_max:
+            continue
+        if rule.amount is not None:
+            delta = abs(abs(transaction.amount) - rule.amount)
+            if delta > rule.amount_tolerance:
+                continue
+        if rule.match_keywords and not any(
+            normalize_text(keyword) in description for keyword in rule.match_keywords
+        ):
+            continue
+        return rule
     return None
 
 

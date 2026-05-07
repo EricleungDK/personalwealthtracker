@@ -27,6 +27,8 @@ rules:
     direction: "income"
     confidence: 0.95
 
+recurring_rules: []
+
 fixed_rows:
   - "Rent (monthly)"
   - "Disney+"

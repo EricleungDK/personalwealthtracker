@@ -13,6 +13,7 @@ build/
 .env.*
 credentials.json
 token.json
+config/*.local.yaml
 
 # Sensitive financial inputs and generated outputs
 bank-statement.pdf
