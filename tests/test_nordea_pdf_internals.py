@@ -2,6 +2,7 @@ from personal_wealth_tracker.nordea_pdf import (
     TextCell,
     _column_anchors,
     _extract_transaction_lines,
+    _extract_statement_currency,
     _nearest_column,
 )
 
@@ -54,3 +55,32 @@ def test_right_aligned_amount_stays_in_amount_column():
     }
 
     assert _nearest_column(454.6, anchors) == "amount"
+
+
+def test_footer_rows_do_not_extend_last_transaction():
+    page = [
+        TextCell("Dato", 10, 10),
+        TextCell("Rentedato", 60, 10),
+        TextCell("Detaljer", 120, 10),
+        TextCell("Beløb", 300, 10),
+        TextCell("Saldo", 380, 10),
+        TextCell("30.04", 10, 30),
+        TextCell("30.04", 60, 30),
+        TextCell("Merchant", 120, 30),
+        TextCell("-100,00", 300, 30),
+        TextCell("1.000,00", 380, 30),
+        TextCell("Er", 120, 45),
+        TextCell("der", 138, 45),
+        TextCell("korttransaktioner", 160, 45),
+    ]
+
+    lines = _extract_transaction_lines(page, 2026)
+
+    assert len(lines) == 1
+    assert lines[0].details == ("Merchant",)
+
+
+def test_extract_statement_currency_from_pages():
+    pages = [[TextCell("Valuta:", 10, 10), TextCell("DKK", 50, 10)]]
+
+    assert _extract_statement_currency(pages) == "DKK"

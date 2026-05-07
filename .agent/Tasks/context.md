@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-06
+Last updated: 2026-05-07
 
 ## Project State
 
@@ -35,9 +35,10 @@ Last updated: 2026-05-06
 
 ## Open Questions
 
-- A redacted Nordea PDF fixture is still needed for end-to-end parser tests.
 - The workbook label currently says `in EUR`; it should be corrected or explicitly accepted as a stale label before regular use.
-- Category rules need to be expanded from real transaction review after the first dry-run.
+- Private category rules can be expanded in ignored `config/rules.local.yaml` after reviewing dry-run outputs.
+- Google Sheets API support for appending missing year/month columns should be planned as a separate writer feature.
+- Commit mode on the real local workbook still needs manual review of dry-run output before use.
 
 ## Activity Log
 
@@ -46,3 +47,9 @@ Last updated: 2026-05-06
 - 2026-05-06: Implemented MVP 1 scaffold, installed Python 3.12 and uv, ran tests, and validated dry-run parsing of the local Nordea PDF.
 - 2026-05-06: Created and pushed initial commit `0c0992a feat: initialize wealth tracker automation` to `origin/main`.
 - 2026-05-06: Created EOD summary in `docs/Daily_blogpost/2026-05-06.md`.
+- 2026-05-07: Added synthetic redacted Nordea PDF fixture generator and public parser integration coverage.
+- 2026-05-07: Fixed review findings by validating statement currency, rejecting out-of-period transactions, and preventing footer text from extending the last parsed transaction.
+- 2026-05-07: Added ignored local rule overlay support so private merchant categorization can improve without committing personal transaction data.
+- 2026-05-07: Added synthetic workbook writer tests for aggregation, safety decisions, and commit-to-copy behavior.
+- 2026-05-07: Added full synthetic pipeline integration tests for dry-run outputs and commit-to-copy workbook writes.
+- 2026-05-07: Added recurring amount/date categorization support through public config and ignored local rule overlays.

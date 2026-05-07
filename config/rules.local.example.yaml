@@ -1,0 +1,23 @@
+# Copy this file to `config/rules.local.yaml` for private merchant-specific rules.
+# `rules.local.yaml` is ignored by Git and should contain only local personal data.
+
+historical_mappings:
+  "PRIVATE MERCHANT EXAMPLE": "Shopping (monthly)"
+
+rules:
+  - category: "Food& Drinks (monthly)"
+    match_keywords: ["private grocery example"]
+    direction: "expense"
+    confidence: 0.95
+
+recurring_rules:
+  - category: "Mobile phone (monthly)"
+    amount: "99.00"
+    amount_tolerance: "5.00"
+    day_min: 1
+    day_max: 10
+    match_keywords: ["private telecom example"]
+    direction: "expense"
+    confidence: 0.95
+
+fixed_rows: []

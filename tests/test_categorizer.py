@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from personal_wealth_tracker.categorizer import categorize_transactions
-from personal_wealth_tracker.config import AppConfig, Rule
+from personal_wealth_tracker.config import AppConfig, RecurringRule, Rule
 from personal_wealth_tracker.models import Transaction
 
 
@@ -24,6 +24,18 @@ def _config() -> AppConfig:
         historical_mappings={"APPLE.COM/BILL": "Apple Cloud"},
         rules=(Rule("Food& Drinks (monthly)", ("netto",), "expense", 0.9),),
         fixed_rows=frozenset(),
+        recurring_rules=(
+            RecurringRule(
+                category="Mobile phone (monthly)",
+                amount=Decimal("99.00"),
+                amount_tolerance=Decimal("1.00"),
+                day_min=25,
+                day_max=31,
+                match_keywords=("telecom",),
+                direction="expense",
+                confidence=0.95,
+            ),
+        ),
     )
 
 
@@ -52,6 +64,13 @@ def test_keyword_rule_matches():
 
     assert result.suggested_category == "Food& Drinks (monthly)"
     assert result.categorization_method == "rule"
+
+
+def test_recurring_rule_matches_before_keyword_rules():
+    result = categorize_transactions([_transaction("PRIVATE TELECOM", "-99.50")], _config())[0]
+
+    assert result.suggested_category == "Mobile phone (monthly)"
+    assert result.categorization_method == "recurring"
 
 
 def test_unmatched_requires_review():
