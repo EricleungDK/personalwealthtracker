@@ -24,6 +24,7 @@ Net Worth Tracker.xlsx
 *.jsonl
 data/raw_statements/
 data/watched_folder/
+data/category_memory/
 data/processed/
 data/backups/
 reports/
