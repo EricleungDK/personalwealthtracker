@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -64,6 +65,44 @@ def test_keyword_rule_matches():
 
     assert result.suggested_category == "Food& Drinks (monthly)"
     assert result.categorization_method == "rule"
+
+
+def test_refund_keyword_rule_matches_expense_category_for_netting():
+    result = categorize_transactions([_transaction("NETTO REFUND", "25.00")], _config())[0]
+
+    assert result.suggested_category == "Food& Drinks (monthly)"
+    assert result.categorization_method == "rule"
+    assert not result.review_required
+    assert "Refund" in result.reason
+
+
+def test_vague_refund_without_category_match_requires_review():
+    result = categorize_transactions([_transaction("REFUND", "25.00")], _config())[0]
+
+    assert result.suggested_category is None
+    assert result.review_required
+    assert result.reason == (
+        "Refund-like transaction needs review because no deterministic category matched."
+    )
+
+
+def test_deterministic_expense_claim_maps_to_existing_expense_claims_category():
+    base_config = _config()
+    config = replace(
+        base_config,
+        categories=(*base_config.categories, "Expense claims"),
+        rules=(
+            *base_config.rules,
+            Rule("Expense claims", ("expense claim", "reimbursement"), "income", 0.95),
+        ),
+    )
+
+    result = categorize_transactions([_transaction("ACME EXPENSE CLAIM", "125.00")], config)[0]
+
+    assert result.suggested_category == "Expense claims"
+    assert result.categorization_method == "rule"
+    assert not result.review_required
+    assert "Expense claim" in result.reason
 
 
 def test_recurring_rule_matches_before_keyword_rules():

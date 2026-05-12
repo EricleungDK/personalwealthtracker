@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from .categorizer import categorize_transactions
+from .category_memory import load_category_memory
 from .config import load_config
 from .models import RunResult, Transaction
 from .nordea_pdf import parse_nordea_pdf
@@ -36,6 +37,7 @@ def run_pipeline(
     month: str,
     output_dir: Path,
     commit: bool = False,
+    category_memory_dir: Path = Path("data/category_memory"),
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -48,7 +50,11 @@ def run_pipeline(
 
     transactions = parse_nordea_pdf(statement_path, expected_currency=config.statement_currency)
     _validate_target_period(transactions, year, month)
-    categorized = categorize_transactions(transactions, config)
+    categorized = categorize_transactions(
+        transactions,
+        config,
+        category_memory=load_category_memory(category_memory_dir),
+    )
     updates = plan_updates(tracker_path, categorized, year, month, config)
     mode = "commit" if commit else "dry-run"
 

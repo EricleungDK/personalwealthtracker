@@ -186,3 +186,6 @@ These backlog items are not active tasks yet.
 - 2026-05-11: Created local PRD issue `.agent/issues/2026-05-11-prd-monthly-tracker-workbook-updater-next-slices.md` from the grilling session, labelled `ready-for-agent`.
 - 2026-05-11: Split the PRD into seven local implementation issues and a kanban index under `.agent/issues/`.
 - 2026-05-11: Created EOD summary in `docs/Daily_blogpost/2026-05-11.md`.
+- 2026-05-12: Implemented `ISSUE-001` and `ISSUE-002` with TDD worker agents; full test suite passed with 47 tests.
+- 2026-05-12: Implemented `ISSUE-003` refund/claim netting and `ISSUE-007` separate workbook cleanup workflow with TDD worker agents; full test suite passed with 57 tests.
+- 2026-05-12: Created EOD summary in `docs/Daily_blogpost/2026-05-12.md`.
