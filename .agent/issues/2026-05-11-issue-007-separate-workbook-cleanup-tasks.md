@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-007
 title: Separate Workbook Cleanup Tasks
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -25,12 +25,12 @@ This slice should establish the local workflow/command boundary for cleanup task
 
 ## Acceptance Criteria
 
-- [ ] Workbook cleanup tasks are clearly separate from monthly dry-run and commit mode.
-- [ ] Currency-label cleanup is treated as a one-off maintenance action.
-- [ ] Monthly update runs do not silently edit workbook labels or other non-monthly value content.
-- [ ] Cleanup output explains what workbook text/structure would change.
-- [ ] Cleanup behavior writes only to a copied workbook or requires an explicit maintenance-mode confirmation.
-- [ ] Tests cover that monthly runs do not perform cleanup side effects.
+- [x] Workbook cleanup tasks are clearly separate from monthly dry-run and commit mode.
+- [x] Currency-label cleanup is treated as a one-off maintenance action.
+- [x] Monthly update runs do not silently edit workbook labels or other non-monthly value content.
+- [x] Cleanup output explains what workbook text/structure would change.
+- [x] Cleanup behavior writes only to a copied workbook or requires an explicit maintenance-mode confirmation.
+- [x] Tests cover that monthly runs do not perform cleanup side effects.
 
 ## Blocked By
 

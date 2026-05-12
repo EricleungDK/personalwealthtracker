@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-003
 title: Net Refunds And Expense Claims
-status: blocked
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -24,14 +24,14 @@ Handle refunds and expense claims according to the monthly workbook updater mode
 
 ## Acceptance Criteria
 
-- [ ] Same-month deterministic refunds reduce the matched category total.
-- [ ] Later-month deterministic refunds are recorded in the reporting month where they appear.
-- [ ] Prior workbook periods are not reopened or modified for later-month refunds.
-- [ ] Unmatched or vague refunds remain review-only.
-- [ ] Deterministic reimbursement-like transactions can map to the existing `Expense claims` row.
-- [ ] No separate reimbursement offset model is introduced.
-- [ ] Reports show refund and claim reasoning clearly enough for review.
-- [ ] Tests cover same-month refund netting, later-month refund behavior, unmatched refund review, and deterministic `Expense claims` mapping.
+- [x] Same-month deterministic refunds reduce the matched category total.
+- [x] Later-month deterministic refunds are recorded in the reporting month where they appear.
+- [x] Prior workbook periods are not reopened or modified for later-month refunds.
+- [x] Unmatched or vague refunds remain review-only.
+- [x] Deterministic reimbursement-like transactions can map to the existing `Expense claims` row.
+- [x] No separate reimbursement offset model is introduced.
+- [x] Reports show refund and claim reasoning clearly enough for review.
+- [x] Tests cover same-month refund netting, later-month refund behavior, unmatched refund review, and deterministic `Expense claims` mapping.
 
 ## Blocked By
 

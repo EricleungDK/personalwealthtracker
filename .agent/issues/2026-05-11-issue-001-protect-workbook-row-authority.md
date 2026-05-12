@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-001
 title: Protect Workbook Row Authority
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent

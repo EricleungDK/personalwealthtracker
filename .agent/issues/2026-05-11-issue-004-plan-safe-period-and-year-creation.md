@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-004
 title: Plan Safe Period And Year Creation
-status: blocked
+status: ready
 slice_type: AFK
 labels:
   - ready-for-agent

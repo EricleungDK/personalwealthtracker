@@ -28,6 +28,9 @@ PersonalWorthTracker/
 │   ├── README.md
 │   ├── Tasks/
 │   │   └── context.md
+│   ├── issues/
+│   │   ├── kanban.md
+│   │   └── YYYY-MM-DD-issue-NNN-short-title.md
 │   ├── System/
 │   ├── SOP/
 │   └── Reports/
@@ -38,6 +41,25 @@ PersonalWorthTracker/
 ├── config/
 └── assets/
 ```
+
+## Local Issue Tracking
+
+Use `.agent/issues/` as the local issue tracker when work is not tracked in an external issue tracker. This is the canonical place for `to-issues` output and agent-ready kanban tracking.
+
+Expected layout:
+
+```text
+.agent/issues/
+├── kanban.md
+├── YYYY-MM-DD-prd-short-title.md
+└── YYYY-MM-DD-issue-NNN-short-title.md
+```
+
+`kanban.md` should track `Ready For Agent`, `Blocked`, `In Progress`, and `Done`.
+
+Issue files should use frontmatter with `type: issue`, `id`, `title`, `status`, `slice_type`, `labels`, `parent`, `blocked_by`, and `created`. Use `slice_type: AFK` for independently implementable tracer-bullet slices and `slice_type: HITL` when human input is required.
+
+When using `to-issues`, publish approved slices in dependency order, keep `.agent/issues/kanban.md` updated in the same change, and use issue body sections `Parent`, `What To Build`, `Acceptance Criteria`, and `Blocked By`.
 
 ## Implementation Guidance
 

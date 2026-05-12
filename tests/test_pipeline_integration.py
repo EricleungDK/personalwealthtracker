@@ -85,6 +85,59 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
     assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
 
 
+def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    _set_workbook_label(tracker, "A1", "Tracker currency: EUR")
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        commit=True,
+    )
+
+    original = load_workbook(tracker)
+    copied = load_workbook(result.output_workbook_path)
+    try:
+        assert original["Net worth"]["A1"].value == "Tracker currency: EUR"
+        assert copied["Net worth"]["A1"].value == "Tracker currency: EUR"
+    finally:
+        original.close()
+        copied.close()
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "Workbook cleanup tasks: not run during monthly update." in report
+
+
+def test_pipeline_review_csv_includes_skipped_derived_workbook_rows(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir, salary_category="Income (net)")
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    review_csv = result.review_csv_path.read_text(encoding="utf-8")
+    assert "workbook_update" in review_csv
+    assert "Income (net)" in review_csv
+    assert "Derived workbook row is formula-owned and not writable." in review_csv
+
+
 def _create_tracker(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -94,11 +147,12 @@ def _create_tracker(path: Path) -> None:
     sheet["B5"] = "Apple Cloud"
     sheet["B6"] = "Full-time job (net)"
     sheet["B7"] = "Traveling"
+    sheet["B8"] = "Income (net)"
     workbook.save(path)
     workbook.close()
 
 
-def _create_config(config_dir: Path) -> None:
+def _create_config(config_dir: Path, salary_category: str = "Full-time job (net)") -> None:
     config_dir.mkdir(parents=True)
     _write(
         config_dir / "settings.yaml",
@@ -122,21 +176,21 @@ writer:
     )
     _write(
         config_dir / "categories.yaml",
-        """
+        f"""
 categories:
   - "Apple Cloud"
-  - "Full-time job (net)"
+  - "{salary_category}"
   - "Traveling"
-aliases: {}
+aliases: {{}}
 """,
     )
     _write(
         config_dir / "rules.yaml",
-        """
+        f"""
 historical_mappings:
   "APPLE.COM/BILL": "Apple Cloud"
 rules:
-  - category: "Full-time job (net)"
+  - category: "{salary_category}"
     match_keywords: ["salary"]
     direction: "income"
     confidence: 0.95
@@ -151,3 +205,12 @@ fixed_rows: []
 
 def _write(path: Path, content: str) -> None:
     path.write_text(content.lstrip(), encoding="utf-8")
+
+
+def _set_workbook_label(path: Path, cell: str, value: str) -> None:
+    workbook = load_workbook(path)
+    try:
+        workbook["Net worth"][cell] = value
+        workbook.save(path)
+    finally:
+        workbook.close()

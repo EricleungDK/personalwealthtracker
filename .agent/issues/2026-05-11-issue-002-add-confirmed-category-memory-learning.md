@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-002
 title: Add Confirmed Category Memory Learning
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent

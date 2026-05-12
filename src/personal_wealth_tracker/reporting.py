@@ -54,17 +54,30 @@ def _write_report(
         f"- Transactions requiring review: {review_count}",
         f"- Proposed workbook writes: {write_count}",
         f"- Skipped workbook updates: {skip_count}",
+        "- Workbook cleanup tasks: not run during monthly update.",
         "",
         "## Proposed Updates",
         "",
     ]
 
     if updates:
+        categorized_by_id = {
+            item.transaction.transaction_id: item
+            for item in categorized
+        }
         for update in updates:
             lines.append(
                 f"- {update.category}: {update.amount} -> {update.target_cell or 'unresolved'} "
                 f"({update.write_action}; {update.reason})"
             )
+            for transaction_id in update.source_transactions:
+                item = categorized_by_id.get(transaction_id)
+                if item is None:
+                    continue
+                lines.append(
+                    f"  - Source {transaction_id}: {item.transaction.amount} DKK, "
+                    f"{item.reason}"
+                )
     else:
         lines.append("- No categorized updates were produced.")
 
@@ -186,7 +199,7 @@ def _write_review_csv(
                     ]
                 )
         for update in updates:
-            if update.write_action == "review":
+            if update.write_action != "write":
                 writer.writerow(
                     [
                         "workbook_update",

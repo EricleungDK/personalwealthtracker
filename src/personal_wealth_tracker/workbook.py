@@ -10,6 +10,26 @@ from .config import AppConfig
 from .models import CategorizedTransaction, TrackerUpdate
 
 
+DERIVED_WORKBOOK_ROWS = frozenset(
+    {
+        "Income (net)",
+        "Labour market contribution",
+        "Taxes",
+        "Cashflow",
+        "Recurring payments",
+        "Living expenses",
+        "Services",
+        "Insurance",
+        "Investments",
+        "Assets",
+        "Total net worth",
+    }
+)
+NET_SALARY_ROW = "Full-time job (net)"
+EXPENSE_CLAIMS_ROW = "Expense claims"
+INCOME_LIKE_ROWS = frozenset({NET_SALARY_ROW, EXPENSE_CLAIMS_ROW})
+
+
 def plan_updates(
     tracker_path: Path,
     categorized: list[CategorizedTransaction],
@@ -29,7 +49,7 @@ def plan_updates(
 
     updates: list[TrackerUpdate] = []
     for category, items in sorted(grouped.items()):
-        amount = sum((abs(item.transaction.amount) for item in items), Decimal("0"))
+        amount = _category_amount(category, items)
         row = category_rows.get(category)
         cell = sheet.cell(row=row, column=target_column) if row and target_column else None
         existing_value = cell.value if cell else None
@@ -52,6 +72,13 @@ def plan_updates(
 
     workbook.close()
     return updates
+
+
+def _category_amount(category: str, items: list[CategorizedTransaction]) -> Decimal:
+    signed_total = sum((item.transaction.amount for item in items), Decimal("0"))
+    if category in INCOME_LIKE_ROWS:
+        return signed_total
+    return -signed_total
 
 
 def commit_updates(
@@ -136,10 +163,14 @@ def _write_decision(
         return "review", "Target month column not found."
     if any(item.review_required for item in items):
         return "review", "One or more source transactions require review."
+    if category in DERIVED_WORKBOOK_ROWS:
+        return "skip", "Derived workbook row is formula-owned and not writable."
     if category in config.fixed_rows and not config.overwrite_fixed_rows:
         return "skip", "Fixed row is protected by config."
     if isinstance(existing_value, str) and existing_value.startswith("="):
         return "skip", "Target cell contains a formula."
     if existing_value not in (None, ""):
         return "review", "Target cell already contains a manual value."
+    if category == NET_SALARY_ROW and len(items) > 1:
+        return "review", "Multiple salary deposits matched; review before writing."
     return "write", "Eligible for commit mode write."
