@@ -30,6 +30,8 @@ recurring_rules:
     confidence: 0.9
 fixed_rows:
   - Public Category
+carry_forward_rows:
+  - Public Carry Forward
 """,
     )
     _write(
@@ -53,6 +55,8 @@ recurring_rules:
     confidence: 0.95
 fixed_rows:
   - Private Category
+carry_forward_rows:
+  - Private Carry Forward
 """,
     )
 
@@ -66,6 +70,9 @@ fixed_rows:
         "Private Category",
     ]
     assert config.fixed_rows == frozenset({"Public Category", "Private Category"})
+    assert config.carry_forward_rows == frozenset(
+        {"Public Carry Forward", "Private Carry Forward"}
+    )
 
 
 def _write(path: Path, content: str) -> None:

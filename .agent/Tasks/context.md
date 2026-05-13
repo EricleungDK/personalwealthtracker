@@ -189,3 +189,7 @@ These backlog items are not active tasks yet.
 - 2026-05-12: Implemented `ISSUE-001` and `ISSUE-002` with TDD worker agents; full test suite passed with 47 tests.
 - 2026-05-12: Implemented `ISSUE-003` refund/claim netting and `ISSUE-007` separate workbook cleanup workflow with TDD worker agents; full test suite passed with 57 tests.
 - 2026-05-12: Created EOD summary in `docs/Daily_blogpost/2026-05-12.md`.
+- 2026-05-13: Implemented `ISSUE-004` safe missing period/year planning and commit-to-copy structure creation with a TDD worker agent; full test suite passed with 65 tests.
+- 2026-05-13: Confirmed `ISSUE-005` investment statement evidence remains HITL-blocked until a redacted statement sample and workbook mapping details are provided.
+- 2026-05-13: Ended the CSV categorization grilling session after discovering the PDF was the wrong bank source; resolved Nordea CSV as the preferred bank cashflow source while keeping PDF fallback.
+- 2026-05-13: Created Nordea CSV ingestion PRD and local issues `ISSUE-008` through `ISSUE-011`; real CSV files remain ignored and may be used only for local smoke validation.

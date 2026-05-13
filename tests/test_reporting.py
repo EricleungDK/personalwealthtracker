@@ -1,7 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
-from personal_wealth_tracker.models import CategorizedTransaction, TrackerUpdate, Transaction
+from personal_wealth_tracker.models import (
+    CategorizedTransaction,
+    TrackerUpdate,
+    Transaction,
+    WorkbookStructureChange,
+)
 from personal_wealth_tracker.reporting import write_outputs
 
 
@@ -51,6 +56,39 @@ def test_report_includes_refund_and_expense_claim_source_reasons(tmp_path):
     report = report_path.read_text(encoding="utf-8")
     assert "Refund matched expense keyword rule" in report
     assert "Expense claim keyword rule match." in report
+
+
+def test_report_and_audit_include_planned_period_creation(tmp_path):
+    report_path, audit_path, _, _ = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="Apr",
+        source_statement=tmp_path / "statement.pdf",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=[],
+        updates=[],
+        structure_changes=[
+            WorkbookStructureChange(
+                change_type="create_period",
+                target_year=2026,
+                target_months=("Apr",),
+                source_range="C:C",
+                target_range="D:D",
+                write_action="write",
+                reason="Create missing Apr 2026 period from C:C.",
+            )
+        ],
+    )
+
+    report = report_path.read_text(encoding="utf-8")
+    assert "## Planned Structure Changes" in report
+    assert "create_period: Apr 2026, C:C -> D:D (write;" in report
+
+    audit = audit_path.read_text(encoding="utf-8")
+    assert '"record_type": "workbook_structure_change"' in audit
+    assert '"change_type": "create_period"' in audit
+    assert '"target_months": ["Apr"]' in audit
 
 
 def _categorized(

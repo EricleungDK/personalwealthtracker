@@ -50,6 +50,23 @@ class TrackerUpdate:
 
 
 @dataclass(frozen=True)
+class WorkbookStructureChange:
+    change_type: str
+    target_year: int
+    target_months: tuple[str, ...]
+    source_range: str | None
+    target_range: str | None
+    write_action: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class WorkbookPlan:
+    updates: list[TrackerUpdate]
+    structure_changes: list[WorkbookStructureChange]
+
+
+@dataclass(frozen=True)
 class RunResult:
     mode: str
     target_year: int
@@ -57,6 +74,7 @@ class RunResult:
     transactions: list[Transaction]
     categorized_transactions: list[CategorizedTransaction]
     updates: list[TrackerUpdate]
+    structure_changes: list[WorkbookStructureChange]
     report_path: Path
     audit_path: Path
     categorized_csv_path: Path
