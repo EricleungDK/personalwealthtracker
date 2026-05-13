@@ -2,10 +2,10 @@
 type: issue
 id: ISSUE-005
 title: Add Investment Statement Evidence
-status: ready
+status: blocked
 slice_type: HITL
 labels:
-  - ready-for-agent
+  - hitl
 parent: 2026-05-11-prd-monthly-tracker-workbook-updater-next-slices.md
 blocked_by: []
 created: 2026-05-11
@@ -39,3 +39,24 @@ Investment values are expected in USD and should be converted to DKK using a use
 ## Blocked By
 
 None - can start after the user provides or describes the investment statement format.
+
+## HITL Input Needed
+
+Provide a redacted investment statement PDF or text extract that includes:
+
+- Header page with provider/broker name, account name/type, statement period, statement date, account currency, and a stable redacted account identifier.
+- Holdings/positions page with all holding rows and columns.
+- Portfolio/account total page with total market value and currency.
+- Cash balance page if cash is included in account value.
+- Activity/contributions page if deposits, withdrawals, dividends, buys/sells, or transfers appear.
+- Footnotes/definitions explaining market value, ending value, closing value, or FX treatment.
+- Continuation page if the holdings table spans pages.
+
+Also confirm:
+
+- Fixed USD-to-DKK conversion rate for the reporting month.
+- Statement currency.
+- Workbook row mapping for each explicit holding, such as `JEPI` or `OXY`.
+- Whether a workbook row exists for total portfolio/account value when only a total is available.
+- Whether investment-account cash should be ignored, reviewed, or mapped.
+- Crypto and digital assets remain excluded.

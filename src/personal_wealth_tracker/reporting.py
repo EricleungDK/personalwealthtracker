@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from .models import CategorizedTransaction, TrackerUpdate
+from .models import CategorizedTransaction, TrackerUpdate, WorkbookStructureChange
 
 
 def write_outputs(
@@ -17,7 +17,9 @@ def write_outputs(
     tracker_path: Path,
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
+    structure_changes: list[WorkbookStructureChange] | None = None,
 ) -> tuple[Path, Path, Path, Path]:
+    structure_changes = structure_changes or []
     output_dir.mkdir(parents=True, exist_ok=True)
     period = f"{year}_{month.lower()}"
     report_path = output_dir / f"report_{period}.md"
@@ -25,8 +27,18 @@ def write_outputs(
     categorized_path = output_dir / f"categorized_transactions_{period}.csv"
     review_path = output_dir / f"review_required_{period}.csv"
 
-    _write_report(report_path, mode, year, month, categorized, updates)
-    _write_audit(audit_path, mode, year, month, source_statement, tracker_path, categorized, updates)
+    _write_report(report_path, mode, year, month, categorized, updates, structure_changes)
+    _write_audit(
+        audit_path,
+        mode,
+        year,
+        month,
+        source_statement,
+        tracker_path,
+        categorized,
+        updates,
+        structure_changes,
+    )
     _write_categorized_csv(categorized_path, categorized)
     _write_review_csv(review_path, categorized, updates)
     return report_path, audit_path, categorized_path, review_path
@@ -39,6 +51,7 @@ def _write_report(
     month: str,
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
+    structure_changes: list[WorkbookStructureChange],
 ) -> None:
     total = len(categorized)
     review_count = sum(1 for item in categorized if item.review_required)
@@ -56,9 +69,30 @@ def _write_report(
         f"- Skipped workbook updates: {skip_count}",
         "- Workbook cleanup tasks: not run during monthly update.",
         "",
-        "## Proposed Updates",
+        "## Planned Structure Changes",
         "",
     ]
+
+    if structure_changes:
+        for change in structure_changes:
+            target_months = ", ".join(
+                f"{month} {change.target_year}" for month in change.target_months
+            )
+            lines.append(
+                f"- {change.change_type}: {target_months}, "
+                f"{change.source_range or 'unresolved'} -> {change.target_range or 'unresolved'} "
+                f"({change.write_action}; {change.reason})"
+            )
+    else:
+        lines.append("- No workbook structure changes planned.")
+
+    lines.extend(
+        [
+            "",
+            "## Proposed Updates",
+            "",
+        ]
+    )
 
     if updates:
         categorized_by_id = {
@@ -105,6 +139,7 @@ def _write_audit(
     tracker_path: Path,
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
+    structure_changes: list[WorkbookStructureChange],
 ) -> None:
     update_by_transaction = {
         transaction_id: update
@@ -113,10 +148,29 @@ def _write_audit(
     }
     timestamp = datetime.now().isoformat(timespec="seconds")
     with path.open("w", encoding="utf-8") as handle:
+        for change in structure_changes:
+            payload = {
+                "record_type": "workbook_structure_change",
+                "run_timestamp": timestamp,
+                "mode": mode,
+                "source_statement": str(source_statement),
+                "target_workbook": str(tracker_path),
+                "target_year": year,
+                "target_month": month,
+                "change_type": change.change_type,
+                "target_structure_year": change.target_year,
+                "target_months": list(change.target_months),
+                "source_range": change.source_range,
+                "target_range": change.target_range,
+                "action": change.write_action,
+                "reason": change.reason,
+            }
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         for item in categorized:
             transaction = item.transaction
             update = update_by_transaction.get(transaction.transaction_id)
             payload = {
+                "record_type": "transaction",
                 "run_timestamp": timestamp,
                 "mode": mode,
                 "source_statement": str(source_statement),

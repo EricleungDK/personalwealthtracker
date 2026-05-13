@@ -47,6 +47,44 @@ def test_pipeline_dry_run_writes_outputs_without_changing_workbook(tmp_path, mon
     assert result.review_csv_path.exists()
 
 
+def test_pipeline_dry_run_reports_missing_period_creation_without_changing_workbook(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    workbook = load_workbook(tracker)
+    try:
+        sheet = workbook["Net worth"]
+        sheet["C3"] = "Mar"
+        workbook.save(tracker)
+    finally:
+        workbook.close()
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    original = load_workbook(tracker)
+    try:
+        assert original["Net worth"]["D3"].value is None
+    finally:
+        original.close()
+
+    assert len(result.structure_changes) == 1
+    assert result.structure_changes[0].change_type == "create_period"
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "## Planned Structure Changes" in report
+    assert "create_period: Apr 2026" in report
+
+
 def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     tracker = tmp_path / "tracker.xlsx"

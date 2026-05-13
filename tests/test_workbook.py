@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import PatternFill
 
 from personal_wealth_tracker.config import AppConfig
 from personal_wealth_tracker.models import CategorizedTransaction, Transaction
-from personal_wealth_tracker.workbook import commit_updates, plan_updates
+from personal_wealth_tracker.workbook import commit_updates, plan_updates, plan_workbook_changes
 
 
 def test_plan_updates_aggregates_and_marks_writeable_empty_cells(tmp_path):
@@ -30,6 +31,102 @@ def test_plan_updates_aggregates_and_marks_writeable_empty_cells(tmp_path):
     assert updates[0].amount == Decimal("30.75")
     assert updates[0].target_cell == "C5"
     assert updates[0].write_action == "write"
+
+
+def test_plan_workbook_changes_reports_missing_month_as_structure_change(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_workbook(tracker)
+    workbook = load_workbook(tracker)
+    try:
+        sheet = workbook["Net worth"]
+        sheet["C3"] = "Mar"
+        workbook.save(tracker)
+    finally:
+        workbook.close()
+
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-food", "Food& Drinks (monthly)", "-30.00")],
+        2026,
+        "Apr",
+        _config(),
+    )
+
+    assert len(plan.structure_changes) == 1
+    assert plan.structure_changes[0].change_type == "create_period"
+    assert plan.structure_changes[0].write_action == "write"
+    assert plan.structure_changes[0].target_year == 2026
+    assert plan.structure_changes[0].target_months == ("Apr",)
+    assert plan.structure_changes[0].source_range == "C:C"
+    assert plan.structure_changes[0].target_range == "D:D"
+
+    assert len(plan.updates) == 1
+    assert plan.updates[0].target_cell == "D5"
+    assert plan.updates[0].write_action == "write"
+
+
+def test_plan_workbook_changes_creates_full_year_block_from_unambiguous_prior_year(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_year_workbook(tracker)
+
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-food", "Food& Drinks (monthly)", "-30.00")],
+        2027,
+        "Jan",
+        _config(),
+    )
+
+    assert len(plan.structure_changes) == 1
+    assert plan.structure_changes[0].change_type == "create_year"
+    assert plan.structure_changes[0].write_action == "write"
+    assert plan.structure_changes[0].target_year == 2027
+    assert plan.structure_changes[0].target_months == (
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    )
+    assert plan.structure_changes[0].source_range == "C:N"
+    assert plan.structure_changes[0].target_range == "O:Z"
+    assert plan.updates[0].target_cell == "O5"
+
+
+def test_plan_workbook_changes_requires_review_for_ambiguous_missing_year_pattern(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_year_workbook(tracker)
+    workbook = load_workbook(tracker)
+    try:
+        sheet = workbook["Net worth"]
+        sheet["H3"] = "Not Jun"
+        workbook.save(tracker)
+    finally:
+        workbook.close()
+
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-food", "Food& Drinks (monthly)", "-30.00")],
+        2027,
+        "Jan",
+        _config(),
+    )
+
+    assert len(plan.structure_changes) == 1
+    assert plan.structure_changes[0].write_action == "review"
+    assert plan.structure_changes[0].target_range is None
+    assert "prior year does not contain an unambiguous Jan-Dec period block" in (
+        plan.structure_changes[0].reason
+    )
+    assert plan.updates[0].target_cell is None
+    assert plan.updates[0].write_action == "review"
 
 
 def test_plan_updates_nets_deterministic_refunds_against_category_total(tmp_path):
@@ -294,6 +391,146 @@ def test_commit_updates_writes_only_eligible_updates_to_copied_workbook(tmp_path
         copied.close()
 
 
+def test_commit_updates_creates_missing_month_only_in_copied_workbook(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_workbook(tracker)
+    workbook = load_workbook(tracker)
+    try:
+        sheet = workbook["Net worth"]
+        sheet["C3"] = "Mar"
+        workbook.save(tracker)
+    finally:
+        workbook.close()
+
+    config = _config()
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-food", "Food& Drinks (monthly)", "-30.00")],
+        2026,
+        "Apr",
+        config,
+    )
+
+    output_path = commit_updates(
+        tracker,
+        plan.updates,
+        config,
+        tmp_path / "processed",
+        structure_changes=plan.structure_changes,
+    )
+
+    original = load_workbook(tracker)
+    copied = load_workbook(output_path)
+    try:
+        assert original["Net worth"]["D3"].value is None
+        assert original["Net worth"]["D5"].value is None
+        assert copied["Net worth"]["D2"].value == 2026
+        assert copied["Net worth"]["D3"].value == "Apr"
+        assert copied["Net worth"]["D5"].value == 30
+    finally:
+        original.close()
+        copied.close()
+
+
+def test_commit_updates_extends_merged_year_header_for_missing_month(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_workbook(tracker)
+    workbook = load_workbook(tracker)
+    try:
+        sheet = workbook["Net worth"]
+        sheet["C3"] = "Mar"
+        sheet["D3"] = "Apr"
+        sheet.merge_cells("C2:D2")
+        sheet["C2"] = 2026
+        workbook.save(tracker)
+    finally:
+        workbook.close()
+
+    config = _config()
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-food", "Food& Drinks (monthly)", "-30.00")],
+        2026,
+        "May",
+        config,
+    )
+
+    output_path = commit_updates(
+        tracker,
+        plan.updates,
+        config,
+        tmp_path / "processed",
+        structure_changes=plan.structure_changes,
+    )
+
+    copied = load_workbook(output_path)
+    try:
+        sheet = copied["Net worth"]
+        assert "C2:E2" in {str(merged_range) for merged_range in sheet.merged_cells.ranges}
+        assert sheet["C2"].value == 2026
+        assert sheet["E3"].value == "May"
+    finally:
+        copied.close()
+
+
+def test_commit_updates_creates_year_block_with_preserved_structure_and_cleared_values(
+    tmp_path,
+):
+    tracker = _workbook_path(tmp_path)
+    _create_year_workbook(tracker)
+    workbook = load_workbook(tracker)
+    try:
+        sheet = workbook["Net worth"]
+        sheet.merge_cells("C2:N2")
+        sheet["C2"] = 2026
+        sheet["B6"] = "Formula Category"
+        sheet["C6"] = "=C5+1"
+        sheet["B7"] = "Carry Forward Category"
+        sheet["C7"] = 123
+        sheet["C5"] = 99
+        sheet.column_dimensions["C"].width = 18
+        sheet["C5"].number_format = "#,##0.00"
+        sheet["C5"].fill = PatternFill(fill_type="solid", fgColor="FFFF00")
+        workbook.save(tracker)
+    finally:
+        workbook.close()
+
+    config = _config(carry_forward_rows=frozenset({"Carry Forward Category"}))
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-food", "Food& Drinks (monthly)", "-30.00")],
+        2027,
+        "Jan",
+        config,
+    )
+
+    output_path = commit_updates(
+        tracker,
+        plan.updates,
+        config,
+        tmp_path / "processed",
+        structure_changes=plan.structure_changes,
+    )
+
+    copied = load_workbook(output_path, data_only=False)
+    try:
+        sheet = copied["Net worth"]
+        assert "O2:Z2" in {str(merged_range) for merged_range in sheet.merged_cells.ranges}
+        assert sheet["O2"].value == 2027
+        assert sheet["O3"].value == "Jan"
+        assert sheet["Z3"].value == "Dec"
+        assert sheet.column_dimensions["O"].width == 18
+        assert sheet["O5"].number_format == "#,##0.00"
+        assert sheet["O5"].fill.fgColor.rgb == "00FFFF00"
+        assert sheet["O5"].value == 30
+        assert sheet["P5"].value is None
+        assert sheet["O6"].value == "=O5+1"
+        assert sheet["O7"].value == 123
+        assert sheet["P7"].value is None
+    finally:
+        copied.close()
+
+
 def _create_workbook(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -324,11 +561,29 @@ def _create_workbook(path: Path) -> None:
     workbook.close()
 
 
+def _create_year_workbook(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    for index, month in enumerate(
+        ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+        start=3,
+    ):
+        sheet.cell(row=2, column=index).value = 2026
+        sheet.cell(row=3, column=index).value = month
+    sheet["B5"] = "Food& Drinks (monthly)"
+    workbook.save(path)
+    workbook.close()
+
+
 def _workbook_path(tmp_path) -> Path:
     return tmp_path / "tracker.xlsx"
 
 
-def _config(fixed_rows: frozenset[str] = frozenset()) -> AppConfig:
+def _config(
+    fixed_rows: frozenset[str] = frozenset(),
+    carry_forward_rows: frozenset[str] = frozenset(),
+) -> AppConfig:
     return AppConfig(
         sheet_name="Net worth",
         tracker_currency="DKK",
@@ -346,6 +601,7 @@ def _config(fixed_rows: frozenset[str] = frozenset()) -> AppConfig:
         historical_mappings={},
         rules=(),
         fixed_rows=fixed_rows,
+        carry_forward_rows=carry_forward_rows,
     )
 
 

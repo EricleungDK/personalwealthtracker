@@ -44,6 +44,7 @@ class AppConfig:
     historical_mappings: dict[str, str]
     rules: tuple[Rule, ...]
     fixed_rows: frozenset[str]
+    carry_forward_rows: frozenset[str] = frozenset()
     recurring_rules: tuple[RecurringRule, ...] = ()
 
 
@@ -121,6 +122,9 @@ def load_config(config_dir: Path) -> AppConfig:
         },
         rules=rules,
         fixed_rows=frozenset(str(row) for row in rules_doc.get("fixed_rows", [])),
+        carry_forward_rows=frozenset(
+            str(row) for row in rules_doc.get("carry_forward_rows", [])
+        ),
         recurring_rules=recurring_rules,
     )
 
@@ -137,4 +141,7 @@ def _merge_rules_docs(base: dict[str, Any], local: dict[str, Any]) -> dict[str, 
         *local.get("recurring_rules", []),
     ]
     merged["fixed_rows"] = sorted({*base.get("fixed_rows", []), *local.get("fixed_rows", [])})
+    merged["carry_forward_rows"] = sorted(
+        {*base.get("carry_forward_rows", []), *local.get("carry_forward_rows", [])}
+    )
     return merged
