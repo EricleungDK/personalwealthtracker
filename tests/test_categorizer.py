@@ -1,9 +1,10 @@
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from personal_wealth_tracker.categorizer import categorize_transactions
-from personal_wealth_tracker.config import AppConfig, RecurringRule, Rule
+from personal_wealth_tracker.config import AppConfig, RecurringRule, Rule, load_config
 from personal_wealth_tracker.models import Transaction
 
 
@@ -117,3 +118,42 @@ def test_unmatched_requires_review():
 
     assert result.suggested_category is None
     assert result.review_required
+
+
+def test_project_config_maps_mastercard_by_transaction_direction():
+    config = load_config(Path("config"))
+
+    negative, positive = categorize_transactions(
+        [
+            _transaction("MASTERCARD", "-4000.00"),
+            _transaction("MASTERCARD", "400.00"),
+        ],
+        config,
+    )
+
+    assert negative.suggested_category == "Nordea Credit Card"
+    assert negative.confidence == 0.98
+    assert not negative.review_required
+    assert positive.suggested_category == "Mastercard refund"
+    assert positive.confidence == 0.98
+    assert not positive.review_required
+
+
+def test_project_config_uses_csv_merchant_descriptions_for_known_categories_only():
+    config = load_config(Path("config"))
+
+    google_one, cbb_mobil, mobilepay_rejsekort = categorize_transactions(
+        [
+            _transaction("GOOGLE ONE", "-25.00"),
+            _transaction("CBB MOBIL", "-99.00"),
+            _transaction("MobilePay Rejsekort", "-150.00"),
+        ],
+        config,
+    )
+
+    assert google_one.suggested_category == "Google Cloud"
+    assert not google_one.review_required
+    assert cbb_mobil.suggested_category == "Mobile phone (monthly)"
+    assert not cbb_mobil.review_required
+    assert mobilepay_rejsekort.suggested_category is None
+    assert mobilepay_rejsekort.review_required

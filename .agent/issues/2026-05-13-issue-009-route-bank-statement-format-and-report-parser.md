@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-009
 title: Route Bank Statement Format And Report Parser
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -24,15 +24,15 @@ Route monthly bank statement ingestion through either Nordea CSV or Nordea PDF p
 
 ## Acceptance Criteria
 
-- [ ] CLI supports `--statement-format auto|nordea-csv|nordea-pdf`.
-- [ ] `auto` routes `.csv` to the Nordea CSV parser and `.pdf` to the Nordea PDF parser.
-- [ ] Explicit `nordea-csv` and `nordea-pdf` modes override extension inference.
-- [ ] Unsupported extensions in `auto` mode fail with an actionable error.
-- [ ] The pipeline preserves strict target reporting-month validation for parsed transactions.
-- [ ] Markdown report includes the bank statement parser used.
-- [ ] Audit JSONL includes the bank statement parser used.
-- [ ] Existing PDF tests and behavior remain supported.
-- [ ] Pipeline and CLI tests cover CSV routing, PDF routing, explicit routing, and unsupported format errors.
+- [x] CLI supports `--statement-format auto|nordea-csv|nordea-pdf`.
+- [x] `auto` routes `.csv` to the Nordea CSV parser and `.pdf` to the Nordea PDF parser.
+- [x] Explicit `nordea-csv` and `nordea-pdf` modes override extension inference.
+- [x] Unsupported extensions in `auto` mode fail with an actionable error.
+- [x] The pipeline preserves strict target reporting-month validation for parsed transactions.
+- [x] Markdown report includes the bank statement parser used.
+- [x] Audit JSONL includes the bank statement parser used.
+- [x] Existing PDF tests and behavior remain supported.
+- [x] Pipeline and CLI tests cover CSV routing, PDF routing, explicit routing, and unsupported format errors.
 
 ## Blocked By
 

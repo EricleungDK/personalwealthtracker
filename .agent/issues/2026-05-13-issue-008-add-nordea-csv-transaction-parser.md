@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-008
 title: Add Nordea CSV Transaction Parser
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -23,16 +23,16 @@ Add a Nordea CSV bank statement parser that normalizes the known Nordea current-
 
 ## Acceptance Criteria
 
-- [ ] The parser accepts the Nordea CSV header shape with semicolon delimiter and UTF-8 BOM tolerance.
-- [ ] CSV booking dates are parsed from `YYYY/MM/DD`.
-- [ ] CSV amounts and balances are parsed from Danish decimal strings.
-- [ ] Every row currency is validated against the expected statement currency.
-- [ ] Missing or unexpected row currency fails with a row-specific error.
-- [ ] Transaction description prefers useful `Name` and falls back to `Title`.
-- [ ] Generic provider names such as `Vipps MobilePay` fall back to the more specific `Title`.
-- [ ] `Sender` and `Recipient` account numbers are not used in `description` or `merchant`.
-- [ ] Raw CSV fields are preserved in transaction details for audit/debugging.
-- [ ] Synthetic or redacted CSV fixture tests cover food merchant, MobilePay title fallback, salary, Mastercard, unknown merchant, and currency validation.
+- [x] The parser accepts the Nordea CSV header shape with semicolon delimiter and UTF-8 BOM tolerance.
+- [x] CSV booking dates are parsed from `YYYY/MM/DD`.
+- [x] CSV amounts and balances are parsed from Danish decimal strings.
+- [x] Every row currency is validated against the expected statement currency.
+- [x] Missing or unexpected row currency fails with a row-specific error.
+- [x] Transaction description prefers useful `Name` and falls back to `Title`.
+- [x] Generic provider names such as `Vipps MobilePay` fall back to the more specific `Title`.
+- [x] `Sender` and `Recipient` account numbers are not used in `description` or `merchant`.
+- [x] Raw CSV fields are preserved in transaction details for audit/debugging.
+- [x] Synthetic or redacted CSV fixture tests cover food merchant, MobilePay title fallback, salary, Mastercard, unknown merchant, and currency validation.
 
 ## Blocked By
 

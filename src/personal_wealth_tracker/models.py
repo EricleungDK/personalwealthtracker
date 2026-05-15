@@ -71,6 +71,7 @@ class RunResult:
     mode: str
     target_year: int
     target_month: str
+    statement_parser: str
     transactions: list[Transaction]
     categorized_transactions: list[CategorizedTransaction]
     updates: list[TrackerUpdate]

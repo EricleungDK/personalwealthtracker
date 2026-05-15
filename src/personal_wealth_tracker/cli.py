@@ -15,7 +15,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tracker", required=True, type=Path, help="Path to the tracker workbook.")
     parser.add_argument(
-        "--statement", required=True, type=Path, help="Path to the Nordea PDF statement."
+        "--statement", required=True, type=Path, help="Path to the Nordea statement."
+    )
+    parser.add_argument(
+        "--statement-format",
+        choices=("auto", "nordea-csv", "nordea-pdf"),
+        default="auto",
+        help="Statement parser selection. Auto infers from .csv or .pdf extension.",
     )
     parser.add_argument("--year", required=True, type=int, help="Target tracker year.")
     parser.add_argument("--month", required=True, help="Target tracker month, e.g. Feb.")
@@ -116,9 +122,11 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=args.output_dir,
         category_memory_dir=args.category_memory_dir,
         commit=args.commit,
+        statement_format=args.statement_format,
     )
 
     print(f"Mode: {result.mode}")
+    print(f"Statement parser: {result.statement_parser}")
     print(f"Transactions processed: {len(result.transactions)}")
     print(f"Report: {result.report_path}")
     print(f"Audit log: {result.audit_path}")

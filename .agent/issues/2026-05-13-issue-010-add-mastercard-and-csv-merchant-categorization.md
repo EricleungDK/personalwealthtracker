@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-010
 title: Add Mastercard And CSV Merchant Categorization
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -24,14 +24,14 @@ Add configuration and categorization behavior that uses richer Nordea CSV mercha
 
 ## Acceptance Criteria
 
-- [ ] `Mastercard refund` is added as a configured category.
-- [ ] Negative `MASTERCARD` transactions map deterministically to `Nordea Credit Card`.
-- [ ] Positive `MASTERCARD` transactions map deterministically to `Mastercard refund`.
-- [ ] Mastercard rows are not categorized as ordinary spending categories.
-- [ ] Merchant-rich CSV descriptions improve existing keyword/historical rules without loosening auto-write safety.
-- [ ] Obvious CSV merchants such as `Google One` and `CBB MOBIL` are covered when they have existing workbook categories.
-- [ ] Transport-like CSV merchants are handled only where the workbook category decision is clear.
-- [ ] Tests cover positive/negative Mastercard behavior, merchant keyword matches from CSV descriptions, and review behavior for unknown merchants.
+- [x] `Mastercard refund` is added as a configured category.
+- [x] Negative `MASTERCARD` transactions map deterministically to `Nordea Credit Card`.
+- [x] Positive `MASTERCARD` transactions map deterministically to `Mastercard refund`.
+- [x] Mastercard rows are not categorized as ordinary spending categories.
+- [x] Merchant-rich CSV descriptions improve existing keyword/historical rules without loosening auto-write safety.
+- [x] Obvious CSV merchants such as `Google One` and `CBB MOBIL` are covered when they have existing workbook categories.
+- [x] Transport-like CSV merchants are handled only where the workbook category decision is clear.
+- [x] Tests cover positive/negative Mastercard behavior, merchant keyword matches from CSV descriptions, and review behavior for unknown merchants.
 
 ## Blocked By
 

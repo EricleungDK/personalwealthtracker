@@ -1,11 +1,20 @@
 historical_mappings:
   "APPLE.COM/BILL": "Apple Cloud"
   "FITNESS": "Fitness center membership (monthly)"
+  "GOOGLE ONE": "Google Cloud"
   "GOOGLE": "Google Cloud"
   "DISNEY": "Disney+"
   "LOUIS NIELSEN": "Louis Nielsen"
 
 rules:
+  - category: "Mastercard refund"
+    match_keywords: ["mastercard"]
+    direction: "income"
+    confidence: 0.98
+  - category: "Nordea Credit Card"
+    match_keywords: ["mastercard"]
+    direction: "expense"
+    confidence: 0.98
   - category: "Rent (monthly)"
     match_keywords: ["rent", "husleje"]
     direction: "expense"
@@ -19,7 +28,7 @@ rules:
     direction: "expense"
     confidence: 0.85
   - category: "Mobile phone (monthly)"
-    match_keywords: ["telmore", "yousee", "telenor", "3 mobil"]
+    match_keywords: ["telmore", "yousee", "telenor", "3 mobil", "cbb mobil"]
     direction: "expense"
     confidence: 0.95
   - category: "Full-time job (net)"

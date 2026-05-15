@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-011
 title: Document CSV First Local Validation Workflow
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -25,13 +25,13 @@ Document and validate the CSV-first monthly workflow without committing real fin
 
 ## Acceptance Criteria
 
-- [ ] User-facing docs explain that Nordea CSV is preferred for bank cashflow categorization.
-- [ ] Docs explain PDF remains supported as fallback/legacy input.
-- [ ] Docs show example dry-run commands for `--statement-format auto` and explicit CSV mode.
-- [ ] Docs state real CSV files remain ignored and must not be committed.
-- [ ] Docs describe local smoke validation against a real ignored CSV.
-- [ ] Docs explain that investment statements remain separate future PDF evidence.
-- [ ] Tests or checks confirm committed fixtures are synthetic/redacted and real CSV paths are not required.
+- [x] User-facing docs explain that Nordea CSV is preferred for bank cashflow categorization.
+- [x] Docs explain PDF remains supported as fallback/legacy input.
+- [x] Docs show example dry-run commands for `--statement-format auto` and explicit CSV mode.
+- [x] Docs state real CSV files remain ignored and must not be committed.
+- [x] Docs describe local smoke validation against a real ignored CSV.
+- [x] Docs explain that investment statements remain separate future PDF evidence.
+- [x] Tests or checks confirm committed fixtures are synthetic/redacted and real CSV paths are not required.
 
 ## Blocked By
 

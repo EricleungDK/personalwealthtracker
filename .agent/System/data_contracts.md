@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-05-06
+Last updated: 2026-05-13
 
 ## Transaction
 
@@ -9,12 +9,14 @@ Normalized statement row:
 - `transaction_id`: deterministic hash from date, amount, description, and row order.
 - `date`: booked date.
 - `interest_date`: Nordea `Rentedato`, when available.
-- `description`: merged detail text.
+- `description`: categorization text from the statement parser. Nordea CSV prefers merchant-useful `Name` values and falls back to `Title`; Nordea PDF uses merged detail text.
 - `amount`: booked DKK amount.
 - `currency`: `DKK` for MVP 1.
 - `direction`: `income` for non-negative amounts, `expense` for negative amounts.
 - `balance`: statement balance after transaction, when available.
 - `original_amount` and `original_currency`: optional metadata when a foreign card transaction line exposes the original amount.
+
+Nordea CSV transactions may include raw source details such as `Name`, `Title`, `Sender`, `Recipient`, `Balance`, and `Reconciled` for audit. Account-number fields are retained only as source details and must not become categorization text or category-memory keys.
 
 ## CategorizedTransaction
 
@@ -58,6 +60,8 @@ Every run writes:
 - Review-required CSV.
 
 Outputs are ignored because they may contain sensitive transaction data.
+
+Report and audit outputs include the bank statement parser name, such as `nordea-csv` or `nordea-pdf`, so a run can be traced to the source format used.
 
 ## Future Investment Valuation
 

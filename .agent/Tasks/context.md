@@ -193,3 +193,4 @@ These backlog items are not active tasks yet.
 - 2026-05-13: Confirmed `ISSUE-005` investment statement evidence remains HITL-blocked until a redacted statement sample and workbook mapping details are provided.
 - 2026-05-13: Ended the CSV categorization grilling session after discovering the PDF was the wrong bank source; resolved Nordea CSV as the preferred bank cashflow source while keeping PDF fallback.
 - 2026-05-13: Created Nordea CSV ingestion PRD and local issues `ISSUE-008` through `ISSUE-011`; real CSV files remain ignored and may be used only for local smoke validation.
+- 2026-05-13: Implemented Nordea CSV ingestion slices `ISSUE-008` through `ISSUE-011` with sub-agents; CSV bank statements now parse merchant-rich transactions, route through `--statement-format`, expose parser metadata, add Mastercard liability/refund categorization, and document CSV-first local validation.
