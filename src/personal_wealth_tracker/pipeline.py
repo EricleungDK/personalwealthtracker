@@ -7,6 +7,7 @@ from .categorizer import categorize_transactions
 from .category_memory import load_category_memory
 from .config import load_config
 from .models import RunResult, Transaction
+from .nordea_csv import parse_nordea_csv
 from .nordea_pdf import parse_nordea_pdf
 from .reporting import write_outputs
 from .utils import normalize_month
@@ -38,6 +39,7 @@ def run_pipeline(
     output_dir: Path,
     commit: bool = False,
     category_memory_dir: Path = Path("data/category_memory"),
+    statement_format: str = "auto",
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -48,7 +50,11 @@ def run_pipeline(
             f"{config.statement_currency!r} for MVP 1."
         )
 
-    transactions = parse_nordea_pdf(statement_path, expected_currency=config.statement_currency)
+    statement_parser, transactions = _parse_statement(
+        statement_path,
+        statement_format,
+        expected_currency=config.statement_currency,
+    )
     _validate_target_period(transactions, year, month)
     categorized = categorize_transactions(
         transactions,
@@ -81,12 +87,14 @@ def run_pipeline(
         categorized=categorized,
         updates=updates,
         structure_changes=structure_changes,
+        statement_parser=statement_parser,
     )
 
     return RunResult(
         mode=mode,
         target_year=year,
         target_month=month,
+        statement_parser=statement_parser,
         transactions=transactions,
         categorized_transactions=categorized,
         updates=updates,
@@ -96,6 +104,35 @@ def run_pipeline(
         categorized_csv_path=categorized_csv_path,
         review_csv_path=review_csv_path,
         output_workbook_path=output_workbook_path,
+    )
+
+
+def _parse_statement(
+    statement_path: Path, statement_format: str, expected_currency: str
+) -> tuple[str, list[Transaction]]:
+    statement_parser = _resolve_statement_parser(statement_path, statement_format)
+    if statement_parser == "nordea-csv":
+        return statement_parser, parse_nordea_csv(statement_path, expected_currency=expected_currency)
+    return statement_parser, parse_nordea_pdf(statement_path, expected_currency=expected_currency)
+
+
+def _resolve_statement_parser(statement_path: Path, statement_format: str) -> str:
+    if statement_format != "auto":
+        if statement_format in {"nordea-csv", "nordea-pdf"}:
+            return statement_format
+        raise ValueError(
+            "Unsupported statement format "
+            f"{statement_format!r}. Use auto, nordea-csv, or nordea-pdf."
+        )
+
+    suffix = statement_path.suffix.lower()
+    if suffix == ".csv":
+        return "nordea-csv"
+    if suffix == ".pdf":
+        return "nordea-pdf"
+    raise ValueError(
+        f"Could not infer statement format from {statement_path.name!r}. "
+        "Use --statement-format nordea-csv or --statement-format nordea-pdf."
     )
 
 

@@ -1,28 +1,32 @@
 # Architecture
 
-Last updated: 2026-05-07
+Last updated: 2026-05-13
 
 ## Runtime Flow
 
-1. CLI receives tracker path, Nordea PDF path, target year/month, config directory, output directory, and optional commit flag.
+1. CLI receives tracker path, Nordea statement path, target year/month, config directory, output directory, statement-format selection, and optional commit flag.
 2. Config is loaded from YAML files in `config/`.
-3. `nordea_pdf.py` extracts text with coordinates from the Nordea PDF and reconstructs transaction rows from the `Dato`, `Rentedato`, `Detaljer`, `Beløb`, and `Saldo` columns.
-4. The statement currency is validated against config before transactions are normalized.
-5. `categorizer.py` applies historical mappings first, then recurring amount/date rules, then keyword rules.
-6. The pipeline rejects statements containing transactions outside the requested target month.
-7. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
-8. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
-9. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
-10. `reporting.py` writes report, audit, categorized CSV, and review CSV outputs.
-11. Commit mode creates a backup and writes eligible updates to a copied workbook only.
+3. `pipeline.py` routes the bank statement by `--statement-format`: `auto` infers `.csv` as `nordea-csv` and `.pdf` as `nordea-pdf`; explicit modes override extension inference.
+4. `nordea_csv.py` parses Nordea CSV exports into normalized bank transactions using merchant-rich fields for categorization and raw CSV fields for audit.
+5. `nordea_pdf.py` remains available as a fallback/legacy parser for Nordea PDFs with embedded text.
+6. The statement currency is validated against config before transactions are normalized.
+7. `categorizer.py` applies historical mappings first, then recurring amount/date rules, then keyword rules.
+8. The pipeline rejects statements containing transactions outside the requested target month.
+9. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
+10. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
+11. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
+12. `reporting.py` writes report, audit, categorized CSV, and review CSV outputs with the statement parser name.
+13. Commit mode creates a backup and writes eligible updates to a copied workbook only.
 
 ## Parser Design
 
-The Nordea parser uses header anchors rather than fixed absolute coordinates. This handles the observed difference between the first page and continuation pages while staying specific to the known Nordea statement layout.
+Nordea CSV is the preferred bank cashflow source because the export includes merchant-like fields that improve deterministic categorization. The CSV parser uses the export header shape, semicolon delimiter, Danish decimal strings, and DKK row currency validation.
 
-The parser assumes the PDF has embedded selectable text. Scanned PDFs and OCR are excluded from MVP 1.
+The Nordea PDF parser uses header anchors rather than fixed absolute coordinates. This handles the observed difference between the first page and continuation pages while staying specific to the known Nordea statement layout.
 
-The parser rejects statements without the expected `Valuta` marker, rejects non-DKK statements for MVP 1, and stops collecting continuation rows when Nordea footer/legal text appears after the transaction table.
+The PDF parser assumes the PDF has embedded selectable text. Scanned PDFs and OCR are excluded from MVP 1.
+
+Both bank statement parsers reject non-DKK input for MVP 1. The PDF parser rejects statements without the expected `Valuta` marker and stops collecting continuation rows when Nordea footer/legal text appears after the transaction table.
 
 ## Safety Design
 

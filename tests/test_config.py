@@ -75,5 +75,21 @@ carry_forward_rows:
     )
 
 
+def test_project_config_includes_mastercard_refund_category_and_directional_rules():
+    config = load_config(Path("config"))
+
+    mastercard_rules = [
+        rule
+        for rule in config.rules
+        if "mastercard" in {keyword.lower() for keyword in rule.match_keywords}
+    ]
+
+    assert "Mastercard refund" in config.categories
+    assert [(rule.category, rule.direction, rule.confidence) for rule in mastercard_rules] == [
+        ("Mastercard refund", "income", 0.98),
+        ("Nordea Credit Card", "expense", 0.98),
+    ]
+
+
 def _write(path: Path, content: str) -> None:
     path.write_text(content.lstrip(), encoding="utf-8")

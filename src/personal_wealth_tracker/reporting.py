@@ -18,6 +18,7 @@ def write_outputs(
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange] | None = None,
+    statement_parser: str = "nordea-pdf",
 ) -> tuple[Path, Path, Path, Path]:
     structure_changes = structure_changes or []
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -27,13 +28,23 @@ def write_outputs(
     categorized_path = output_dir / f"categorized_transactions_{period}.csv"
     review_path = output_dir / f"review_required_{period}.csv"
 
-    _write_report(report_path, mode, year, month, categorized, updates, structure_changes)
+    _write_report(
+        report_path,
+        mode,
+        year,
+        month,
+        statement_parser,
+        categorized,
+        updates,
+        structure_changes,
+    )
     _write_audit(
         audit_path,
         mode,
         year,
         month,
         source_statement,
+        statement_parser,
         tracker_path,
         categorized,
         updates,
@@ -49,6 +60,7 @@ def _write_report(
     mode: str,
     year: int,
     month: str,
+    statement_parser: str,
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange],
@@ -63,6 +75,7 @@ def _write_report(
         "",
         f"- Reporting month: {month} {year}",
         f"- Mode: {mode}",
+        f"- Statement parser: {statement_parser}",
         f"- Transactions processed: {total}",
         f"- Transactions requiring review: {review_count}",
         f"- Proposed workbook writes: {write_count}",
@@ -136,6 +149,7 @@ def _write_audit(
     year: int,
     month: str,
     source_statement: Path,
+    statement_parser: str,
     tracker_path: Path,
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
@@ -153,6 +167,7 @@ def _write_audit(
                 "record_type": "workbook_structure_change",
                 "run_timestamp": timestamp,
                 "mode": mode,
+                "statement_parser": statement_parser,
                 "source_statement": str(source_statement),
                 "target_workbook": str(tracker_path),
                 "target_year": year,
@@ -173,6 +188,7 @@ def _write_audit(
                 "record_type": "transaction",
                 "run_timestamp": timestamp,
                 "mode": mode,
+                "statement_parser": statement_parser,
                 "source_statement": str(source_statement),
                 "target_workbook": str(tracker_path),
                 "target_year": year,

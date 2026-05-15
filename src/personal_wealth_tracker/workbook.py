@@ -28,7 +28,8 @@ DERIVED_WORKBOOK_ROWS = frozenset(
 )
 NET_SALARY_ROW = "Full-time job (net)"
 EXPENSE_CLAIMS_ROW = "Expense claims"
-INCOME_LIKE_ROWS = frozenset({NET_SALARY_ROW, EXPENSE_CLAIMS_ROW})
+MASTERCARD_REFUND_ROW = "Mastercard refund"
+INCOME_LIKE_ROWS = frozenset({NET_SALARY_ROW, EXPENSE_CLAIMS_ROW, MASTERCARD_REFUND_ROW})
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 

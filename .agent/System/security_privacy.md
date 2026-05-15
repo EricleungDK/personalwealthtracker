@@ -1,18 +1,18 @@
 # Security And Privacy
 
-Last updated: 2026-05-06
+Last updated: 2026-05-13
 
 ## Sensitive Files
 
 The following are local-only and ignored:
 
-- real bank statements, including `bank-statement.pdf`,
+- real bank statements, including local Nordea CSV exports and `bank-statement.pdf`,
 - tracker workbooks and generated workbook copies,
 - CSV/JSONL reports and audit logs,
 - backups and processed files,
 - credentials, tokens, and environment files.
 
-Only redacted fixtures should be committed for parser tests.
+Only redacted or synthetic fixtures should be committed for parser tests. Real CSV exports may be used for local smoke validation only while they remain in ignored paths.
 
 ## Data Handling Defaults
 

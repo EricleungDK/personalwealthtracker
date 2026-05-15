@@ -357,6 +357,25 @@ def test_plan_updates_writes_deterministic_expense_claims_as_existing_row(tmp_pa
     assert updates[0].write_action == "write"
 
 
+def test_plan_updates_keeps_mastercard_refund_positive(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_workbook(tracker)
+
+    updates = plan_updates(
+        tracker,
+        [_categorized("tx-mastercard-refund", "Mastercard refund", "400.00")],
+        2026,
+        "Apr",
+        _config(),
+    )
+
+    assert len(updates) == 1
+    assert updates[0].category == "Mastercard refund"
+    assert updates[0].amount == Decimal("400.00")
+    assert updates[0].target_cell == "C23"
+    assert updates[0].write_action == "write"
+
+
 def test_commit_updates_writes_only_eligible_updates_to_copied_workbook(tmp_path):
     tracker = _workbook_path(tmp_path)
     _create_workbook(tracker)
@@ -557,6 +576,7 @@ def _create_workbook(path: Path) -> None:
     sheet["B20"] = "Labour market contribution"
     sheet["B21"] = "Taxes"
     sheet["B22"] = "Expense claims"
+    sheet["B23"] = "Mastercard refund"
     workbook.save(path)
     workbook.close()
 

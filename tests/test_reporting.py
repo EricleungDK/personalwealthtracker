@@ -91,6 +91,48 @@ def test_report_and_audit_include_planned_period_creation(tmp_path):
     assert '"target_months": ["Apr"]' in audit
 
 
+def test_report_and_audit_include_statement_parser(tmp_path):
+    categorized = [
+        _categorized(
+            "tx-food",
+            "FOETEX SCANNGO",
+            "-123.45",
+            "Food& Drinks (monthly)",
+            "Keyword rule match.",
+        )
+    ]
+
+    report_path, audit_path, _, _ = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="Apr",
+        source_statement=tmp_path / "statement.csv",
+        statement_parser="nordea-csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=categorized,
+        updates=[],
+        structure_changes=[
+            WorkbookStructureChange(
+                change_type="create_period",
+                target_year=2026,
+                target_months=("Apr",),
+                source_range="C:C",
+                target_range="D:D",
+                write_action="write",
+                reason="Create missing Apr 2026 period from C:C.",
+            )
+        ],
+    )
+
+    report = report_path.read_text(encoding="utf-8")
+    assert "- Statement parser: nordea-csv" in report
+
+    audit_lines = audit_path.read_text(encoding="utf-8").splitlines()
+    assert '"statement_parser": "nordea-csv"' in audit_lines[0]
+    assert '"statement_parser": "nordea-csv"' in audit_lines[1]
+
+
 def _categorized(
     transaction_id: str,
     description: str,
