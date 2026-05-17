@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-11
+Last updated: 2026-05-16
 
 ## Project State
 
@@ -16,6 +16,7 @@ Last updated: 2026-05-11
 |---------|--------|-------|-------|
 | SETUP-001 | COMPLETE | Codex | Created baseline folder structure and starter guidance files. |
 | MVP1-001 | COMPLETE | Codex | Implemented local Nordea PDF parsing, deterministic categorization, safe workbook planning/writing, reports, and tests. |
+| PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | READY | Codex | Created PRD and implementation issues for stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
 
 ## Active Delegations
 
@@ -73,6 +74,27 @@ Last updated: 2026-05-11
 | 2026-05-11 | Later-month refunds reduce the current reporting month's matched category and do not reopen prior months. | The product is a monthly workbook updater, not a ledger, so cashflow is recorded in the month it appears on the statement. |
 | 2026-05-11 | Keep reimbursement/expense-claim handling aligned to existing workbook rows without adding a richer offset model. | Identifiable claims can map to the existing `Expense claims` row when deterministic; otherwise they remain normal review items. |
 | 2026-05-11 | End the documentation grilling session and preserve its results in a separate planning block. | `.agent/Tasks/context.md` also supports a separate agent workflow, so grilling backlog items should not be mixed into the `Active Tasks` table until intentionally promoted. |
+| 2026-05-16 | Treat the manual review artifact as the source-of-truth decision sheet for category learning. | The dry-run review output should be practical for manual classification and directly compatible with confirmed-decision import, rather than acting only as a sparse exception list. |
+| 2026-05-16 | Generate both CSV and XLSX manual review artifacts by default. | CSV remains useful for automation and debugging, while an Excel review workbook with category dropdowns is the practical human classification surface for real monthly runs. |
+| 2026-05-16 | Structure the XLSX review workbook with separate work-queue and audit/context sheets. | `Review Required` should stay focused on rows needing decisions, while `All Transactions` should expose every parsed transaction for debugging low classification rates and rule quality. |
+| 2026-05-16 | Keep category learning separate from workbook commit, but allow learning directly from the reviewed XLSX artifact. | Separate learning preserves auditability and lets a follow-up dry run show memory effects before any workbook copy is written; XLSX import removes manual CSV reshaping. |
+| 2026-05-16 | Use separate manual category and future-learning semantics in manual review artifacts. | `manual_category` captures the current-month transaction category decision, while `learn_to_memory` controls whether that decision generalizes into future Category Memory. |
+| 2026-05-16 | Make Category Memory learning opt-in for manual review decisions. | A filled `manual_category` should apply to the current reporting month, while `learn_to_memory=yes` is required to generalize that decision; blank or `no` means do not learn. |
+| 2026-05-16 | Represent `learn_to_memory` as a dropdown with merchant identity context in the XLSX review workbook. | Blank should be the default, `yes`/`no` should be selectable, and the normalized merchant identity should be visible so the user can judge whether future matching is safe. |
+| 2026-05-16 | Source `manual_category` review options from the current Tracker Workbook row labels. | The review dropdown should include all non-empty fields from the workbook category column so it matches the user’s real wealth tracker, while workbook safety checks still block unsafe direct writes. |
+| 2026-05-16 | Restrict Category Memory learning to direct transaction categories. | Manual review may choose any workbook field for current-month classification context, but `learn_to_memory=yes` should not generalize decisions into derived, formula-owned, fixed, or otherwise unsafe workbook rows. |
+| 2026-05-16 | Define learnable workbook fields separately from writable workbook cells. | A row is learnable when it exists in the workbook and is not derived or fixed; current-month populated/formula cell safety can still block writes without preventing future merchant learning. |
+| 2026-05-16 | Use exact workbook row labels as `manual_category` values. | Manual review values should match the Tracker Workbook row labels exactly so monthly decisions can be applied without a separate display-name translation layer. |
+| 2026-05-16 | Include all workbook fields in manual category selection and flag unsafe choices. | The review workbook should not hide derived or fixed workbook fields from the user, but it should expose learnability/write-safety warnings and preserve existing workbook safety blocks. |
+| 2026-05-16 | Split manual review improvements into four implementation slices with stable IDs first. | Stable transaction IDs are prerequisite slice zero, followed by review workbook generation, Monthly Review Decision application, and Category Memory learning from reviewed workbook artifacts. |
+| 2026-05-16 | Apply Monthly Review Decisions only through an explicit `--review-decisions` CLI input. | Explicit file selection avoids accidentally applying stale decisions from another month; the reviewed artifact should be validated against the requested reporting period and current statement transaction IDs. |
+| 2026-05-16 | Treat stable transaction IDs as a prerequisite for Monthly Review Decisions. | Review decisions are applied by exact transaction ID, so IDs must be deterministic across repeated parses of the same statement period and duplicate transactions need deterministic disambiguation. |
+| 2026-05-16 | Implement stable transaction IDs before official review workbook generation. | The review workbook format should not become the durable operator workflow until transaction IDs are robust enough to reuse reviewed decisions across repeated exports. |
+| 2026-05-16 | Version review artifacts and transaction ID schemes. | Reviewed workbooks should include run metadata such as reporting period, statement parser, generated timestamp, and transaction ID scheme so imports can reject incompatible artifacts. |
+| 2026-05-16 | Distinguish Monthly Review Decisions from Category Memory. | Monthly Review Decisions classify specific transaction IDs for the current reporting month, while Category Memory generalizes selected confirmed decisions to future merchant matches. |
+| 2026-05-16 | Monthly Review Decisions should take precedence over automatic categorization for exact transaction IDs. | A reviewed current-month decision should override automatic category suggestions for that transaction, while workbook safety checks still determine whether the resulting category can be written. |
+| 2026-05-16 | Optimize classification quality using transaction classification rate and no-review rate as primary metrics. | The user’s real-CSV concern is whether transactions receive categories and avoid manual review; workbook write rate remains a separate safety/commit metric. |
+| 2026-05-16 | Dry-run reports should include Categorization Quality diagnostics. | Monthly review needs objective metrics for classified transactions, no-review transactions, unmatched rows, review-required rows, and counts by categorization method. |
 
 ## Open Questions
 
@@ -83,6 +105,15 @@ Last updated: 2026-05-11
 - Investment account statement support needs a separate ingestion contract before asset rows such as JEPI, OXY, or portfolio balances are automated.
 - Crypto/digital asset automation needs a separate dedicated valuation source before it is in scope.
 - USD-to-DKK conversion policy needs exact configuration shape and reporting/audit fields before investment statement support is implemented.
+- Manual review output needs exact XLSX/CSV column schemas and import behavior for confirmed decisions, using current Tracker Workbook row labels as the authoritative category option source.
+- Review workbook UX needs a clear warning/status column for selected categories that are derived, fixed, or otherwise unsafe to learn/write.
+- Manual review improvements should be promoted into implementation issues as separate slices: stable transaction IDs, XLSX review workbook generation, Monthly Review Decision import/application, and Category Memory XLSX learning.
+- Monthly Review Decision application needs a `--review-decisions` CLI option with period and transaction-ID validation.
+- Review workbooks need a `Run Metadata` sheet containing reporting period, statement parser, generated timestamp, and transaction ID scheme version.
+- Current transaction ID generation is only partially aligned with Monthly Review Decisions: Nordea CSV/PDF IDs include parser row index, which is stable for identical exports but may change if export ordering changes.
+- Category Memory import from review artifacts needs validation that `learn_to_memory=yes` targets only learnable workbook fields and warns/skips learning for derived or fixed rows.
+- Current categorizer precedence differs from the desired review-decision model: code currently checks historical mappings and recurring rules before category memory and has no Monthly Review Decision layer.
+- Low real-CSV transaction classification rate and no-review rate need measurement by method, category, and merchant identity before deciding whether to add local rules, memory bootstrap, or model-assisted suggestions.
 
 ## Grilling Session Results
 
@@ -194,3 +225,31 @@ These backlog items are not active tasks yet.
 - 2026-05-13: Ended the CSV categorization grilling session after discovering the PDF was the wrong bank source; resolved Nordea CSV as the preferred bank cashflow source while keeping PDF fallback.
 - 2026-05-13: Created Nordea CSV ingestion PRD and local issues `ISSUE-008` through `ISSUE-011`; real CSV files remain ignored and may be used only for local smoke validation.
 - 2026-05-13: Implemented Nordea CSV ingestion slices `ISSUE-008` through `ISSUE-011` with sub-agents; CSV bank statements now parse merchant-rich transactions, route through `--statement-format`, expose parser metadata, add Mastercard liability/refund categorization, and document CSV-first local validation.
+- 2026-05-15: Added user-facing monthly operator runbook `docs/monthly_workflow.md`, linked it from `README.md`, and validated documentation with 84 passing tests.
+- 2026-05-15: Created EOD summary in `docs/Daily_blogpost/2026-05-15.md`.
+- 2026-05-16: Started a grilling session on low real-CSV classification rate and resolved that manual review output should become the source-of-truth decision sheet for category learning.
+- 2026-05-16: Resolved that dry-run should produce both a machine-friendly CSV review artifact and a human-friendly XLSX review workbook with category dropdowns.
+- 2026-05-16: Resolved that the XLSX review workbook should contain a focused `Review Required` sheet plus an `All Transactions` audit/context sheet.
+- 2026-05-16: Resolved that `learn-category-memory` should support importing confirmed decisions from the reviewed XLSX artifact while remaining separate from workbook commit.
+- 2026-05-16: Resolved manual review column semantics: `manual_category` records the current-month category decision, while `learn_to_memory` controls whether that decision is imported into Category Memory.
+- 2026-05-16: Resolved that `learn_to_memory` is opt-in: blank or `no` means use the manual category for the current month only and do not generalize it into Category Memory.
+- 2026-05-16: Resolved that `learn_to_memory` should be an XLSX dropdown with blank default and `yes`/`no` choices, with normalized merchant identity shown for context.
+- 2026-05-16: Resolved that `manual_category` dropdown options should be sourced from all non-empty current Tracker Workbook row labels, not only from `config/categories.yaml`, while preserving write-safety blocks.
+- 2026-05-16: Resolved that monthly manual selection may use any workbook field, but Category Memory learning should be restricted to direct transaction categories and skip derived/unsafe rows.
+- 2026-05-16: Resolved learnable-field semantics: row exists, is not derived, and is not fixed; populated/formula current-month cell safety remains a separate workbook-write concern.
+- 2026-05-16: Resolved that `manual_category` dropdown values should use exact Tracker Workbook row labels, with any helper metadata kept in separate context columns.
+- 2026-05-16: Resolved review UX rule: include all workbook fields in the `manual_category` dropdown while visibly flagging unsafe/derived/fixed selections and preserving safety blocks.
+- 2026-05-16: Resolved implementation slicing for manual review improvements: stable transaction IDs first, then generate review workbook, apply Monthly Review Decisions, and learn Category Memory from reviewed workbook artifacts as separate slices.
+- 2026-05-16: Resolved that reviewed decisions should be applied to a monthly run only via an explicit `--review-decisions` CLI argument, with validation against reporting period and current statement transaction IDs.
+- 2026-05-16: Resolved that stable deterministic transaction IDs are an acceptance criterion for Monthly Review Decisions, with warnings for missing IDs rather than fuzzy application.
+- 2026-05-16: Verified current parser behavior: Nordea CSV/PDF transaction IDs include the parser row index, so they are deterministic for identical exports but not fully robust to changed ordering.
+- 2026-05-16: Resolved sequencing: implement stable transaction IDs before treating review workbook generation as the official durable operator workflow.
+- 2026-05-16: Resolved that review artifacts should include run metadata and transaction ID scheme versioning so imports can validate compatibility.
+- 2026-05-16: Created local PRD `.agent/issues/2026-05-16-prd-manual-review-workbook-and-category-feedback-loop.md` and local issues `ISSUE-012` through `ISSUE-015` for the manual review workbook and category feedback loop.
+- 2026-05-16: Resolved the distinction between Monthly Review Decisions for specific current-month transaction IDs and Category Memory for generalized future merchant matching.
+- 2026-05-16: Resolved desired categorization precedence: exact Monthly Review Decisions should override automatic categorization for that transaction ID, while workbook safety remains authoritative for writes.
+- 2026-05-16: Clarified that the low real-CSV rate concern refers to transaction classification rate and no-review rate, not workbook write rate.
+- 2026-05-16: Resolved that dry-run reports should include Categorization Quality diagnostics for classification rate, no-review rate, unmatched/review counts, and method distribution.
+- 2026-05-16: Implemented ISSUE-013 review workbook generation: dry runs now write `review_required_<period>.xlsx` with review queue, all-transactions audit, workbook-derived category options/dropdowns, run metadata, and Categorization Quality report diagnostics.
+- 2026-05-16: Implemented ISSUE-014 Monthly Review Decisions: monthly runs can explicitly apply reviewed XLSX decisions by transaction ID using `--review-decisions`, with metadata validation and workbook safety preserved.
+- 2026-05-16: Implemented ISSUE-015 Category Memory learning from reviewed XLSX artifacts, using opt-in `learn_to_memory=yes` and learnable workbook-field validation while preserving CSV compatibility.

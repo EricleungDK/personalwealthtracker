@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .models import Transaction
-from .utils import parse_danish_date, parse_danish_decimal, transaction_hash
+from .utils import assign_stable_transaction_ids, parse_danish_date, parse_danish_decimal
 
 
 DATE_RE = re.compile(r"^\d{2}\.\d{2}(?:\.\d{2,4})?$")
@@ -59,7 +59,7 @@ def parse_nordea_pdf(path: Path, expected_currency: str = "DKK") -> list[Transac
         raw_lines.extend(_extract_transaction_lines(page, period_start.year, period_end.year))
 
     transactions: list[Transaction] = []
-    for index, line in enumerate(raw_lines):
+    for line in raw_lines:
         amount = parse_danish_decimal(line.amount_text)
         balance = parse_danish_decimal(line.balance_text) if line.balance_text else None
         booked_date = _parse_statement_row_date(line.date_text, period_start, period_end)
@@ -70,10 +70,9 @@ def parse_nordea_pdf(path: Path, expected_currency: str = "DKK") -> list[Transac
         )
         description = " ".join(part for part in line.details if part).strip()
         original_amount, original_currency = _extract_original_amount(description)
-        transaction_id = transaction_hash(booked_date, amount, description, index)
         transactions.append(
             Transaction(
-                transaction_id=transaction_id,
+                transaction_id="",
                 date=booked_date,
                 interest_date=interest_date,
                 description=description,
@@ -89,7 +88,7 @@ def parse_nordea_pdf(path: Path, expected_currency: str = "DKK") -> list[Transac
             )
         )
 
-    return transactions
+    return assign_stable_transaction_ids(transactions)
 
 
 def _extract_pages(path: Path) -> list[list[TextCell]]:

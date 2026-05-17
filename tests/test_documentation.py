@@ -15,10 +15,34 @@ def test_readme_documents_csv_first_local_validation_workflow():
         "Real CSV exports are ignored by Git and must not be committed",
         "local smoke validation",
         "Investment statements remain separate future PDF evidence",
+        "docs/monthly_workflow.md",
     ]
 
     for phrase in required_phrases:
         assert phrase in readme
+
+
+def test_monthly_workflow_documents_operator_checklist():
+    workflow = (REPO_ROOT / "docs" / "monthly_workflow.md").read_text(encoding="utf-8")
+
+    required_phrases = [
+        "Monthly Tracker Workflow",
+        "Run A CSV Dry Run",
+        "--statement-format auto",
+        "review_required_<year>_<month>.csv",
+        "review_required_<year>_<month>.xlsx",
+        "Categorization Quality",
+        "learn-category-memory",
+        "review_required_2026_apr.xlsx",
+        "learn_to_memory",
+        "--commit",
+        "cleanup-currency-labels",
+        "Do not commit real bank statements",
+        "Investment statements remain separate future PDF evidence",
+    ]
+
+    for phrase in required_phrases:
+        assert phrase in workflow
 
 
 def test_committed_csv_fixtures_are_redacted_and_do_not_require_real_csv_paths():

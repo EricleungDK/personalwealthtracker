@@ -81,3 +81,4 @@ class RunResult:
     categorized_csv_path: Path
     review_csv_path: Path
     output_workbook_path: Path | None = None
+    review_xlsx_path: Path | None = None

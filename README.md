@@ -42,6 +42,8 @@ uv sync --extra dev
 
 ## CSV-First Dry Run
 
+For the full monthly operator checklist, see [docs/monthly_workflow.md](docs/monthly_workflow.md).
+
 Use Nordea CSV for normal bank cashflow categorization. In `auto` mode the CLI routes `.csv` statements to the Nordea CSV parser:
 
 ```bash

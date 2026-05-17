@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import csv
 import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+from .category_memory import normalize_merchant_identity
+from .config import AppConfig
 from .models import CategorizedTransaction, TrackerUpdate, WorkbookStructureChange
+from .utils import TRANSACTION_ID_SCHEME_VERSION
+from .workbook import WorkbookCategoryOption, workbook_category_options
 
 
 def write_outputs(
@@ -19,7 +24,9 @@ def write_outputs(
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange] | None = None,
     statement_parser: str = "nordea-pdf",
-) -> tuple[Path, Path, Path, Path]:
+    workbook_config: AppConfig | None = None,
+    review_xlsx_path: Path | None = None,
+) -> tuple[Path, Path, Path, Path, Path]:
     structure_changes = structure_changes or []
     output_dir.mkdir(parents=True, exist_ok=True)
     period = f"{year}_{month.lower()}"
@@ -27,6 +34,8 @@ def write_outputs(
     audit_path = output_dir / f"audit_{period}.jsonl"
     categorized_path = output_dir / f"categorized_transactions_{period}.csv"
     review_path = output_dir / f"review_required_{period}.csv"
+    review_xlsx_path = review_xlsx_path or output_dir / f"review_required_{period}.xlsx"
+    category_options = _load_category_options(tracker_path, year, month, workbook_config)
 
     _write_report(
         report_path,
@@ -52,7 +61,27 @@ def write_outputs(
     )
     _write_categorized_csv(categorized_path, categorized)
     _write_review_csv(review_path, categorized, updates)
-    return report_path, audit_path, categorized_path, review_path
+    _write_review_workbook(
+        review_xlsx_path,
+        year,
+        month,
+        statement_parser,
+        categorized,
+        updates,
+        category_options,
+    )
+    return report_path, audit_path, categorized_path, review_path, review_xlsx_path
+
+
+def _load_category_options(
+    tracker_path: Path,
+    year: int,
+    month: str,
+    workbook_config: AppConfig | None,
+) -> list[WorkbookCategoryOption]:
+    if workbook_config is None or not tracker_path.exists():
+        return []
+    return workbook_category_options(tracker_path, year, month, workbook_config)
 
 
 def _write_report(
@@ -69,6 +98,14 @@ def _write_report(
     review_count = sum(1 for item in categorized if item.review_required)
     write_count = sum(1 for update in updates if update.write_action == "write")
     skip_count = sum(1 for update in updates if update.write_action == "skip")
+    classified_count = sum(1 for item in categorized if item.suggested_category)
+    no_review_count = sum(1 for item in categorized if not item.review_required)
+    unmatched_count = sum(
+        1
+        for item in categorized
+        if item.categorization_method == "unmatched" or item.suggested_category is None
+    )
+    method_counts = Counter(item.categorization_method for item in categorized)
 
     lines = [
         "# Monthly Wealth Tracker Automation Report",
@@ -82,9 +119,27 @@ def _write_report(
         f"- Skipped workbook updates: {skip_count}",
         "- Workbook cleanup tasks: not run during monthly update.",
         "",
-        "## Planned Structure Changes",
+        "## Categorization Quality",
         "",
+        f"- Classification rate: {_format_rate(classified_count, total)}",
+        f"- No-review rate: {_format_rate(no_review_count, total)}",
+        f"- Unmatched transactions: {unmatched_count}",
+        f"- Review-required transactions: {review_count}",
+        "- Categorization method counts:",
     ]
+    if method_counts:
+        for method, count in sorted(method_counts.items()):
+            lines.append(f"- {method}: {count}")
+    else:
+        lines.append("- none: 0")
+
+    lines.extend(
+        [
+            "",
+            "## Planned Structure Changes",
+            "",
+        ]
+    )
 
     if structure_changes:
         for change in structure_changes:
@@ -108,10 +163,7 @@ def _write_report(
     )
 
     if updates:
-        categorized_by_id = {
-            item.transaction.transaction_id: item
-            for item in categorized
-        }
+        categorized_by_id = {item.transaction.transaction_id: item for item in categorized}
         for update in updates:
             lines.append(
                 f"- {update.category}: {update.amount} -> {update.target_cell or 'unresolved'} "
@@ -141,6 +193,11 @@ def _write_report(
         lines.append("- No transaction-level review items.")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _format_rate(count: int, total: int) -> str:
+    percentage = (count / total * 100) if total else 0.0
+    return f"{count}/{total} ({percentage:.1f}%)"
 
 
 def _write_audit(
@@ -280,3 +337,147 @@ def _write_review_csv(
                         update.reason,
                     ]
                 )
+
+
+def _write_review_workbook(
+    path: Path,
+    year: int,
+    month: str,
+    statement_parser: str,
+    categorized: list[CategorizedTransaction],
+    updates: list[TrackerUpdate],
+    category_options: list[WorkbookCategoryOption],
+) -> None:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.datavalidation import DataValidation
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required for review workbook output.") from exc
+
+    update_by_transaction = {
+        transaction_id: update
+        for update in updates
+        for transaction_id in update.source_transactions
+    }
+    workbook = Workbook()
+    review_sheet = workbook.active
+    review_sheet.title = "Review Required"
+    audit_sheet = workbook.create_sheet("All Transactions")
+    options_sheet = workbook.create_sheet("Category Options")
+    metadata_sheet = workbook.create_sheet("Run Metadata")
+
+    review_headers = [
+        "transaction_id",
+        "date",
+        "description",
+        "amount",
+        "direction",
+        "merchant_identity",
+        "suggested_category",
+        "confidence",
+        "method",
+        "reason",
+        "workbook_action",
+        "target_cell",
+        "workbook_reason",
+        "manual_category",
+        "learn_to_memory",
+    ]
+    audit_headers = [
+        "transaction_id",
+        "date",
+        "description",
+        "amount",
+        "currency",
+        "direction",
+        "merchant_identity",
+        "suggested_category",
+        "confidence",
+        "method",
+        "review_required",
+        "reason",
+    ]
+    options_headers = ["row_number", "category", "learnable", "status"]
+    review_sheet.append(review_headers)
+    audit_sheet.append(audit_headers)
+    options_sheet.append(options_headers)
+
+    for item in categorized:
+        transaction = item.transaction
+        audit_sheet.append(
+            [
+                transaction.transaction_id,
+                transaction.date.isoformat(),
+                transaction.description,
+                _format_amount(transaction.amount),
+                transaction.currency,
+                transaction.direction,
+                _merchant_identity(transaction),
+                item.suggested_category or "",
+                f"{item.confidence:.2f}",
+                item.categorization_method,
+                item.review_required,
+                item.reason,
+            ]
+        )
+        update = update_by_transaction.get(transaction.transaction_id)
+        if item.review_required or (update is not None and update.write_action != "write"):
+            review_sheet.append(
+                [
+                    transaction.transaction_id,
+                    transaction.date.isoformat(),
+                    transaction.description,
+                    _format_amount(transaction.amount),
+                    transaction.direction,
+                    _merchant_identity(transaction),
+                    item.suggested_category or "",
+                    f"{item.confidence:.2f}",
+                    item.categorization_method,
+                    item.reason,
+                    update.write_action if update else None,
+                    update.target_cell if update else None,
+                    update.reason if update else None,
+                    None,
+                    None,
+                ]
+            )
+
+    for option in category_options:
+        options_sheet.append([option.row_number, option.category, option.learnable, option.status])
+
+    if category_options:
+        option_end_row = len(category_options) + 1
+        manual_category_validation = DataValidation(
+            type="list",
+            formula1=f"'Category Options'!$B$2:$B${option_end_row}",
+            allow_blank=True,
+        )
+        review_sheet.add_data_validation(manual_category_validation)
+        manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
+        manual_category_validation.add(f"{manual_category_column}2:{manual_category_column}1048576")
+
+    learn_validation = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
+    review_sheet.add_data_validation(learn_validation)
+    learn_column = get_column_letter(review_headers.index("learn_to_memory") + 1)
+    learn_validation.add(f"{learn_column}2:{learn_column}1048576")
+
+    for key, value in [
+        ("reporting_year", year),
+        ("reporting_month", month),
+        ("statement_parser", statement_parser),
+        ("generated_timestamp", datetime.now().isoformat(timespec="seconds")),
+        ("transaction_id_scheme", TRANSACTION_ID_SCHEME_VERSION),
+    ]:
+        metadata_sheet.append([key, value])
+
+    workbook.save(path)
+    workbook.close()
+
+
+def _format_amount(amount) -> str:
+    return format(amount, "f")
+
+
+def _merchant_identity(transaction) -> str:
+    return normalize_merchant_identity(transaction.merchant or transaction.description)

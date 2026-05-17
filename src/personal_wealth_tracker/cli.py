@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Private generated category memory directory.",
     )
     parser.add_argument(
+        "--review-decisions",
+        type=Path,
+        help="Reviewed XLSX decisions to apply by exact transaction ID.",
+    )
+    parser.add_argument(
         "--commit",
         action="store_true",
         help="Write eligible values to a copied workbook. Dry-run is the default.",
@@ -47,7 +52,12 @@ def build_category_memory_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Import confirmed reviewed decisions into category memory."
     )
-    parser.add_argument("--decisions", required=True, type=Path, help="Reviewed decision CSV.")
+    parser.add_argument(
+        "--decisions",
+        required=True,
+        type=Path,
+        help="Reviewed decision CSV or XLSX.",
+    )
     parser.add_argument(
         "--memory-dir",
         type=Path,
@@ -94,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"Imported category memory decisions: {result.imported_count}")
         print(f"Skipped unconfirmed decisions: {result.skipped_unconfirmed_count}")
+        print(f"Skipped unlearned decisions: {result.skipped_unlearned_count}")
+        print(f"Skipped non-learnable decisions: {result.skipped_non_learnable_count}")
         print(f"Category memory: {result.memory_path}")
         return 0
 
@@ -113,17 +125,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     args = build_parser().parse_args(argv)
-    result = run_pipeline(
-        tracker_path=args.tracker,
-        statement_path=args.statement,
-        config_dir=args.config_dir,
-        year=args.year,
-        month=args.month,
-        output_dir=args.output_dir,
-        category_memory_dir=args.category_memory_dir,
-        commit=args.commit,
-        statement_format=args.statement_format,
-    )
+    try:
+        result = run_pipeline(
+            tracker_path=args.tracker,
+            statement_path=args.statement,
+            config_dir=args.config_dir,
+            year=args.year,
+            month=args.month,
+            output_dir=args.output_dir,
+            category_memory_dir=args.category_memory_dir,
+            commit=args.commit,
+            statement_format=args.statement_format,
+            review_decisions_path=args.review_decisions,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     print(f"Mode: {result.mode}")
     print(f"Statement parser: {result.statement_parser}")

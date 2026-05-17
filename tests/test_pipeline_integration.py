@@ -1,8 +1,10 @@
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
+import pytest
 
 from personal_wealth_tracker.pipeline import run_pipeline
+from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "nordea_account_statement.redacted.pdf"
@@ -45,6 +47,8 @@ def test_pipeline_dry_run_writes_outputs_without_changing_workbook(tmp_path, mon
     assert result.audit_path.exists()
     assert result.categorized_csv_path.exists()
     assert result.review_csv_path.exists()
+    assert result.review_xlsx_path == tmp_path / "reports" / "review_required_2026_apr.xlsx"
+    assert result.review_xlsx_path.exists()
 
 
 def test_pipeline_dry_run_reports_missing_period_creation_without_changing_workbook(
@@ -176,6 +180,316 @@ def test_pipeline_review_csv_includes_skipped_derived_workbook_rows(tmp_path, mo
     assert "Derived workbook row is formula-owned and not writable." in review_csv
 
 
+def test_pipeline_applies_explicit_monthly_review_decisions(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    reviewed_transaction = next(
+        item
+        for item in first_result.categorized_transactions
+        if item.suggested_category == "Traveling"
+    )
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        rows=[
+            {
+                "transaction_id": reviewed_transaction.transaction.transaction_id,
+                "description": reviewed_transaction.transaction.description,
+                "amount": str(reviewed_transaction.transaction.amount),
+                "manual_category": "Apple Cloud",
+            },
+            {
+                "transaction_id": first_result.categorized_transactions[0].transaction.transaction_id,
+                "description": "ignored because blank manual category",
+                "amount": "0",
+                "manual_category": "",
+            },
+        ],
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        review_decisions_path=review_decisions,
+    )
+
+    reviewed = next(
+        item
+        for item in result.categorized_transactions
+        if item.transaction.transaction_id == reviewed_transaction.transaction.transaction_id
+    )
+    assert reviewed.suggested_category == "Apple Cloud"
+    assert reviewed.categorization_method == "monthly_review_decision"
+    assert reviewed.review_required is False
+    assert {update.category for update in result.updates} == {"Apple Cloud", "Full-time job (net)"}
+    assert "monthly_review_decision" in result.categorized_csv_path.read_text(encoding="utf-8")
+    assert "monthly_review_decision" in result.audit_path.read_text(encoding="utf-8")
+    assert "- monthly_review_decision: 1" in result.report_path.read_text(encoding="utf-8")
+
+
+def test_pipeline_preserves_review_decisions_when_input_is_default_review_output(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    output_dir = tmp_path / "reports"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1111;2222;Yes\n",
+    )
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=output_dir,
+    )
+    review_decisions = first_result.review_xlsx_path
+    reviewed_transaction = first_result.categorized_transactions[0]
+    workbook = load_workbook(review_decisions)
+    try:
+        review_sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        for row in range(2, review_sheet.max_row + 1):
+            if (
+                review_sheet.cell(row=row, column=headers["transaction_id"]).value
+                == reviewed_transaction.transaction.transaction_id
+            ):
+                review_sheet.cell(row=row, column=headers["manual_category"]).value = "Apple Cloud"
+                break
+        else:
+            raise AssertionError("review row not found")
+        workbook.save(review_decisions)
+    finally:
+        workbook.close()
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=output_dir,
+        review_decisions_path=review_decisions,
+    )
+
+    preserved = load_workbook(review_decisions, data_only=True)
+    try:
+        review_sheet = preserved["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        manual_values = [
+            review_sheet.cell(row=row, column=headers["manual_category"]).value
+            for row in range(2, review_sheet.max_row + 1)
+        ]
+    finally:
+        preserved.close()
+
+    assert "Apple Cloud" in manual_values
+    assert result.review_xlsx_path == output_dir / "review_required_2026_apr_after_decisions.xlsx"
+    assert result.review_xlsx_path.exists()
+    assert "- monthly_review_decision: 1" in result.report_path.read_text(encoding="utf-8")
+
+
+def test_pipeline_rejects_review_decisions_for_wrong_period(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    review_decisions = tmp_path / "review_required_2026_may.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="May",
+        rows=[],
+    )
+
+    with pytest.raises(ValueError, match="review decisions.*May 2026.*Apr 2026"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=FIXTURE,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
+def test_pipeline_rejects_review_decisions_for_unknown_transaction_id(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        rows=[
+            {
+                "transaction_id": f"{TRANSACTION_ID_SCHEME_VERSION}:missing:001",
+                "description": "stale row",
+                "amount": "-1",
+                "manual_category": "Apple Cloud",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="not present in current statement"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=FIXTURE,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
+def test_monthly_review_decision_preserves_workbook_write_safety(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    transaction_id = first_result.categorized_transactions[0].transaction.transaction_id
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        rows=[
+            {
+                "transaction_id": transaction_id,
+                "description": "manual derived row",
+                "amount": "-1",
+                "manual_category": "Income (net)",
+            }
+        ],
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        review_decisions_path=review_decisions,
+    )
+
+    income_update = next(update for update in result.updates if update.category == "Income (net)")
+    assert income_update.write_action == "skip"
+    assert income_update.reason == "Derived workbook row is formula-owned and not writable."
+
+
+def test_pipeline_rejects_manual_review_category_missing_from_current_tracker(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    transaction_id = first_result.categorized_transactions[0].transaction.transaction_id
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        rows=[
+            {
+                "transaction_id": transaction_id,
+                "description": "manual category that is not in the tracker",
+                "amount": "-1",
+                "manual_category": "Missing Tracker Category",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="manual_category.*Missing Tracker Category"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=FIXTURE,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
+def test_pipeline_rejects_review_decisions_with_unsupported_transaction_id_scheme(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        transaction_id_scheme="legacy-v0",
+        rows=[],
+    )
+
+    with pytest.raises(ValueError, match="Unsupported review decision transaction ID scheme"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=FIXTURE,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
 def _create_tracker(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -252,3 +566,59 @@ def _set_workbook_label(path: Path, cell: str, value: str) -> None:
         workbook.save(path)
     finally:
         workbook.close()
+
+
+def _write_review_decisions(
+    path: Path,
+    year: int,
+    month: str,
+    rows: list[dict[str, str]],
+    transaction_id_scheme: str = TRANSACTION_ID_SCHEME_VERSION,
+) -> None:
+    workbook = Workbook()
+    review_sheet = workbook.active
+    review_sheet.title = "Review Required"
+    review_sheet.append(
+        [
+            "transaction_id",
+            "date",
+            "description",
+            "amount",
+            "direction",
+            "merchant_identity",
+            "suggested_category",
+            "confidence",
+            "method",
+            "reason",
+            "manual_category",
+            "learn_to_memory",
+        ]
+    )
+    for row in rows:
+        review_sheet.append(
+            [
+                row["transaction_id"],
+                "2026-04-01",
+                row["description"],
+                row["amount"],
+                "expense",
+                "",
+                "",
+                "",
+                "",
+                "",
+                row["manual_category"],
+                "",
+            ]
+        )
+    metadata_sheet = workbook.create_sheet("Run Metadata")
+    for key, value in [
+        ("reporting_year", year),
+        ("reporting_month", month),
+        ("statement_parser", "nordea-pdf"),
+        ("generated_timestamp", "2026-05-16T10:00:00"),
+        ("transaction_id_scheme", transaction_id_scheme),
+    ]:
+        metadata_sheet.append([key, value])
+    workbook.save(path)
+    workbook.close()

@@ -13,6 +13,7 @@ from personal_wealth_tracker.cli import main
 from personal_wealth_tracker.config import AppConfig
 from personal_wealth_tracker.models import Transaction
 from personal_wealth_tracker.pipeline import run_pipeline
+from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "nordea_account_statement.redacted.pdf"
@@ -57,6 +58,208 @@ def test_import_confirmed_review_decision_into_category_memory(tmp_path):
             "source_transaction_ids": ["tx-netto-1"],
         }
     ]
+
+
+def test_import_learns_opted_in_review_workbook_decisions(tmp_path, capsys):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": "tx-netto-1",
+                "description": "NETTO 1234 KOBENHAVN",
+                "amount": "-125.50",
+                "manual_category": "Food& Drinks (monthly)",
+                "learn_to_memory": "yes",
+            },
+            {
+                "transaction_id": "tx-mobilepay-once",
+                "description": "MOBILEPAY PRIVATE TRANSFER",
+                "amount": "-300.00",
+                "manual_category": "Parent B",
+                "learn_to_memory": "",
+            },
+            {
+                "transaction_id": "tx-explicit-no",
+                "description": "ONE OFF SHOP",
+                "amount": "-99.00",
+                "manual_category": "Shopping (monthly)",
+                "learn_to_memory": "no",
+            },
+            {
+                "transaction_id": "tx-blank-category",
+                "description": "UNREVIEWED",
+                "amount": "-10.00",
+                "manual_category": "",
+                "learn_to_memory": "yes",
+            },
+        ],
+        category_options=[
+            ("Food& Drinks (monthly)", True),
+            ("Parent B", True),
+            ("Shopping (monthly)", True),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Imported category memory decisions: 1" in captured.out
+    assert "Skipped unlearned decisions: 3" in captured.out
+    assert "Skipped non-learnable decisions: 0" in captured.out
+    payload = json.loads((memory_dir / "category_memory.json").read_text(encoding="utf-8"))
+    assert payload["mappings"] == [
+        {
+            "merchant_identity": "NETTO KOBENHAVN",
+            "category": "Food& Drinks (monthly)",
+            "source_transaction_ids": ["tx-netto-1"],
+        }
+    ]
+
+
+def test_import_review_workbook_skips_non_learnable_fields(tmp_path, capsys):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": "tx-income-net",
+                "description": "SALARY",
+                "amount": "10000.00",
+                "manual_category": "Income (net)",
+                "learn_to_memory": "yes",
+            },
+            {
+                "transaction_id": "tx-food",
+                "description": "NETTO 1234 KOBENHAVN",
+                "amount": "-125.50",
+                "manual_category": "Food& Drinks (monthly)",
+                "learn_to_memory": "yes",
+            },
+        ],
+        category_options=[
+            ("Income (net)", False),
+            ("Food& Drinks (monthly)", True),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Imported category memory decisions: 1" in captured.out
+    assert "Skipped non-learnable decisions: 1" in captured.out
+    memory = load_category_memory(memory_dir)
+    assert [mapping.category for mapping in memory.mappings] == ["Food& Drinks (monthly)"]
+
+
+def test_import_review_workbook_rejects_unsupported_transaction_id_scheme(tmp_path, capsys):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": "tx-food",
+                "description": "NETTO 1234 KOBENHAVN",
+                "amount": "-125.50",
+                "manual_category": "Food& Drinks (monthly)",
+                "learn_to_memory": "yes",
+            },
+        ],
+        category_options=[
+            ("Food& Drinks (monthly)", True),
+        ],
+        transaction_id_scheme="legacy-v0",
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Unsupported reviewed workbook transaction ID scheme" in captured.err
+    assert not (memory_dir / "category_memory.json").exists()
+
+
+def test_import_review_workbook_preserves_memory_and_recurring_hints(tmp_path):
+    memory_dir = tmp_path / "data" / "category_memory"
+    first_decisions = tmp_path / "first_reviewed_decisions.csv"
+    review_workbook = tmp_path / "review_required_2026_apr.xlsx"
+    _write_decisions(
+        first_decisions,
+        [
+            {
+                "transaction_id": "tx-netto-1",
+                "date": "2026-04-12",
+                "description": "NETTO 1234 KOBENHAVN",
+                "amount": "-125.50",
+                "direction": "expense",
+                "confirmed_category": "Food& Drinks (monthly)",
+                "confirmed": "yes",
+            }
+        ],
+    )
+    import_reviewed_decisions(first_decisions, memory_dir)
+    _write_review_workbook_decisions(
+        review_workbook,
+        review_rows=[
+            {
+                "transaction_id": "tx-mobile-1",
+                "description": "PRIVATE TELECOM 4321",
+                "amount": "-99.00",
+                "manual_category": "Mobile phone (monthly)",
+                "learn_to_memory": "yes",
+                "recurring": "yes",
+                "amount_tolerance": "2.00",
+                "day_min": "25",
+                "day_max": "31",
+            }
+        ],
+        category_options=[
+            ("Mobile phone (monthly)", True),
+        ],
+    )
+
+    import_reviewed_decisions(review_workbook, memory_dir)
+
+    memory = load_category_memory(memory_dir)
+    assert [mapping.category for mapping in memory.mappings] == [
+        "Food& Drinks (monthly)",
+        "Mobile phone (monthly)",
+    ]
+    recurring = memory.mappings[1].recurring_hint
+    assert recurring is not None
+    assert recurring.amount == Decimal("99.00")
+    assert recurring.amount_tolerance == Decimal("2.00")
+    assert recurring.day_min == 25
+    assert recurring.day_max == 31
 
 
 def test_console_entrypoint_imports_category_memory_when_argv_is_none(
@@ -365,6 +568,75 @@ def _write_decisions(path, rows):
         writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_review_workbook_decisions(
+    path,
+    review_rows,
+    category_options,
+    transaction_id_scheme=TRANSACTION_ID_SCHEME_VERSION,
+):
+    workbook = Workbook()
+    review_sheet = workbook.active
+    review_sheet.title = "Review Required"
+    review_sheet.append(
+        [
+            "transaction_id",
+            "date",
+            "description",
+            "amount",
+            "direction",
+            "merchant_identity",
+            "suggested_category",
+            "confidence",
+            "method",
+            "reason",
+            "manual_category",
+            "learn_to_memory",
+            "recurring",
+            "amount_tolerance",
+            "day_min",
+            "day_max",
+        ]
+    )
+    for row in review_rows:
+        review_sheet.append(
+            [
+                row["transaction_id"],
+                "2026-04-12",
+                row["description"],
+                row["amount"],
+                "expense",
+                "",
+                "",
+                "",
+                "",
+                "",
+                row["manual_category"],
+                row["learn_to_memory"],
+                row.get("recurring", ""),
+                row.get("amount_tolerance", ""),
+                row.get("day_min", ""),
+                row.get("day_max", ""),
+            ]
+        )
+
+    options_sheet = workbook.create_sheet("Category Options")
+    options_sheet.append(["row_number", "category", "learnable", "status"])
+    for index, (category, learnable) in enumerate(category_options, start=2):
+        options_sheet.append([index, category, learnable, "write eligible" if learnable else "derived"])
+
+    metadata_sheet = workbook.create_sheet("Run Metadata")
+    for key, value in [
+        ("reporting_year", 2026),
+        ("reporting_month", "Apr"),
+        ("statement_parser", "nordea-csv"),
+        ("generated_timestamp", "2026-05-16T10:00:00"),
+        ("transaction_id_scheme", transaction_id_scheme),
+    ]:
+        metadata_sheet.append([key, value])
+    workbook.save(path)
+    workbook.close()
 
 
 def _config(categories=("Food& Drinks (monthly)",)) -> AppConfig:
