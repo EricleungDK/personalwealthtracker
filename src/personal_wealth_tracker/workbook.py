@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from collections import defaultdict
 from copy import copy
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -31,6 +32,14 @@ EXPENSE_CLAIMS_ROW = "Expense claims"
 MASTERCARD_REFUND_ROW = "Mastercard refund"
 INCOME_LIKE_ROWS = frozenset({NET_SALARY_ROW, EXPENSE_CLAIMS_ROW, MASTERCARD_REFUND_ROW})
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+@dataclass(frozen=True)
+class WorkbookCategoryOption:
+    row_number: int
+    category: str
+    learnable: bool
+    status: str
 
 
 def plan_updates(
@@ -90,6 +99,55 @@ def plan_workbook_changes(
 
     workbook.close()
     return WorkbookPlan(updates=updates, structure_changes=structure_changes)
+
+
+def workbook_category_options(
+    tracker_path: Path,
+    year: int,
+    month: str,
+    config: AppConfig,
+) -> list[WorkbookCategoryOption]:
+    workbook, sheet = _load_sheet(tracker_path, config.sheet_name)
+    target_column = _find_month_column(sheet, year, month, config)
+    options: list[WorkbookCategoryOption] = []
+    for row in range(1, sheet.max_row + 1):
+        category = _row_category(sheet, row, config)
+        if category is None:
+            continue
+        learnable = category not in DERIVED_WORKBOOK_ROWS and category not in config.fixed_rows
+        status = _category_option_status(sheet, row, target_column, category, config)
+        options.append(
+            WorkbookCategoryOption(
+                row_number=row,
+                category=category,
+                learnable=learnable,
+                status=status,
+            )
+        )
+    workbook.close()
+    return options
+
+
+def _category_option_status(
+    sheet,
+    row: int,
+    target_column: int | None,
+    category: str,
+    config: AppConfig,
+) -> str:
+    if category in DERIVED_WORKBOOK_ROWS:
+        return "derived/formula-owned; not learnable or writable"
+    if category in config.fixed_rows:
+        return "fixed/protected; not learnable or writable"
+    if target_column is None:
+        return "target month missing; write safety unresolved"
+
+    existing_value = sheet.cell(row=row, column=target_column).value
+    if isinstance(existing_value, str) and existing_value.startswith("="):
+        return "current-month formula; not writable"
+    if existing_value not in (None, ""):
+        return "current-month manual value; review before writing"
+    return "write eligible"
 
 
 def _category_amount(category: str, items: list[CategorizedTransaction]) -> Decimal:

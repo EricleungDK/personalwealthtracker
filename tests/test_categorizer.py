@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from personal_wealth_tracker.categorizer import categorize_transactions
+from personal_wealth_tracker.category_memory import CategoryMemory, CategoryMemoryMapping
 from personal_wealth_tracker.config import AppConfig, RecurringRule, Rule, load_config
 from personal_wealth_tracker.models import Transaction
 
@@ -61,6 +62,28 @@ def test_historical_mapping_wins():
     assert not result.review_required
 
 
+def test_category_memory_overrides_historical_mappings():
+    memory = CategoryMemory(
+        mappings=(
+            CategoryMemoryMapping(
+                merchant_identity="APPLE.COM/BILL",
+                category="Food& Drinks (monthly)",
+                source_transaction_ids=("reviewed-apple",),
+            ),
+        )
+    )
+
+    result = categorize_transactions(
+        [_transaction("APPLE.COM/BILL", "-25.00")],
+        _config(),
+        category_memory=memory,
+    )[0]
+
+    assert result.suggested_category == "Food& Drinks (monthly)"
+    assert result.categorization_method == "category_memory"
+    assert not result.review_required
+
+
 def test_keyword_rule_matches():
     result = categorize_transactions([_transaction("NETTO KOEBENHAVN", "-100.00")], _config())[0]
 
@@ -111,6 +134,27 @@ def test_recurring_rule_matches_before_keyword_rules():
 
     assert result.suggested_category == "Mobile phone (monthly)"
     assert result.categorization_method == "recurring"
+
+
+def test_category_memory_overrides_recurring_rules():
+    memory = CategoryMemory(
+        mappings=(
+            CategoryMemoryMapping(
+                merchant_identity="PRIVATE TELECOM",
+                category="Food& Drinks (monthly)",
+                source_transaction_ids=("reviewed-telecom",),
+            ),
+        )
+    )
+
+    result = categorize_transactions(
+        [_transaction("PRIVATE TELECOM", "-99.50")],
+        _config(),
+        category_memory=memory,
+    )[0]
+
+    assert result.suggested_category == "Food& Drinks (monthly)"
+    assert result.categorization_method == "category_memory"
 
 
 def test_unmatched_requires_review():

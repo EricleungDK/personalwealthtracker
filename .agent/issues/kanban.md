@@ -1,6 +1,6 @@
 ---
 type: kanban
-updated: 2026-05-13
+updated: 2026-05-16
 ---
 
 # Local Issue Kanban
@@ -29,3 +29,7 @@ No issues currently in progress.
 - [ISSUE-009: Route Bank Statement Format And Report Parser](./2026-05-13-issue-009-route-bank-statement-format-and-report-parser.md)
 - [ISSUE-010: Add Mastercard And CSV Merchant Categorization](./2026-05-13-issue-010-add-mastercard-and-csv-merchant-categorization.md)
 - [ISSUE-011: Document CSV First Local Validation Workflow](./2026-05-13-issue-011-document-csv-first-local-validation-workflow.md)
+- [ISSUE-012: Stabilize Transaction IDs For Review Decisions](./2026-05-16-issue-012-stabilize-transaction-ids-for-review-decisions.md)
+- [ISSUE-013: Generate Manual Review Workbook](./2026-05-16-issue-013-generate-manual-review-workbook.md)
+- [ISSUE-014: Apply Monthly Review Decisions](./2026-05-16-issue-014-apply-monthly-review-decisions.md)
+- [ISSUE-015: Learn Category Memory From Review Workbook](./2026-05-16-issue-015-learn-category-memory-from-review-workbook.md)

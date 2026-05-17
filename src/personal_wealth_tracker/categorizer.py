@@ -32,6 +32,18 @@ def _categorize(
 ) -> CategorizedTransaction:
     normalized_description = normalize_text(transaction.description)
 
+    if category_memory is not None:
+        memory_match = match_category_memory(transaction, category_memory)
+        if memory_match:
+            return _result(
+                transaction,
+                memory_match.category,
+                0.97,
+                "category_memory",
+                False,
+                "Confirmed category memory match.",
+            )
+
     historical = _match_historical(normalized_description, config.historical_mappings)
     if historical:
         reason = (
@@ -59,18 +71,6 @@ def _categorize(
             review_required,
             "Recurring amount/date rule match.",
         )
-
-    if category_memory is not None:
-        memory_match = match_category_memory(transaction, category_memory)
-        if memory_match:
-            return _result(
-                transaction,
-                memory_match.category,
-                0.97,
-                "category_memory",
-                False,
-                "Confirmed category memory match.",
-            )
 
     rule = _match_rule(transaction, normalized_description, config.rules)
     if rule:

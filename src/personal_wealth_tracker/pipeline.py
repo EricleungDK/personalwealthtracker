@@ -10,8 +10,18 @@ from .models import RunResult, Transaction
 from .nordea_csv import parse_nordea_csv
 from .nordea_pdf import parse_nordea_pdf
 from .reporting import write_outputs
+from .review_decisions import (
+    apply_monthly_review_decisions,
+    load_monthly_review_decisions,
+    validate_monthly_review_decision_categories,
+)
 from .utils import normalize_month
-from .workbook import commit_updates, create_backup, plan_workbook_changes
+from .workbook import (
+    commit_updates,
+    create_backup,
+    plan_workbook_changes,
+    workbook_category_options,
+)
 
 
 MONTH_NUMBERS = {
@@ -40,6 +50,7 @@ def run_pipeline(
     commit: bool = False,
     category_memory_dir: Path = Path("data/category_memory"),
     statement_format: str = "auto",
+    review_decisions_path: Path | None = None,
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -61,6 +72,17 @@ def run_pipeline(
         config,
         category_memory=load_category_memory(category_memory_dir),
     )
+    if review_decisions_path is not None:
+        review_decisions = load_monthly_review_decisions(review_decisions_path, year, month)
+        valid_categories = {
+            option.category
+            for option in workbook_category_options(tracker_path, year, month, config)
+        }
+        validate_monthly_review_decision_categories(review_decisions, valid_categories)
+        categorized = apply_monthly_review_decisions(
+            categorized,
+            review_decisions,
+        )
     workbook_plan = plan_workbook_changes(tracker_path, categorized, year, month, config)
     updates = workbook_plan.updates
     structure_changes = workbook_plan.structure_changes
@@ -77,7 +99,13 @@ def run_pipeline(
             structure_changes=structure_changes,
         )
 
-    report_path, audit_path, categorized_csv_path, review_csv_path = write_outputs(
+    (
+        report_path,
+        audit_path,
+        categorized_csv_path,
+        review_csv_path,
+        review_xlsx_path,
+    ) = write_outputs(
         output_dir=output_dir,
         mode=mode,
         year=year,
@@ -88,6 +116,13 @@ def run_pipeline(
         updates=updates,
         structure_changes=structure_changes,
         statement_parser=statement_parser,
+        workbook_config=config,
+        review_xlsx_path=_review_xlsx_output_path(
+            output_dir,
+            year,
+            month,
+            review_decisions_path,
+        ),
     )
 
     return RunResult(
@@ -104,6 +139,7 @@ def run_pipeline(
         categorized_csv_path=categorized_csv_path,
         review_csv_path=review_csv_path,
         output_workbook_path=output_workbook_path,
+        review_xlsx_path=review_xlsx_path,
     )
 
 
@@ -134,6 +170,21 @@ def _resolve_statement_parser(statement_path: Path, statement_format: str) -> st
         f"Could not infer statement format from {statement_path.name!r}. "
         "Use --statement-format nordea-csv or --statement-format nordea-pdf."
     )
+
+
+def _review_xlsx_output_path(
+    output_dir: Path,
+    year: int,
+    month: str,
+    review_decisions_path: Path | None,
+) -> Path | None:
+    if review_decisions_path is None:
+        return None
+
+    default_path = output_dir / f"review_required_{year}_{month.lower()}.xlsx"
+    if review_decisions_path.resolve() != default_path.resolve():
+        return None
+    return output_dir / f"review_required_{year}_{month.lower()}_after_decisions.xlsx"
 
 
 def _validate_target_period(transactions: list[Transaction], year: int, month: str) -> None:

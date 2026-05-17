@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .models import Transaction
-from .utils import parse_danish_decimal, transaction_hash
+from .utils import assign_stable_transaction_ids, parse_danish_decimal
 
 
 REQUIRED_HEADERS = (
@@ -43,10 +43,9 @@ def parse_nordea_csv(path: Path, expected_currency: str = "DKK") -> list[Transac
             amount = parse_danish_decimal(row["Amount"])
             balance = parse_danish_decimal(row["Balance"]) if row.get("Balance") else None
             description = _derive_description(row)
-            transaction_id = transaction_hash(booked_date, amount, description, index)
             transactions.append(
                 Transaction(
-                    transaction_id=transaction_id,
+                    transaction_id="",
                     date=booked_date,
                     interest_date=None,
                     description=description,
@@ -59,7 +58,7 @@ def parse_nordea_csv(path: Path, expected_currency: str = "DKK") -> list[Transac
                     details=_raw_details(row),
                 )
             )
-    return transactions
+    return assign_stable_transaction_ids(transactions)
 
 
 def _validate_headers(fieldnames: list[str] | None) -> None:

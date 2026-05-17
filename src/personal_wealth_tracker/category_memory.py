@@ -3,12 +3,13 @@ from __future__ import annotations
 import csv
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .models import Transaction
-from .utils import normalize_text
+from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month, normalize_text
 
 
 MEMORY_FILE_NAME = "category_memory.json"
@@ -19,6 +20,8 @@ class CategoryMemoryImportResult:
     imported_count: int
     skipped_unconfirmed_count: int
     memory_path: Path
+    skipped_unlearned_count: int = 0
+    skipped_non_learnable_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -43,6 +46,9 @@ class CategoryMemory:
 
 
 def import_reviewed_decisions(decisions_path: Path, memory_dir: Path) -> CategoryMemoryImportResult:
+    if decisions_path.suffix.lower() == ".xlsx":
+        return _import_review_workbook_decisions(decisions_path, memory_dir)
+
     mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
     skipped_unconfirmed = 0
     imported_count = 0
@@ -122,6 +128,159 @@ def normalize_merchant_identity(description: str) -> str:
 
 def _is_confirmed(value: str) -> bool:
     return normalize_text(value) in {"1", "TRUE", "YES", "Y"}
+
+
+def _import_review_workbook_decisions(
+    decisions_path: Path,
+    memory_dir: Path,
+) -> CategoryMemoryImportResult:
+    mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
+    imported_count = 0
+    skipped_unlearned_count = 0
+    skipped_non_learnable_count = 0
+
+    workbook = _load_review_workbook_without_extension_warning(decisions_path)
+    try:
+        if "Review Required" not in workbook.sheetnames:
+            raise ValueError("Reviewed workbook is missing 'Review Required'.")
+        if "Category Options" not in workbook.sheetnames:
+            raise ValueError("Reviewed workbook is missing 'Category Options'.")
+        if "Run Metadata" not in workbook.sheetnames:
+            raise ValueError("Reviewed workbook is missing 'Run Metadata'.")
+
+        _validate_review_workbook_metadata(workbook["Run Metadata"])
+        learnable_categories = _learnable_categories(workbook["Category Options"])
+        for row_number, row in _worksheet_dicts(workbook["Review Required"]):
+            manual_category = (row.get("manual_category") or "").strip()
+            if not manual_category:
+                skipped_unlearned_count += 1
+                continue
+            if not _is_confirmed(row.get("learn_to_memory", "")):
+                skipped_unlearned_count += 1
+                continue
+            if manual_category not in learnable_categories:
+                skipped_non_learnable_count += 1
+                continue
+
+            transaction_id = _required(row, "transaction_id", row_number)
+            description = _required(row, "description", row_number)
+            _upsert_mapping(
+                mappings,
+                {
+                    "merchant_identity": normalize_merchant_identity(description),
+                    "category": manual_category,
+                    "source_transaction_ids": [transaction_id],
+                    **_recurring_hint_payload(row, row_number),
+                },
+            )
+            imported_count += 1
+    finally:
+        workbook.close()
+
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    memory_path = memory_dir / MEMORY_FILE_NAME
+    memory_path.write_text(
+        json.dumps({"mappings": mappings}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return CategoryMemoryImportResult(
+        imported_count=imported_count,
+        skipped_unconfirmed_count=0,
+        memory_path=memory_path,
+        skipped_unlearned_count=skipped_unlearned_count,
+        skipped_non_learnable_count=skipped_non_learnable_count,
+    )
+
+
+def _load_review_workbook_without_extension_warning(path: Path):
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required for reviewed workbook import.") from exc
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Data Validation extension is not supported and will be removed",
+            category=UserWarning,
+        )
+        return load_workbook(path, data_only=True)
+
+
+def _validate_review_workbook_metadata(sheet) -> None:
+    metadata = {
+        str(sheet.cell(row=row, column=1).value): sheet.cell(row=row, column=2).value
+        for row in range(1, sheet.max_row + 1)
+        if sheet.cell(row=row, column=1).value not in (None, "")
+    }
+
+    try:
+        reporting_year = int(metadata.get("reporting_year", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Reviewed workbook has invalid reporting_year metadata.") from exc
+    if reporting_year <= 0:
+        raise ValueError("Reviewed workbook is missing reporting_year metadata.")
+
+    try:
+        normalize_month(str(metadata.get("reporting_month", "")))
+    except ValueError as exc:
+        raise ValueError("Reviewed workbook has invalid reporting_month metadata.") from exc
+
+    scheme = str(metadata.get("transaction_id_scheme", ""))
+    if scheme != TRANSACTION_ID_SCHEME_VERSION:
+        raise ValueError(
+            "Unsupported reviewed workbook transaction ID scheme "
+            f"{scheme!r}; expected {TRANSACTION_ID_SCHEME_VERSION!r}."
+        )
+
+
+def _learnable_categories(sheet) -> frozenset[str]:
+    headers = _worksheet_headers(sheet)
+    category_column = _required_column(headers, "category", sheet.title)
+    learnable_column = _required_column(headers, "learnable", sheet.title)
+    categories: set[str] = set()
+    for row in range(2, sheet.max_row + 1):
+        category = str(sheet.cell(row=row, column=category_column).value or "").strip()
+        if not category:
+            continue
+        if _is_truthy(sheet.cell(row=row, column=learnable_column).value):
+            categories.add(category)
+    return frozenset(categories)
+
+
+def _worksheet_dicts(sheet) -> list[tuple[int, dict[str, str]]]:
+    headers = _worksheet_headers(sheet)
+    return [
+        (
+            row,
+            {
+                header: str(sheet.cell(row=row, column=column).value or "").strip()
+                for header, column in headers.items()
+            },
+        )
+        for row in range(2, sheet.max_row + 1)
+        if any(sheet.cell(row=row, column=column).value not in (None, "") for column in headers.values())
+    ]
+
+
+def _worksheet_headers(sheet) -> dict[str, int]:
+    return {
+        str(cell.value).strip(): index
+        for index, cell in enumerate(sheet[1], start=1)
+        if cell.value not in (None, "")
+    }
+
+
+def _required_column(headers: dict[str, int], column: str, sheet_title: str) -> int:
+    if column not in headers:
+        raise ValueError(f"Reviewed workbook sheet {sheet_title!r} is missing {column!r}.")
+    return headers[column]
+
+
+def _is_truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return _is_confirmed(str(value or ""))
 
 
 def _required(row: dict[str, str], field: str, row_number: int) -> str:
