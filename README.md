@@ -40,6 +40,12 @@ This workspace is pinned to Python 3.12 through `.python-version`.
 uv sync --extra dev
 ```
 
+## Documentation
+
+- [docs/project_overview.md](docs/project_overview.md) is the plain-language project map with Mermaid diagrams for structure, monthly flow, components, outputs, scripts, and terms.
+- [docs/monthly_workflow.md](docs/monthly_workflow.md) is the monthly operator checklist.
+- `.agent/System/` contains deeper architecture and data-contract notes for coding agents.
+
 ## CSV-First Dry Run
 
 For the full monthly operator checklist, see [docs/monthly_workflow.md](docs/monthly_workflow.md).
@@ -104,14 +110,20 @@ Commit mode creates a backup under `data/backups/` and writes eligible updates o
 ```text
 .
 ├── config/                 - Category, rule, and runtime configuration
+├── docs/                   - User-facing workflow and project overview docs
 ├── src/personal_wealth_tracker/
 │   ├── cli.py              - Command-line interface
 │   ├── pipeline.py         - End-to-end orchestration
+│   ├── nordea_csv.py       - Preferred Nordea CSV statement parser
 │   ├── nordea_pdf.py       - Nordea PDF statement parser
 │   ├── categorizer.py      - Historical and keyword categorization
+│   ├── category_memory.py  - Private learned category decisions
+│   ├── review_decisions.py - Reviewed XLSX/CSV monthly decision import
 │   ├── workbook.py         - Excel planning and safe commit writer
-│   └── reporting.py        - Markdown, CSV, and JSONL outputs
-├── tests/                  - Unit tests
+│   ├── reporting.py        - Markdown, CSV, JSONL, and XLSX outputs
+│   └── cleanup.py          - Separate workbook maintenance commands
+├── scripts/                - Helper utilities for safe test fixtures
+├── tests/                  - Unit and integration tests
 └── .agent/System/          - Durable project architecture and contracts
 ```
 

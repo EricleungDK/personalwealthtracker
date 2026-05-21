@@ -27,6 +27,7 @@ def test_monthly_workflow_documents_operator_checklist():
 
     required_phrases = [
         "Monthly Tracker Workflow",
+        "project_overview.md",
         "Run A CSV Dry Run",
         "--statement-format auto",
         "review_required_<year>_<month>.csv",
@@ -55,3 +56,32 @@ def test_committed_csv_fixtures_are_redacted_and_do_not_require_real_csv_paths()
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "*.csv" in gitignore
     assert "!tests/fixtures/**/*.csv" in gitignore
+
+
+def test_project_overview_documents_maps_components_scripts_and_terms():
+    overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
+
+    required_phrases = [
+        "Project Overview",
+        "```mermaid",
+        "Project Map",
+        "Monthly Run Flow",
+        "Main Components",
+        "Outputs And Decision Files",
+        "Scripts And Tests",
+        "Documentation Map",
+        "Glossary",
+        "src/personal_wealth_tracker",
+        "scripts/generate_redacted_nordea_fixture.py",
+        "review_required_<period>.xlsx",
+        "Category Memory",
+        "Monthly Review Decisions",
+        "CLI: Command-line interface",
+        "Mermaid: A text format for diagrams inside Markdown",
+        "monthly_workflow.md",
+    ]
+
+    for phrase in required_phrases:
+        assert phrase in overview
+
+    assert overview.count("```mermaid") >= 4
