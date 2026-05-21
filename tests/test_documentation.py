@@ -85,3 +85,68 @@ def test_project_overview_documents_maps_components_scripts_and_terms():
         assert phrase in overview
 
     assert overview.count("```mermaid") >= 4
+
+
+def test_category_registry_leaf_lifecycle_documentation_is_in_sync():
+    workflow = (REPO_ROOT / "docs" / "monthly_workflow.md").read_text(encoding="utf-8")
+    overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
+    domain_language = (REPO_ROOT / ".agent" / "System" / "domain_language.md").read_text(
+        encoding="utf-8"
+    )
+    data_contracts = (REPO_ROOT / ".agent" / "System" / "data_contracts.md").read_text(
+        encoding="utf-8"
+    )
+    agent_context = (REPO_ROOT / ".agent" / "Tasks" / "context.md").read_text(
+        encoding="utf-8"
+    )
+
+    workflow_phrases = [
+        "Parent/Section Row",
+        "Leaf Category Row",
+        "`manual_category`",
+        "`new_parent_category`",
+        "`new_leaf_category`",
+        "`learn_to_memory`",
+        "Category Registry Updates",
+        "--config-dir",
+    ]
+    for phrase in workflow_phrases:
+        assert phrase in workflow
+
+    overview_phrases = [
+        "Parent/Section Row:",
+        "Leaf Category Row:",
+        "Category Registry:",
+        "`new_parent_category`",
+        "`new_leaf_category`",
+    ]
+    for phrase in overview_phrases:
+        assert phrase in overview
+
+    domain_phrases = [
+        "**Parent/Section Row**",
+        "**Leaf Category Row**",
+        "**Category Registry**",
+        "Category Memory can learn only Leaf Category Row targets that exist in the Category Registry",
+    ]
+    for phrase in domain_phrases:
+        assert phrase in domain_language
+
+    contract_phrases = [
+        "## Review Workbook",
+        "`manual_category`",
+        "`new_parent_category`",
+        "`new_leaf_category`",
+        "`learn_to_memory`",
+        "## Category Registry",
+        "Category Memory learning validates against leaf categories",
+    ]
+    for phrase in contract_phrases:
+        assert phrase in data_contracts
+
+    context_phrases = [
+        "Make YAML the durable category registry for parent/leaf semantics",
+        "Category Memory may learn newly added categories only after leaf registry validation succeeds",
+    ]
+    for phrase in context_phrases:
+        assert phrase in agent_context

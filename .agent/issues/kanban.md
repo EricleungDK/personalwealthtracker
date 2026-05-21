@@ -1,6 +1,6 @@
 ---
 type: kanban
-updated: 2026-05-20
+updated: 2026-05-21
 ---
 
 # Local Issue Kanban
@@ -16,7 +16,7 @@ No issues currently ready.
 
 ## In Progress
 
-- [ISSUE-020: Gate Category Memory And Document Leaf Category Lifecycle](./2026-05-20-issue-020-gate-category-memory-and-document-leaf-category-lifecycle.md)
+No issues currently in progress.
 
 ## Done
 
@@ -37,3 +37,4 @@ No issues currently ready.
 - [ISSUE-017: Add Leaf Category Review Workbook Controls](./2026-05-20-issue-017-add-leaf-category-review-workbook-controls.md)
 - [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
 - [ISSUE-019: Plan And Commit Workbook Leaf Row Insertion](./2026-05-20-issue-019-plan-and-commit-workbook-leaf-row-insertion.md)
+- [ISSUE-020: Gate Category Memory And Document Leaf Category Lifecycle](./2026-05-20-issue-020-gate-category-memory-and-document-leaf-category-lifecycle.md)

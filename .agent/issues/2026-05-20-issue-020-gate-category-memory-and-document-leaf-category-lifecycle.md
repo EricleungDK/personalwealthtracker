@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-020
 title: Gate Category Memory And Document Leaf Category Lifecycle
-status: in_progress
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -23,16 +23,16 @@ Align Category Memory, reports, and documentation with the new parent/leaf categ
 
 ## Acceptance Criteria
 
-- [ ] Category Memory learning validates against YAML leaf categories.
-- [ ] Learning skips parent rows, derived rows, missing categories, and non-leaf targets.
-- [ ] Learning can proceed for a newly registered leaf category after registry validation succeeds.
-- [ ] Reports distinguish existing manual category decisions from new leaf category registrations.
-- [ ] The monthly workflow documents `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory`.
-- [ ] Project overview glossary uses Parent/Section Row and Leaf Category Row terminology.
-- [ ] Agent context and domain language documents record the category registry decision.
-- [ ] Data contracts describe the new review columns and category registry behavior.
-- [ ] Documentation tests cover the updated workflow terms.
-- [ ] Tests cover Category Memory skip/learn behavior for existing leaves, new leaves, parent rows, and missing categories.
+- [x] Category Memory learning validates against YAML leaf categories.
+- [x] Learning skips parent rows, derived rows, missing categories, and non-leaf targets.
+- [x] Learning can proceed for a newly registered leaf category after registry validation succeeds.
+- [x] Reports distinguish existing manual category decisions from new leaf category registrations.
+- [x] The monthly workflow documents `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory`.
+- [x] Project overview glossary uses Parent/Section Row and Leaf Category Row terminology.
+- [x] Agent context and domain language documents record the category registry decision.
+- [x] Data contracts describe the new review columns and category registry behavior.
+- [x] Documentation tests cover the updated workflow terms.
+- [x] Tests cover Category Memory skip/learn behavior for existing leaves, new leaves, parent rows, and missing categories.
 
 ## Blocked By
 

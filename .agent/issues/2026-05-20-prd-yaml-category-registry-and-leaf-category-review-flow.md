@@ -2,7 +2,7 @@
 type: prd
 id: PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW
 title: YAML Category Registry And Leaf Category Review Flow
-status: ready
+status: done
 labels:
   - ready-for-agent
 created: 2026-05-20

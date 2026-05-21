@@ -48,9 +48,13 @@ Then check `review_required_<year>_<month>.xlsx` for manual classification:
 
 - Use the `Review Required` sheet as the work queue.
 - Review rows can be transaction-level review items or categorized transactions whose workbook update is blocked; use `workbook_action`, `target_cell`, and `workbook_reason` to understand the block.
-- Use `manual_category` to record the current-month category decision.
+- Treat workbook grouping rows such as `Living expenses`, `Services`, and `Insurance` as Parent/Section Row labels. They organize the tracker and are not valid transaction category targets.
+- Treat rows under those sections, such as `Food& Drinks (monthly)` or `Apple Cloud`, as Leaf Category Row labels. These are the valid existing targets for current-month decisions, workbook updates, and Category Memory learning.
+- Use `manual_category` to record the current-month category decision when the correct Leaf Category Row already exists.
+- Use `new_parent_category` and `new_leaf_category` when the correct leaf category is missing. Select the allowed Parent/Section Row in `new_parent_category`, then type the exact new display label in `new_leaf_category`.
+- Do not fill both `manual_category` and `new_leaf_category` on the same review row.
 - Leave `learn_to_memory` blank unless a merchant decision should be considered for future Category Memory learning.
-- Use the `Category Options` sheet to avoid derived, fixed, formula-owned, or otherwise unsafe category choices.
+- Use the `Category Options` sheet to distinguish parent, derived, and leaf rows and to avoid derived, fixed, formula-owned, or otherwise unsafe category choices.
 - Use the `All Transactions` sheet to debug low classification or no-review rates.
 
 The `review_required_<year>_<month>.csv` file remains available for simple inspection and automation:
@@ -79,7 +83,10 @@ Review decisions are current-month overrides:
 
 - Filled `manual_category` values are applied by exact `transaction_id`.
 - Blank `manual_category` values are ignored.
-- Manual categories must still match exact row labels in the current tracker workbook.
+- Manual categories must be existing Leaf Category Row labels from the YAML category registry.
+- Filled `new_parent_category` and `new_leaf_category` values request a missing Leaf Category Row under an allowed Parent/Section Row.
+- New leaf category requests are validated against `config/categories.yaml`, reject duplicate labels, and are reported in the `Category Registry Updates` report section.
+- A reviewed second run can register the new leaf category in YAML during dry-run behavior. This is a category-registry update, not a workbook financial value write.
 - Reviewed transactions use the `monthly_review_decision` categorization method.
 - The reviewed workbook must match the run's reporting period and transaction ID scheme.
 - Stale or unknown transaction IDs fail the run instead of being guessed.
@@ -87,6 +94,7 @@ Review decisions are current-month overrides:
 If a review workbook fails because the transaction ID scheme changed after a code update, regenerate the review workbook from a fresh dry run before applying decisions.
 
 This dry run still does not modify the workbook. Check the updated report and categorized transactions before learning memory or committing.
+If a newly registered Leaf Category Row is not present in the tracker workbook yet, the report shows a planned structure change. Commit mode may insert that row into a copied workbook only when placement, sibling formatting, and parent formulas are safe to update.
 If `--review-decisions` points at the default generated review workbook, the reviewed input is preserved and the follow-up review workbook is written as `review_required_<year>_<month>_after_decisions.xlsx`.
 
 ## 5. Optionally Learn Future Memory
@@ -95,12 +103,14 @@ After editing the review workbook, import only rows where `manual_category` is f
 
 ```bash
 uv run wealth-tracker learn-category-memory \
-  --decisions "reports/review_required_2026_apr.xlsx"
+  --decisions "reports/review_required_2026_apr.xlsx" \
+  --config-dir config
 ```
 
 The command still accepts reviewed CSV files for automation and older workflows.
 Learning and workbook commit are separate steps. `manual_category` fixes the current month; `learn_to_memory` is an explicit opt-in for future runs. Rows with blank or non-yes `learn_to_memory` are not learned, and non-learnable category options are skipped.
-Reviewed XLSX learning validates the workbook metadata and supported transaction ID scheme. Learned Category Memory is used before hand-written historical mappings, recurring rules, and keyword rules in future monthly runs.
+Reviewed XLSX learning validates the workbook metadata, supported transaction ID scheme, and YAML leaf category registry. Category Memory skips Parent/Section Row labels, derived rows, missing categories, and other non-leaf targets. A newly registered Leaf Category Row can be learned after the reviewed second run has added it to `config/categories.yaml`.
+Learned Category Memory is used before hand-written historical mappings, recurring rules, and keyword rules in future monthly runs.
 
 After learning, run the dry-run again with `--review-decisions` and review the new categorization before committing workbook changes.
 

@@ -40,16 +40,18 @@ Read this diagram as:
 flowchart LR
   Statement["Nordea statement<br/>CSV preferred, PDF fallback"] --> Parser["Parser<br/>turns bank rows into transactions"]
   Tracker["Tracker workbook<br/>existing Excel file"] --> WorkbookRead["Workbook reader<br/>finds rows, months, formulas, existing values"]
-  Rules["Config and category memory<br/>known categories and learned choices"] --> Categorizer["Categorizer<br/>chooses transaction categories"]
+  Rules["Config, category registry, and category memory<br/>known categories and learned choices"] --> Categorizer["Categorizer<br/>chooses transaction categories"]
 
   Parser --> Categorizer
   Categorizer --> Planner["Workbook planner<br/>decides write, skip, or review"]
   WorkbookRead --> Planner
 
   Planner --> DryRun["Dry-run outputs<br/>report, audit, CSV, review workbook"]
-  DryRun --> Review["Manual review workbook<br/>choose manual_category and learn_to_memory"]
+  DryRun --> Review["Manual review workbook<br/>choose manual_category, new_parent_category, new_leaf_category, and learn_to_memory"]
   Review --> Decisions["Monthly Review Decisions<br/>current-month overrides"]
+  Review --> Registry["Category Registry<br/>validated new leaf registrations"]
   Review --> Memory["Category Memory<br/>future learned merchant choices"]
+  Registry --> Rules
   Decisions --> Planner
   Memory --> Rules
   Planner --> Commit["Commit mode<br/>writes only to a copied workbook"]
@@ -59,6 +61,7 @@ The important split is:
 
 - Dry run means plan and report only.
 - Monthly Review Decisions fix specific transactions for the selected month.
+- The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added.
 - Category Memory learns selected merchant choices for future months.
 - Commit mode writes only safe values into a copied workbook under `data/processed/`.
 
@@ -140,9 +143,12 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Parser: Code that turns a bank statement file into structured transactions.
 - Transaction: One bank movement from a statement.
 - Category: The tracker workbook row a transaction belongs to.
+- Parent/Section Row: A workbook row such as `Living expenses`, `Services`, or `Insurance` that groups or totals child rows and is not a valid transaction category target.
+- Leaf Category Row: A workbook row under a parent section that can receive source-backed transaction totals, manual review decisions, and Category Memory learning.
+- Category Registry: The YAML category source in `config/categories.yaml` that records parent, leaf, derived, alias, and allowed-new-child rules.
 - Dry run: A run that plans and reports but does not write workbook values.
 - Commit mode: A run with `--commit`; it writes eligible values only to a copied workbook.
-- Review workbook: The Excel file where you choose `manual_category` and optional `learn_to_memory`.
+- Review workbook: The Excel file where you choose `manual_category` for existing leaf rows, `new_parent_category` and `new_leaf_category` for missing leaf rows, and optional `learn_to_memory`.
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
 - Category Memory: Private learned merchant/category choices for future runs.
 - Fixed row: A workbook row the automation must not overwrite.
