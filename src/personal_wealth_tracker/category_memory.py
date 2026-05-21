@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from .config import load_config
 from .models import Transaction
 from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month, normalize_text
 
@@ -45,12 +46,18 @@ class CategoryMemory:
     mappings: tuple[CategoryMemoryMapping, ...]
 
 
-def import_reviewed_decisions(decisions_path: Path, memory_dir: Path) -> CategoryMemoryImportResult:
+def import_reviewed_decisions(
+    decisions_path: Path,
+    memory_dir: Path,
+    config_dir: Path = Path("config"),
+) -> CategoryMemoryImportResult:
+    leaf_categories = frozenset(load_config(config_dir).category_registry.leaf_categories)
     if decisions_path.suffix.lower() == ".xlsx":
-        return _import_review_workbook_decisions(decisions_path, memory_dir)
+        return _import_review_workbook_decisions(decisions_path, memory_dir, leaf_categories)
 
     mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
     skipped_unconfirmed = 0
+    skipped_non_learnable = 0
     imported_count = 0
     with decisions_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -61,6 +68,9 @@ def import_reviewed_decisions(decisions_path: Path, memory_dir: Path) -> Categor
             transaction_id = _required(row, "transaction_id", row_number)
             description = _required(row, "description", row_number)
             category = _required(row, "confirmed_category", row_number)
+            if category not in leaf_categories:
+                skipped_non_learnable += 1
+                continue
             _upsert_mapping(
                 mappings,
                 {
@@ -81,6 +91,7 @@ def import_reviewed_decisions(decisions_path: Path, memory_dir: Path) -> Categor
     return CategoryMemoryImportResult(
         imported_count=imported_count,
         skipped_unconfirmed_count=skipped_unconfirmed,
+        skipped_non_learnable_count=skipped_non_learnable,
         memory_path=memory_path,
     )
 
@@ -133,6 +144,7 @@ def _is_confirmed(value: str) -> bool:
 def _import_review_workbook_decisions(
     decisions_path: Path,
     memory_dir: Path,
+    leaf_categories: frozenset[str],
 ) -> CategoryMemoryImportResult:
     mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
     imported_count = 0
@@ -149,7 +161,7 @@ def _import_review_workbook_decisions(
             raise ValueError("Reviewed workbook is missing 'Run Metadata'.")
 
         _validate_review_workbook_metadata(workbook["Run Metadata"])
-        learnable_categories = _learnable_categories(workbook["Category Options"])
+        learnable_categories = _learnable_categories(workbook["Category Options"]) & leaf_categories
         for row_number, row in _worksheet_dicts(workbook["Review Required"]):
             manual_category = (row.get("manual_category") or "").strip()
             if not manual_category:

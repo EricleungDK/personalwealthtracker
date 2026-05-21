@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-020
 title: Gate Category Memory And Document Leaf Category Lifecycle
-status: ready
+status: in_progress
 slice_type: AFK
 labels:
   - ready-for-agent

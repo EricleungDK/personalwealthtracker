@@ -7,7 +7,7 @@ updated: 2026-05-20
 
 ## Ready For Agent
 
-- [ISSUE-020: Gate Category Memory And Document Leaf Category Lifecycle](./2026-05-20-issue-020-gate-category-memory-and-document-leaf-category-lifecycle.md)
+No issues currently ready.
 
 ## Blocked
 
@@ -16,7 +16,7 @@ updated: 2026-05-20
 
 ## In Progress
 
-No issues currently in progress.
+- [ISSUE-020: Gate Category Memory And Document Leaf Category Lifecycle](./2026-05-20-issue-020-gate-category-memory-and-document-leaf-category-lifecycle.md)
 
 ## Done
 

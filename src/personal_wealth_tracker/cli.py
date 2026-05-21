@@ -64,6 +64,12 @@ def build_category_memory_parser() -> argparse.ArgumentParser:
         default=Path("data/category_memory"),
         help="Private category memory directory.",
     )
+    parser.add_argument(
+        "--config-dir",
+        type=Path,
+        default=Path("config"),
+        help="Config directory containing the YAML category registry.",
+    )
     return parser
 
 
@@ -98,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "learn-category-memory":
         args = build_category_memory_parser().parse_args(argv[1:])
         try:
-            result = import_reviewed_decisions(args.decisions, args.memory_dir)
+            result = import_reviewed_decisions(args.decisions, args.memory_dir, args.config_dir)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1

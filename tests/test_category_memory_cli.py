@@ -172,6 +172,76 @@ def test_import_review_workbook_skips_non_learnable_fields(tmp_path, capsys):
     assert [mapping.category for mapping in memory.mappings] == ["Food& Drinks (monthly)"]
 
 
+def test_import_review_workbook_validates_learned_categories_against_registry_leaves(
+    tmp_path, capsys
+):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    config_dir = tmp_path / "config"
+    _create_category_registry_config(config_dir)
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": "tx-existing-leaf",
+                "description": "NETTO 1234 KOBENHAVN",
+                "amount": "-125.50",
+                "manual_category": "Food& Drinks (monthly)",
+                "learn_to_memory": "yes",
+            },
+            {
+                "transaction_id": "tx-new-leaf",
+                "description": "PET SHOP",
+                "amount": "-42.50",
+                "manual_category": "Pet Supplies",
+                "learn_to_memory": "yes",
+            },
+            {
+                "transaction_id": "tx-parent",
+                "description": "PARENT ROW",
+                "amount": "-1.00",
+                "manual_category": "Living expenses",
+                "learn_to_memory": "yes",
+            },
+            {
+                "transaction_id": "tx-missing",
+                "description": "MISSING ROW",
+                "amount": "-2.00",
+                "manual_category": "Missing Category",
+                "learn_to_memory": "yes",
+            },
+        ],
+        category_options=[
+            ("Food& Drinks (monthly)", True),
+            ("Pet Supplies", True),
+            ("Living expenses", True),
+            ("Missing Category", True),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+            "--config-dir",
+            str(config_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Imported category memory decisions: 2" in captured.out
+    assert "Skipped non-learnable decisions: 2" in captured.out
+    memory = load_category_memory(memory_dir)
+    assert [mapping.category for mapping in memory.mappings] == [
+        "Food& Drinks (monthly)",
+        "Pet Supplies",
+    ]
+
+
 def test_import_review_workbook_rejects_unsupported_transaction_id_scheme(tmp_path, capsys):
     decisions_path = tmp_path / "review_required_2026_apr.xlsx"
     memory_dir = tmp_path / "data" / "category_memory"
@@ -637,6 +707,35 @@ def _write_review_workbook_decisions(
         metadata_sheet.append([key, value])
     workbook.save(path)
     workbook.close()
+
+
+def _create_category_registry_config(config_dir: Path) -> None:
+    config_dir.mkdir(parents=True)
+    _write_text(
+        config_dir / "settings.yaml",
+        """
+tracker:
+  currency: "DKK"
+statement:
+  currency: "DKK"
+""",
+    )
+    _write_text(
+        config_dir / "categories.yaml",
+        """
+category_registry:
+  - label: "Living expenses"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Food& Drinks (monthly)"
+      - "Pet Supplies"
+  - label: "Income (net)"
+    type: "derived"
+aliases: {}
+""",
+    )
+    _write_text(config_dir / "rules.yaml", "{}\n")
 
 
 def _config(categories=("Food& Drinks (monthly)",)) -> AppConfig:
