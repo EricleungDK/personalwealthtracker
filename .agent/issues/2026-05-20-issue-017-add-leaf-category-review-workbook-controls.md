@@ -2,13 +2,12 @@
 type: issue
 id: ISSUE-017
 title: Add Leaf Category Review Workbook Controls
-status: blocked
+status: ready
 slice_type: AFK
 labels:
   - ready-for-agent
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
-blocked_by:
-  - ISSUE-016
+blocked_by: []
 created: 2026-05-20
 ---
 
@@ -36,4 +35,4 @@ Extend the manual review workbook so existing category decisions and missing-cat
 
 ## Blocked By
 
-- [ISSUE-016: Introduce YAML Category Registry](./2026-05-20-issue-016-introduce-yaml-category-registry.md)
+None - can start immediately.

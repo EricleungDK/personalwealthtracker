@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-016
 title: Introduce YAML Category Registry
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -23,15 +23,15 @@ Add a YAML-backed category registry that distinguishes parent or section rows fr
 
 ## Acceptance Criteria
 
-- [ ] Category config can represent parent rows, leaf child rows, and whether a parent allows new leaf children.
-- [ ] Existing flat `categories` and `aliases` remain loadable for backwards compatibility.
-- [ ] Loaded config exposes the valid leaf category set separately from parent/section rows.
-- [ ] Loaded config exposes parent rows that are allowed to receive new leaf children.
-- [ ] Derived totals and blocked parent rows are not valid manual transaction categories.
-- [ ] Duplicate category labels are detected case-insensitively after trimming whitespace.
-- [ ] Exact category display labels are preserved.
-- [ ] Alias loading remains explicit and does not auto-create aliases for new leaf categories.
-- [ ] Tests cover tree-shaped config, flat config compatibility, duplicate detection, parent/leaf lookup, and alias preservation.
+- [x] Category config can represent parent rows, leaf child rows, and whether a parent allows new leaf children.
+- [x] Existing flat `categories` and `aliases` remain loadable for backwards compatibility.
+- [x] Loaded config exposes the valid leaf category set separately from parent/section rows.
+- [x] Loaded config exposes parent rows that are allowed to receive new leaf children.
+- [x] Derived totals and blocked parent rows are not valid manual transaction categories.
+- [x] Duplicate category labels are detected case-insensitively after trimming whitespace.
+- [x] Exact category display labels are preserved.
+- [x] Alias loading remains explicit and does not auto-create aliases for new leaf categories.
+- [x] Tests cover tree-shaped config, flat config compatibility, duplicate detection, parent/leaf lookup, and alias preservation.
 
 ## Blocked By
 

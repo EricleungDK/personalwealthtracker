@@ -8,7 +8,6 @@ labels:
   - ready-for-agent
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
 blocked_by:
-  - ISSUE-016
   - ISSUE-018
 created: 2026-05-20
 ---
@@ -38,5 +37,4 @@ When a registered leaf category does not exist in the tracker workbook, plan a w
 
 ## Blocked By
 
-- [ISSUE-016: Introduce YAML Category Registry](./2026-05-20-issue-016-introduce-yaml-category-registry.md)
 - [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
