@@ -32,6 +32,11 @@ class CategorizedTransaction:
     categorization_method: str
     review_required: bool
     reason: str
+    source_transaction_id: str | None = None
+    split_rule: str | None = None
+    split_role: str | None = None
+    allocated_amount: Decimal | None = None
+    residual_amount: Decimal | None = None
 
 
 @dataclass(frozen=True)

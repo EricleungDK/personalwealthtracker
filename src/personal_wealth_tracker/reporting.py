@@ -355,11 +355,13 @@ def _write_review_csv(
         writer = csv.writer(handle)
         writer.writerow(["type", "id", "date_or_cell", "amount", "category", "reason"])
         for item in categorized:
-            if item.review_required:
+            if item.review_required or item.categorization_method.startswith("proxy_split_"):
                 transaction = item.transaction
                 writer.writerow(
                     [
-                        "transaction",
+                        item.categorization_method
+                        if item.categorization_method.startswith("proxy_split_")
+                        else "transaction",
                         transaction.transaction_id,
                         transaction.date.isoformat(),
                         transaction.amount,
@@ -414,19 +416,24 @@ def _write_review_workbook(
         "date",
         "description",
         "amount",
-        "direction",
-        "merchant_identity",
+        "manual_category",
+        "new_parent_category",
+        "new_leaf_category",
+        "learn_to_memory",
+        "split_role",
+        "split_rule",
+        "source_transaction_id",
+        "allocated_amount",
+        "residual_amount",
         "suggested_category",
-        "confidence",
         "method",
         "reason",
         "workbook_action",
         "target_cell",
         "workbook_reason",
-        "manual_category",
-        "new_parent_category",
-        "new_leaf_category",
-        "learn_to_memory",
+        "merchant_identity",
+        "confidence",
+        "direction",
     ]
     audit_headers = [
         "transaction_id",
@@ -441,6 +448,11 @@ def _write_review_workbook(
         "method",
         "review_required",
         "reason",
+        "split_role",
+        "split_rule",
+        "source_transaction_id",
+        "allocated_amount",
+        "residual_amount",
     ]
     options_headers = [
         "row_number",
@@ -472,6 +484,11 @@ def _write_review_workbook(
                 item.categorization_method,
                 item.review_required,
                 item.reason,
+                item.split_role,
+                item.split_rule,
+                item.source_transaction_id,
+                _format_optional_amount(item.allocated_amount),
+                _format_optional_amount(item.residual_amount),
             ]
         )
         update = update_by_transaction.get(transaction.transaction_id)
@@ -482,19 +499,24 @@ def _write_review_workbook(
                     transaction.date.isoformat(),
                     transaction.description,
                     _format_amount(transaction.amount),
-                    transaction.direction,
-                    _merchant_identity(transaction),
+                    None,
+                    None,
+                    None,
+                    None,
+                    item.split_role,
+                    item.split_rule,
+                    item.source_transaction_id,
+                    _format_optional_amount(item.allocated_amount),
+                    _format_optional_amount(item.residual_amount),
                     item.suggested_category or "",
-                    f"{item.confidence:.2f}",
                     item.categorization_method,
                     item.reason,
                     update.write_action if update else None,
                     update.target_cell if update else None,
                     update.reason if update else None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    _merchant_identity(transaction),
+                    f"{item.confidence:.2f}",
+                    transaction.direction,
                 ]
             )
 
@@ -580,6 +602,12 @@ def _write_review_workbook(
 
 def _format_amount(amount) -> str:
     return format(amount, "f")
+
+
+def _format_optional_amount(amount) -> str | None:
+    if amount is None:
+        return None
+    return _format_amount(amount)
 
 
 def _merchant_identity(transaction) -> str:

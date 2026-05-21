@@ -5,7 +5,7 @@ title: Gate Category Memory And Document Leaf Category Lifecycle
 status: done
 slice_type: AFK
 labels:
-  - ready-for-agent
+  - done
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
 blocked_by: []
 created: 2026-05-20

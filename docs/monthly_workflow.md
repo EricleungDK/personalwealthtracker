@@ -65,6 +65,23 @@ The `review_required_<year>_<month>.csv` file remains available for simple inspe
 - Positive Mastercard rows should map to `Mastercard refund`.
 - Negative Mastercard rows should map to `Nordea Credit Card`.
 
+### Proxy Split Transfer Rows
+
+A Proxy Split Transfer is a single bank-statement transfer to an intermediary account or service that is used as source evidence for multiple tracker allocations. Concrete personal split rules belong in ignored `config/rules.local.yaml`, not in tracked public config.
+
+For the Revolut family-transfer pattern, the configured fixed allocation is `8000 * 0.82 = 6560 DKK` for `Dad` and `4000 * 0.82 = 3280 DKK` for `Mom`. A matching Revolut expense must cover the full `9840 DKK` allocation total before the rule can split it.
+
+Dry-run outputs use these categorization methods:
+
+- `proxy_split_source`: the original transfer kept for audit and excluded from direct workbook totals.
+- `proxy_split_allocation`: a counted fixed allocation such as `Dad` or `Mom`.
+- `proxy_split_residual`: a Residual Review Line for the leftover amount from a larger transfer.
+- `proxy_split_blocked`: a candidate that stayed review-only because it was underfunded or multiple candidates matched in the same Reporting Month.
+
+Exact `9840 DKK` transfers produce only Dad and Mom allocation lines. Larger transfers produce Dad and Mom allocations plus a residual row for current-month review. Smaller transfers and duplicate monthly candidates stay review-only. Residual review decisions apply only to the current month and should not be learned into Category Memory.
+
+Review Required column order keeps the core transaction context first, then `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory`, with split metadata such as `split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, and `residual_amount` farther right.
+
 ## 4. Apply Monthly Review Decisions
 
 After editing `review_required_<year>_<month>.xlsx`, run another dry run with the reviewed workbook:

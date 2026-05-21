@@ -21,3 +21,19 @@ recurring_rules:
     confidence: 0.95
 
 fixed_rows: []
+
+# Optional: split one private intermediary transfer into explicit tracker allocations.
+# Keep real intermediary names, fixed amounts, and personal categories in rules.local.yaml.
+proxy_split_rules:
+  - name: "private_family_transfer_example"
+    match_keywords: ["private intermediary example"]
+    direction: "expense"
+    conversion_rate: "0.82"
+    monthly_limit: 1
+    allocations:
+      - role: "dad"
+        category: "Dad"
+        base_amount: "8000"
+      - role: "mom"
+        category: "Mom"
+        base_amount: "4000"

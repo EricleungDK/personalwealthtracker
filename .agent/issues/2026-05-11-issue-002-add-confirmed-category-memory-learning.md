@@ -5,7 +5,7 @@ title: Add Confirmed Category Memory Learning
 status: done
 slice_type: AFK
 labels:
-  - ready-for-agent
+  - done
 parent: 2026-05-11-prd-monthly-tracker-workbook-updater-next-slices.md
 blocked_by: []
 created: 2026-05-11

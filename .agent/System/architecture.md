@@ -79,6 +79,7 @@ Commit mode writes only planned updates whose action is `write`.
 - Category Memory learning validates targets against YAML leaf categories and skips parent, derived, missing, or non-leaf labels.
 - The learning workflow is a separate CLI path that imports a reviewed decision file into category memory, rather than prompting during monthly dry-run or commit execution.
 - Commit mode should not import category memory in the same command; changed category memory should be validated through a later dry run before workbook writing.
+- Proxy split rules can be introduced as a deterministic categorization step for one source transaction that needs multiple category allocations. Concrete personal rules should be read from ignored local config, while tracked code validates that allocation targets are registry leaf categories, that the source amount covers all fixed allocations before splitting, and that recurring monthly split limits are not exceeded.
 - Bank API ingestion can feed the same normalized transaction model.
 - Local LLM classification can be added after deterministic rules fail.
 - Google Drive integration can wrap workbook download/upload while preserving the same writer safeguards.

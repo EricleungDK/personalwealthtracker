@@ -4,9 +4,10 @@ Project-specific guidance for coding agents working in `PersonalWorthTracker`.
 
 ## Current State
 
-- This repository is in the initial folder construction phase.
-- Product requirements, framework choice, architecture, and implementation details are intentionally pending.
-- Do not infer app behavior beyond the project name until project details are provided.
+- This repository contains an implemented MVP Python CLI for local-first monthly tracker workbook updates.
+- Product requirements, architecture notes, data contracts, and domain language live under `.agent/System/`.
+- The current workflow is CSV-first Nordea statement processing with PDF fallback, dry-run review artifacts, reviewed-decision import, optional Category Memory learning, and commit-to-copy workbook updates.
+- Real financial inputs, generated outputs, local category memory, and local agent tooling must stay out of Git.
 
 ## Repository Discovery
 
@@ -32,14 +33,12 @@ PersonalWorthTracker/
 │   │   ├── kanban.md
 │   │   └── YYYY-MM-DD-issue-NNN-short-title.md
 │   ├── System/
-│   ├── SOP/
-│   └── Reports/
+│   └── issues/
 ├── docs/
 ├── src/
 ├── tests/
 ├── scripts/
-├── config/
-└── assets/
+└── config/
 ```
 
 ## Local Issue Tracking
@@ -66,6 +65,7 @@ When using `to-issues`, publish approved slices in dependency order, keep `.agen
 - Keep changes scoped and reversible.
 - Prefer project conventions once they exist.
 - Do not add dependencies, frameworks, services, telemetry, or generated assets without a clear requirement.
+- Treat `.agents/` and `skills-lock.json` as local-only agent tooling unless the owner explicitly decides otherwise.
 - Preserve user work and avoid unrelated edits.
 - Update `.agent/Tasks/context.md` after significant decisions, implementation, or validation.
 

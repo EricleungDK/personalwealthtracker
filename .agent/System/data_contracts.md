@@ -84,6 +84,31 @@ Review decision columns:
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.
 
+The `Review Required` sheet should keep editable review decision columns close to the transaction description so the operator can classify rows without horizontal scanning. Less frequently edited workbook safety and audit columns can sit farther right. Preferred column order:
+
+- `transaction_id`
+- `date`
+- `description`
+- `amount`
+- `manual_category`
+- `new_parent_category`
+- `new_leaf_category`
+- `learn_to_memory`
+- `split_role`
+- `split_rule`
+- `source_transaction_id`
+- `allocated_amount`
+- `residual_amount`
+- `suggested_category`
+- `method`
+- `reason`
+- `workbook_action`
+- `target_cell`
+- `workbook_reason`
+- `merchant_identity`
+- `confidence`
+- `direction`
+
 Older reviewed workbooks without `new_parent_category` and `new_leaf_category` remain importable for existing manual category decisions.
 
 ## Category Registry
@@ -100,6 +125,30 @@ Parent/Section Row labels group child rows and may allow reviewed new leaf reque
 The registry rejects duplicate labels using case-insensitive trimmed matching while preserving exact display labels in YAML and reports.
 
 Category Memory learning validates against leaf categories. Learning skips Parent/Section Row labels, derived rows, missing categories, and other non-leaf targets. A newly registered leaf can be learned only after the reviewed second run has added it to the YAML registry.
+
+## Future Proxy Split Rules
+
+Proxy split rules should live in private local config when they contain personal intermediary names, family labels, or fixed amounts. A proxy split rule should define the transaction trigger, direction, conversion rate, fixed allocations, and whether residual review is required.
+
+Configured allocation targets must be Leaf Category Row labels from the Category Registry. Allocation base amounts are converted to tracker currency with the configured proxy split conversion rate before contributing to monthly statement totals.
+
+Proxy split allocation math should use decimal arithmetic. Each configured allocation is converted and rounded to 2 decimal places before residual calculation. Residual is calculated from the absolute source transaction amount minus the rounded allocation amounts. Residual amounts below 0.01 DKK are treated as zero; negative residual means the proxy split rule does not apply and the transaction remains review-only.
+
+A proxy split transfer whose tracker-currency amount is smaller than the configured allocation total should remain review-only. A transfer that exactly covers the configured allocations should produce only the configured allocation lines. A larger transfer should produce configured allocation lines plus a residual review line tied to the original source transaction.
+
+Residual review decisions apply to the current monthly run only and should not be imported into Category Memory, because the residual represents a leftover allocation rather than a stable merchant identity.
+
+Recurring proxy split rules should support a monthly application limit. The Revolut family split rule should default to at most one automatic application per reporting month; if multiple Revolut expense candidates match, the run should require review instead of auto-splitting all candidates.
+
+Categorized output should preserve the original source transaction as a proxy split source line for audit and should add separate proxy split allocation lines for the configured category allocations. The source line should not directly contribute to workbook totals; allocation lines contribute to their configured categories. If a residual amount exists, a residual review line should be emitted separately.
+
+Proxy split allocation and residual lines should use deterministic IDs derived from the source transaction ID, split rule name, and split role. For example:
+
+- `<source_transaction_id>:split:revolut_family_transfer:dad`
+- `<source_transaction_id>:split:revolut_family_transfer:mom`
+- `<source_transaction_id>:split:revolut_family_transfer:residual`
+
+Review workbook rows for proxy split allocation and residual lines should expose split context metadata such as source transaction ID, split rule, split role, source amount, allocated amount, and residual amount. These metadata columns support auditability and should be placed so they do not push the primary review decision columns away from the transaction description.
 
 ## Future Investment Valuation
 

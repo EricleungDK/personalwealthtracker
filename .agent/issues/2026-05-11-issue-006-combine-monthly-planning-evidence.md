@@ -5,7 +5,7 @@ title: Combine Monthly Planning Evidence
 status: blocked
 slice_type: AFK
 labels:
-  - ready-for-agent
+  - blocked
 parent: 2026-05-11-prd-monthly-tracker-workbook-updater-next-slices.md
 blocked_by:
   - ISSUE-001

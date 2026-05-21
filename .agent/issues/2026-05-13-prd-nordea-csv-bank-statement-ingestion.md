@@ -2,9 +2,9 @@
 type: prd
 id: PRD-2026-05-13-NORDEA-CSV
 title: Nordea CSV Bank Statement Ingestion
-status: ready
+status: done
 labels:
-  - ready-for-agent
+  - done
 created: 2026-05-13
 ---
 

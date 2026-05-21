@@ -5,7 +5,7 @@ title: Add Mastercard And CSV Merchant Categorization
 status: done
 slice_type: AFK
 labels:
-  - ready-for-agent
+  - done
 parent: 2026-05-13-prd-nordea-csv-bank-statement-ingestion.md
 blocked_by:
   - ISSUE-008

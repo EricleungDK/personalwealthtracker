@@ -38,3 +38,8 @@ No issues currently in progress.
 - [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
 - [ISSUE-019: Plan And Commit Workbook Leaf Row Insertion](./2026-05-20-issue-019-plan-and-commit-workbook-leaf-row-insertion.md)
 - [ISSUE-020: Gate Category Memory And Document Leaf Category Lifecycle](./2026-05-20-issue-020-gate-category-memory-and-document-leaf-category-lifecycle.md)
+- [ISSUE-021: Add Proxy Split Exact Allocation Dry Run](./2026-05-21-issue-021-add-proxy-split-exact-allocation-dry-run.md)
+- [ISSUE-022: Emit And Apply Residual Split Review Lines](./2026-05-21-issue-022-emit-and-apply-residual-split-review-lines.md)
+- [ISSUE-023: Add Proxy Split Trigger Safety Gates](./2026-05-21-issue-023-add-proxy-split-trigger-safety-gates.md)
+- [ISSUE-024: Reorder Review Workbook And Add Split Metadata](./2026-05-21-issue-024-reorder-review-workbook-and-add-split-metadata.md)
+- [ISSUE-025: Document Proxy Split Workflow And Local Config](./2026-05-21-issue-025-document-proxy-split-workflow-and-local-config.md)

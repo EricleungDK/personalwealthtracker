@@ -1,9 +1,9 @@
 ---
 type: prd
 title: Monthly Tracker Workbook Updater Next Slices
-status: ready
+status: blocked
 labels:
-  - ready-for-agent
+  - blocked
 created: 2026-05-11
 source: .agent/Tasks/context.md grilling session results
 ---

@@ -2,9 +2,9 @@
 type: prd
 id: PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK
 title: Manual Review Workbook And Category Feedback Loop
-status: ready
+status: done
 labels:
-  - ready-for-agent
+  - done
 created: 2026-05-16
 ---
 

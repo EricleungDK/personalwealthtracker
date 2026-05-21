@@ -4,10 +4,10 @@ Last updated: 2026-05-21
 
 ## Project State
 
-- Phase: MVP 1 implementation scaffold.
+- Phase: MVP 1 local CLI implementation.
 - Framework: Python local CLI.
 - Package manager: uv with `pyproject.toml`.
-- Product requirements: Defined from `personal_wealth_tracker_project_case_background.md`.
+- Product requirements: Maintained in `.agent/System/product_requirements.md`; original background planning notes have been removed from the repo.
 - Implementation status: CSV-first monthly dry-run, review workbook decisions, Category Memory learning with YAML leaf validation, safe copied-workbook commit flow, YAML-backed category registry, reviewed new leaf registration, workbook leaf row insertion, and updated operator docs implemented.
 
 ## Active Tasks
@@ -18,6 +18,7 @@ Last updated: 2026-05-21
 | MVP1-001 | COMPLETE | Codex | Implemented local Nordea PDF parsing, deterministic categorization, safe workbook planning/writing, reports, and tests. |
 | PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | COMPLETE | Codex | Implemented stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
 | PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW | COMPLETE | Codex | Implemented YAML-backed parent/leaf category registry, new leaf category requests during review, registry updates from reviewed runs, workbook row insertion, Category Memory gating, and documentation updates. |
+| PRD-2026-05-21-PROXY-SPLIT-TRANSFER-RULES | COMPLETE | Codex | Implemented proxy split transfers, Revolut family allocations, residual review lines, trigger safety gates, split metadata, review workbook column order, docs, and tests. |
 
 ## Active Delegations
 
@@ -103,6 +104,20 @@ Last updated: 2026-05-21
 | 2026-05-20 | Allow the reviewed second run to register validated new leaf categories in YAML. | The user wants YAML updated by the second review pass so future runs know the category; workbook financial values remain governed by existing commit safety. |
 | 2026-05-20 | Insert missing workbook leaf rows only through planned structure changes and copied-workbook commit. | The tracker workbook should mirror the registry, but row insertion and formula updates must be reviewable and safe. |
 | 2026-05-20 | Category Memory may learn newly added categories only after leaf registry validation succeeds. | Memory must not point to missing, parent, derived, or otherwise invalid category targets. |
+| 2026-05-21 | Treat a single Revolut top-up used for parent transfers as a Proxy Split Transfer candidate. | One Nordea transaction may intentionally back multiple leaf category allocations, while any remaining amount should stay review-only until separately categorized. |
+| 2026-05-21 | Use a configured Proxy Split Conversion Rate for fixed Revolut family allocations. | The 0.82 rate is user-maintained and reproducible, not inferred from Revolut behavior or fetched live. |
+| 2026-05-21 | Store fixed family split amounts as source-currency Proxy Split Base Amounts. | Dad is 8000 and Mom is 4000 before applying the 0.82 proxy split conversion rate; DKK allocations are written/reported after conversion. |
+| 2026-05-21 | Require proxy split transfers to cover all configured fixed allocations before splitting. | A Revolut expense below the 9840 DKK Mom/Dad allocation total should remain review-only rather than partially allocating family transfers. |
+| 2026-05-21 | Treat exact proxy split transfer matches as fully allocated. | A 9840 DKK Revolut expense produces Dad 6560 DKK and Mom 3280 DKK with no residual review row. |
+| 2026-05-21 | Represent larger proxy split transfers with a residual review line. | A Revolut expense larger than 9840 DKK should allocate Dad/Mom first and expose the leftover as a separate review-required line tied to the source transaction. |
+| 2026-05-21 | Treat configured Dad/Mom proxy split allocations as deterministic category matches. | Once configured, Dad 6560 DKK and Mom 3280 DKK do not need monthly manual review, but workbook writes still obey normal safety checks. |
+| 2026-05-21 | Keep concrete Revolut family split rules in private local config. | The feature shape can be tracked, but personal intermediary names, fixed family amounts, and exact triggers belong in ignored `config/rules.local.yaml`. |
+| 2026-05-21 | Do not learn residual proxy split review decisions into Category Memory. | Residual amounts are leftover pieces of a composite transfer, so their reviewed category should apply to the current run only. |
+| 2026-05-21 | Limit recurring Revolut family proxy split automation to one application per reporting month. | If multiple Revolut expense candidates cover the fixed allocation total, the run should require review instead of double-counting Dad and Mom. |
+| 2026-05-21 | Preserve proxy split source lines while adding counted allocation lines. | Categorized output should keep the original Revolut transaction for audit, exclude it from direct workbook totals, and add Dad/Mom plus optional residual split lines. |
+| 2026-05-21 | Derive proxy split line IDs from the source transaction ID, split rule, and split role. | Residual review decisions need stable identifiers without pretending split lines are separate bank transactions. |
+| 2026-05-21 | Keep review decision columns close to transaction description in the review workbook. | Preferred order is transaction context first, then `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory`, with split/workbook diagnostics farther right. |
+| 2026-05-21 | Use decimal two-place rounding for proxy split allocation math. | Fixed allocations are rounded before residual calculation; residual below 0.01 DKK is zero, and negative residual means the rule does not apply. |
 
 ## Open Questions
 
@@ -215,7 +230,7 @@ These backlog items are not active tasks yet.
 - 2026-05-11: Resolved cross-month refund handling: matched refunds affect the reporting month where they appear and do not retroactively adjust prior workbook periods.
 - 2026-05-11: Resolved reimbursement scope: keep handling simple and aligned to the workbook; use `Expense claims` only when deterministically identified, without modelling offsets.
 - 2026-05-11: Ended the `.agent` documentation grilling session and recorded its results/backlog in a separate planning block without changing `Active Tasks`.
-- 2026-05-11: Created local PRD issue `.agent/issues/2026-05-11-prd-monthly-tracker-workbook-updater-next-slices.md` from the grilling session, labelled `ready-for-agent`.
+- 2026-05-11: Created local PRD issue `.agent/issues/2026-05-11-prd-monthly-tracker-workbook-updater-next-slices.md` from the grilling session and placed it in the ready workflow at the time.
 - 2026-05-11: Split the PRD into seven local implementation issues and a kanban index under `.agent/issues/`.
 - 2026-05-11: Created EOD summary in `docs/Daily_blogpost/2026-05-11.md`.
 - 2026-05-12: Implemented `ISSUE-001` and `ISSUE-002` with TDD worker agents; full test suite passed with 47 tests.
@@ -264,3 +279,8 @@ These backlog items are not active tasks yet.
 - 2026-05-21: Implemented `ISSUE-018` reviewed-run new leaf registration: reviewed decisions can validate `new_parent_category`/`new_leaf_category`, reject conflicts, invalid parents, and duplicate labels, update `config/categories.yaml`, classify current-month transactions to the new leaf, and report/audit category registry additions without workbook commit mode; full test suite passed with 120 tests.
 - 2026-05-21: Implemented `ISSUE-019` workbook leaf row insertion: planner now creates `insert_leaf_category` structure changes for registered leaves missing from the workbook, copied-workbook commit inserts the row under the parent using sibling formatting, safe parent `SUM` formulas expand to include the new row, ambiguous formulas block the structure commit, and original workbooks remain unchanged; full test suite passed with 123 tests.
 - 2026-05-21: Implemented `ISSUE-020` Category Memory gating and leaf lifecycle documentation: `learn-category-memory` validates targets against YAML leaf categories, skips parent/derived/missing/non-leaf categories, newly registered leaves can be learned after registry validation, reports distinguish category registry additions, and monthly workflow, project overview, domain language, architecture, data contracts, issue tracker, and documentation tests now cover the parent/leaf lifecycle; full test suite passed with 125 tests.
+- 2026-05-21: Started grilling a Proxy Split Transfer workflow for Revolut top-ups that include fixed Mom/Dad allocations plus a residual amount that remains review-only until categorized.
+- 2026-05-21: Created local PRD `.agent/issues/2026-05-21-prd-proxy-split-transfer-rules.md` and local issues `ISSUE-021` through `ISSUE-025`; `ISSUE-021` is ready for agent work and the remaining proxy split slices are dependency-blocked.
+
+- 2026-05-21: Implemented `ISSUE-021` through `ISSUE-025` proxy split transfer rules: private local config loading/validation, exact Dad/Mom allocation dry run, residual review lines, underfunded/duplicate safety gates, review workbook column reordering and split metadata, operator docs, and local config example; full test suite passed with 135 tests.
+- 2026-05-21: Cleaned obsolete planning/background files, marked `.agents/` and `skills-lock.json` as local-only tooling, and refreshed agent/product documentation to match the implemented CSV-first CLI.

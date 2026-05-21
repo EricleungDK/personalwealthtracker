@@ -76,6 +76,50 @@ _Avoid_: Retroactive adjustment, prior-month correction
 An identifiable reimbursement-like cashflow that maps to the tracker workbook's existing expense claim row.
 _Avoid_: Ledger offset, inferred refund
 
+**Proxy Split Transfer**:
+A single bank-statement transfer to an intermediary account or service that is used as source evidence for multiple underlying tracker category allocations.
+_Avoid_: Itemized ledger transaction, ordinary internal transfer
+
+**Proxy Split Allocation**:
+One configured category allocation carved out of a proxy split transfer.
+_Avoid_: Separate bank transaction, inferred category guess
+
+**Proxy Split Source Line**:
+The original bank-statement transaction retained for audit after proxy split allocation, but excluded from direct workbook totals.
+_Avoid_: Counted expense row, discarded source evidence
+
+**Proxy Split Allocation Line**:
+A categorized output line for one configured allocation carved out of a proxy split source line.
+_Avoid_: Original bank transaction, hidden calculation
+
+**Proxy Split Line ID**:
+A deterministic identifier for a proxy split allocation or residual line, derived from the source transaction ID, split rule, and split role.
+_Avoid_: Random review row ID, fake bank transaction ID
+
+**Proxy Split Conversion Rate**:
+A user-maintained fixed conversion rate used to convert configured proxy split allocation amounts into tracker currency.
+_Avoid_: Live exchange rate, inferred Revolut rate
+
+**Proxy Split Base Amount**:
+A configured source-currency amount in a proxy split allocation before applying the proxy split conversion rate.
+_Avoid_: Tracker-currency value, inferred residual
+
+**Residual Split Amount**:
+The remaining portion of a proxy split transfer after configured or reviewed allocations have been carved out.
+_Avoid_: Hidden auto-category, ignored cash movement
+
+**Residual Review Line**:
+A review-required line representing the residual split amount from a proxy split transfer, linked to the original source transaction.
+_Avoid_: Untracked remainder, separate source transaction
+
+**Proxy Split Trigger**:
+The configured transaction match criteria and minimum tracker-currency amount required before a proxy split transfer can allocate fixed category amounts.
+_Avoid_: Partial split, weak merchant guess
+
+**Monthly Proxy Split Limit**:
+A rule limit that prevents a recurring proxy split from being applied more than once in the same reporting month without review.
+_Avoid_: Duplicate family allocation, silent repeated split
+
 **Deterministic Category Match**:
 A category assignment made by an explicit historical, recurring, amount/date, or keyword rule.
 _Avoid_: Guess, fuzzy match
@@ -226,6 +270,19 @@ _Avoid_: Credit card settlement, liability payment
 - A **Same-Month Refund** can reduce a **Statement Total** only when it has a deterministic category match.
 - A **Later-Month Refund** is recorded in the reporting month where it appears and does not reopen prior months.
 - An **Expense Claim** can map to the existing `Expense claims` row when deterministically identified.
+- A **Proxy Split Transfer** may allocate one source transaction across multiple **Leaf Category Row** targets when the split is explicit.
+- A **Proxy Split Source Line** should remain visible for audit while being excluded from direct workbook totals.
+- A **Proxy Split Allocation Line** contributes to workbook planning through its target **Leaf Category Row**.
+- A **Proxy Split Line ID** lets review decisions target split allocations and residuals without pretending they are separate bank transactions.
+- A **Proxy Split Allocation** contributes to its configured **Leaf Category Row** while preserving the original source transaction reference.
+- A configured **Proxy Split Allocation** is a **Deterministic Category Match** for its target **Leaf Category Row**.
+- A **Proxy Split Transfer** may use a configured **Proxy Split Conversion Rate** to calculate tracker-currency allocations.
+- A **Proxy Split Base Amount** is converted into the **Tracker Currency** before it contributes to a **Statement Total**.
+- A **Proxy Split Trigger** must match the intermediary transaction and the transaction amount must cover all configured allocations.
+- A **Monthly Proxy Split Limit** can require review when multiple candidate transactions match the same proxy split rule in one reporting month.
+- A **Residual Split Amount** remains review-only unless the user supplies a separate category decision.
+- A **Residual Review Line** should use the same source transaction with a split-specific identifier so the user can categorize the leftover amount separately.
+- A **Residual Review Line** should not create **Category Memory** because the residual is a leftover allocation, not a stable merchant identity.
 - A **Pre-Filled Recurring Value** is a kind of **Manual Workbook Value** and remains untouched by default.
 - A **Deterministic Category Match** can support an automatic write only when all workbook safety checks also pass.
 - A **Review-Only Transaction** can appear in reports but does not contribute to an automatic workbook write.
@@ -391,6 +448,8 @@ _Avoid_: Credit card settlement, liability payment
 - "calculated" does not mean authoritative; resolved rule is that a **Statement Total** is advisory when a **Manual Workbook Value** already exists.
 - "statement" is overloaded; resolved terms are **Bank Statement** for cash movement and **Investment Statement** for holdings or asset values.
 - "transfer" is not automatically an expense; resolved term is **Internal Transfer** when cash moves between owned accounts.
+- "split transfer" means a **Proxy Split Transfer** only when one source transaction intentionally backs multiple category allocations.
+- "fixed conversion rate" for a split transfer means a configured **Proxy Split Conversion Rate**, not a live or inferred rate.
 - "credit card payment" means **Credit Card Settlement**, not the underlying **Card Purchase** expenses.
 - "match" means a **Deterministic Category Match** when deciding whether an automatic write is allowed.
 - "auto-learning" means creating **Category Memory** from a **Confirmed Review Decision**, not self-training from automatic matches.

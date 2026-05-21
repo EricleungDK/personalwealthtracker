@@ -5,7 +5,7 @@ title: Stabilize Transaction IDs For Review Decisions
 status: done
 slice_type: AFK
 labels:
-  - ready-for-agent
+  - done
 parent: 2026-05-16-prd-manual-review-workbook-and-category-feedback-loop.md
 blocked_by: []
 created: 2026-05-16

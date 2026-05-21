@@ -170,11 +170,14 @@ def _import_review_workbook_decisions(
             if not _is_confirmed(row.get("learn_to_memory", "")):
                 skipped_unlearned_count += 1
                 continue
+            transaction_id = _required(row, "transaction_id", row_number)
+            if _is_proxy_split_residual_id(transaction_id):
+                skipped_unlearned_count += 1
+                continue
             if manual_category not in learnable_categories:
                 skipped_non_learnable_count += 1
                 continue
 
-            transaction_id = _required(row, "transaction_id", row_number)
             description = _required(row, "description", row_number)
             _upsert_mapping(
                 mappings,
@@ -202,6 +205,10 @@ def _import_review_workbook_decisions(
         skipped_unlearned_count=skipped_unlearned_count,
         skipped_non_learnable_count=skipped_non_learnable_count,
     )
+
+
+def _is_proxy_split_residual_id(transaction_id: str) -> bool:
+    return ":split:" in transaction_id and transaction_id.rsplit(":", 1)[-1] == "residual"
 
 
 def _load_review_workbook_without_extension_warning(path: Path):
