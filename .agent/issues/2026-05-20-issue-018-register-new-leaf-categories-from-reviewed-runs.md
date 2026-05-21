@@ -2,13 +2,12 @@
 type: issue
 id: ISSUE-018
 title: Register New Leaf Categories From Reviewed Runs
-status: blocked
+status: ready
 slice_type: AFK
 labels:
   - ready-for-agent
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
-blocked_by:
-  - ISSUE-017
+blocked_by: []
 created: 2026-05-20
 ---
 
@@ -38,4 +37,4 @@ Allow a reviewed second run to validate new leaf category requests from the revi
 
 ## Blocked By
 
-- [ISSUE-017: Add Leaf Category Review Workbook Controls](./2026-05-20-issue-017-add-leaf-category-review-workbook-controls.md)
+None - can start immediately.

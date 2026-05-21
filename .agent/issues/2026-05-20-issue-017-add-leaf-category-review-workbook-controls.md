@@ -2,7 +2,7 @@
 type: issue
 id: ISSUE-017
 title: Add Leaf Category Review Workbook Controls
-status: ready
+status: done
 slice_type: AFK
 labels:
   - ready-for-agent
@@ -23,15 +23,15 @@ Extend the manual review workbook so existing category decisions and missing-cat
 
 ## Acceptance Criteria
 
-- [ ] `Review Required` includes optional `new_parent_category` and `new_leaf_category` columns.
-- [ ] Existing reviewed workbooks without the new columns remain importable.
-- [ ] `manual_category` dropdown values are existing leaf category rows.
-- [ ] `new_parent_category` dropdown values are parent rows that allow new leaf children.
-- [ ] Parent or section rows remain visible in category context with status metadata but are not valid `manual_category` targets.
-- [ ] `Category Options` exposes parent/leaf metadata and whether new children are allowed.
-- [ ] `new_leaf_category` preserves user-entered display text.
-- [ ] Review workbook metadata remains compatible with the reviewed-decision import flow.
-- [ ] Tests cover headers, dropdown ranges, category option metadata, old workbook compatibility, and parent/leaf separation.
+- [x] `Review Required` includes optional `new_parent_category` and `new_leaf_category` columns.
+- [x] Existing reviewed workbooks without the new columns remain importable.
+- [x] `manual_category` dropdown values are existing leaf category rows.
+- [x] `new_parent_category` dropdown values are parent rows that allow new leaf children.
+- [x] Parent or section rows remain visible in category context with status metadata but are not valid `manual_category` targets.
+- [x] `Category Options` exposes parent/leaf metadata and whether new children are allowed.
+- [x] `new_leaf_category` preserves user-entered display text.
+- [x] Review workbook metadata remains compatible with the reviewed-decision import flow.
+- [x] Tests cover headers, dropdown ranges, category option metadata, old workbook compatibility, and parent/leaf separation.
 
 ## Blocked By
 

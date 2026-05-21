@@ -40,6 +40,8 @@ class WorkbookCategoryOption:
     category: str
     learnable: bool
     status: str
+    category_type: str
+    allows_new_children: bool
 
 
 def plan_updates(
@@ -114,18 +116,44 @@ def workbook_category_options(
         category = _row_category(sheet, row, config)
         if category is None:
             continue
-        learnable = category not in DERIVED_WORKBOOK_ROWS and category not in config.fixed_rows
-        status = _category_option_status(sheet, row, target_column, category, config)
+        category_type = _category_option_type(category, config)
+        learnable = (
+            category_type == "leaf"
+            and category not in DERIVED_WORKBOOK_ROWS
+            and category not in config.fixed_rows
+        )
+        allows_new_children = config.category_registry.allows_new_leaf_children(category)
+        status = _category_option_status(
+            sheet,
+            row,
+            target_column,
+            category,
+            config,
+            category_type,
+        )
         options.append(
             WorkbookCategoryOption(
                 row_number=row,
                 category=category,
                 learnable=learnable,
                 status=status,
+                category_type=category_type,
+                allows_new_children=allows_new_children,
             )
         )
     workbook.close()
     return options
+
+
+def _category_option_type(category: str, config: AppConfig) -> str:
+    registered_type = config.category_registry.category_type_by_label.get(category)
+    if registered_type:
+        return registered_type
+    if category in DERIVED_WORKBOOK_ROWS:
+        return "derived"
+    if config.category_registry.category_type_by_label:
+        return "unregistered"
+    return "leaf"
 
 
 def _category_option_status(
@@ -134,9 +162,14 @@ def _category_option_status(
     target_column: int | None,
     category: str,
     config: AppConfig,
+    category_type: str,
 ) -> str:
-    if category in DERIVED_WORKBOOK_ROWS:
+    if category_type == "parent":
+        return "parent/section row; not a manual transaction category"
+    if category_type == "derived" or category in DERIVED_WORKBOOK_ROWS:
         return "derived/formula-owned; not learnable or writable"
+    if category_type == "unregistered":
+        return "not in category registry; not learnable or writable"
     if category in config.fixed_rows:
         return "fixed/protected; not learnable or writable"
     if target_column is None:

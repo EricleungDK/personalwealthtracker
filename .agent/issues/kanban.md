@@ -7,13 +7,12 @@ updated: 2026-05-20
 
 ## Ready For Agent
 
-- [ISSUE-017: Add Leaf Category Review Workbook Controls](./2026-05-20-issue-017-add-leaf-category-review-workbook-controls.md)
+- [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
 
 ## Blocked
 
 - [ISSUE-005: Add Investment Statement Evidence](./2026-05-11-issue-005-add-investment-statement-evidence.md)
 - [ISSUE-006: Combine Monthly Planning Evidence](./2026-05-11-issue-006-combine-monthly-planning-evidence.md)
-- [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
 - [ISSUE-019: Plan And Commit Workbook Leaf Row Insertion](./2026-05-20-issue-019-plan-and-commit-workbook-leaf-row-insertion.md)
 - [ISSUE-020: Gate Category Memory And Document Leaf Category Lifecycle](./2026-05-20-issue-020-gate-category-memory-and-document-leaf-category-lifecycle.md)
 
@@ -37,3 +36,4 @@ No issues currently in progress.
 - [ISSUE-014: Apply Monthly Review Decisions](./2026-05-16-issue-014-apply-monthly-review-decisions.md)
 - [ISSUE-015: Learn Category Memory From Review Workbook](./2026-05-16-issue-015-learn-category-memory-from-review-workbook.md)
 - [ISSUE-016: Introduce YAML Category Registry](./2026-05-20-issue-016-introduce-yaml-category-registry.md)
+- [ISSUE-017: Add Leaf Category Review Workbook Controls](./2026-05-20-issue-017-add-leaf-category-review-workbook-controls.md)
