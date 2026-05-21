@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from openpyxl import Workbook, load_workbook
 
-from personal_wealth_tracker.config import AppConfig
+from personal_wealth_tracker.config import AppConfig, CategoryRegistry
 from personal_wealth_tracker.models import (
     CategorizedTransaction,
     TrackerUpdate,
@@ -205,6 +205,8 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "target_cell",
             "workbook_reason",
             "manual_category",
+            "new_parent_category",
+            "new_leaf_category",
             "learn_to_memory",
         ]
         assert [review_sheet.cell(row=2, column=column).value for column in range(1, 14)] == [
@@ -224,6 +226,8 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         ]
         assert review_sheet["N2"].value is None
         assert review_sheet["O2"].value is None
+        assert review_sheet["P2"].value is None
+        assert review_sheet["Q2"].value is None
 
         audit_sheet = workbook["All Transactions"]
         assert [cell.value for cell in audit_sheet[1]] == [
@@ -252,12 +256,18 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "category",
             "learnable",
             "status",
+            "category_type",
+            "allows_new_children",
+            "manual_category_option",
+            "new_parent_category_option",
         ]
         options = {
             options_sheet.cell(row=row, column=2).value: (
                 options_sheet.cell(row=row, column=1).value,
                 options_sheet.cell(row=row, column=3).value,
                 options_sheet.cell(row=row, column=4).value,
+                options_sheet.cell(row=row, column=5).value,
+                options_sheet.cell(row=row, column=6).value,
             )
             for row in range(2, options_sheet.max_row + 1)
         }
@@ -267,7 +277,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "Fixed Category",
             "Manual Category",
         ]
-        assert options["Food& Drinks (monthly)"] == (5, True, "write eligible")
+        assert options["Food& Drinks (monthly)"] == (5, True, "write eligible", "leaf", False)
         assert "derived" in options["Income (net)"][2]
         assert options["Income (net)"][1] is False
         assert "fixed" in options["Fixed Category"][2]
@@ -277,14 +287,15 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
 
         validations = tuple(review_sheet.data_validations.dataValidation)
         assert any(
-            validation.formula1 == "'Category Options'!$B$2:$B$5"
+            validation.formula1 == "'Category Options'!$G$2:$G$4"
             and "N2" in validation.sqref
             for validation in validations
         )
+        assert not any("P2" in validation.sqref for validation in validations)
         assert any(
             validation.formula1 == '"yes,no"'
             and validation.allow_blank
-            and "O2" in validation.sqref
+            and "Q2" in validation.sqref
             for validation in validations
         )
 
@@ -299,6 +310,119 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         assert metadata["statement_parser"] == "nordea-csv"
         assert metadata["transaction_id_scheme"] == TRANSACTION_ID_SCHEME_VERSION
         assert metadata["generated_timestamp"]
+    finally:
+        workbook.close()
+
+
+def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path):
+    tracker = tmp_path / "tracker.xlsx"
+    _create_registry_review_tracker(tracker)
+
+    categorized = [
+        _categorized(
+            "tx-review",
+            "UNKNOWN SHOP",
+            "-42.50",
+            None,
+            "No historical or keyword rule matched.",
+            review_required=True,
+            method="unmatched",
+            confidence=0.0,
+        )
+    ]
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        statement_parser="nordea-csv",
+        tracker_path=tracker,
+        categorized=categorized,
+        updates=[],
+        workbook_config=_config(
+            category_registry=CategoryRegistry(
+                leaf_categories=("Food& Drinks (monthly)", "Apple Cloud"),
+                parent_categories=("Living expenses", "Services", "Income (net)"),
+                new_leaf_parent_categories=("Living expenses", "Services"),
+                children_by_parent={
+                    "Living expenses": ("Food& Drinks (monthly)",),
+                    "Services": ("Apple Cloud",),
+                },
+                category_type_by_label={
+                    "Living expenses": "parent",
+                    "Food& Drinks (monthly)": "leaf",
+                    "Services": "parent",
+                    "Apple Cloud": "leaf",
+                    "Income (net)": "derived",
+                },
+            )
+        ),
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        review_sheet = workbook["Review Required"]
+        review_headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        assert "new_parent_category" in review_headers
+        assert "new_leaf_category" in review_headers
+
+        options_sheet = workbook["Category Options"]
+        option_headers = {
+            cell.value: index for index, cell in enumerate(options_sheet[1], start=1)
+        }
+        assert "category_type" in option_headers
+        assert "allows_new_children" in option_headers
+        assert "manual_category_option" in option_headers
+        assert "new_parent_category_option" in option_headers
+
+        context = {
+            options_sheet.cell(row=row, column=2).value: {
+                "category_type": options_sheet.cell(
+                    row=row, column=option_headers["category_type"]
+                ).value,
+                "allows_new_children": options_sheet.cell(
+                    row=row, column=option_headers["allows_new_children"]
+                ).value,
+            }
+            for row in range(2, options_sheet.max_row + 1)
+            if options_sheet.cell(row=row, column=2).value
+        }
+        assert context["Living expenses"] == {
+            "category_type": "parent",
+            "allows_new_children": True,
+        }
+        assert context["Food& Drinks (monthly)"]["category_type"] == "leaf"
+        assert context["Food& Drinks (monthly)"]["allows_new_children"] is False
+        assert context["Income (net)"]["category_type"] == "derived"
+        assert context["Income (net)"]["allows_new_children"] is False
+
+        manual_options = [
+            options_sheet.cell(row=row, column=option_headers["manual_category_option"]).value
+            for row in range(2, options_sheet.max_row + 1)
+            if options_sheet.cell(row=row, column=option_headers["manual_category_option"]).value
+        ]
+        parent_options = [
+            options_sheet.cell(row=row, column=option_headers["new_parent_category_option"]).value
+            for row in range(2, options_sheet.max_row + 1)
+            if options_sheet.cell(row=row, column=option_headers["new_parent_category_option"]).value
+        ]
+        assert manual_options == ["Food& Drinks (monthly)", "Apple Cloud"]
+        assert parent_options == ["Living expenses", "Services"]
+
+        validations = tuple(review_sheet.data_validations.dataValidation)
+        assert any(
+            validation.formula1 == "'Category Options'!$G$2:$G$3"
+            and "N2" in validation.sqref
+            for validation in validations
+        )
+        assert any(
+            validation.formula1 == "'Category Options'!$H$2:$H$3"
+            and "O2" in validation.sqref
+            for validation in validations
+        )
+        assert not any("P2" in validation.sqref for validation in validations)
     finally:
         workbook.close()
 
@@ -524,7 +648,25 @@ def _create_review_tracker(path) -> None:
     workbook.close()
 
 
-def _config(fixed_rows: frozenset[str] = frozenset()) -> AppConfig:
+def _create_registry_review_tracker(path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    sheet["C2"] = 2026
+    sheet["C3"] = "May"
+    sheet["B5"] = "Living expenses"
+    sheet["B6"] = "Food& Drinks (monthly)"
+    sheet["B7"] = "Services"
+    sheet["B8"] = "Apple Cloud"
+    sheet["B9"] = "Income (net)"
+    workbook.save(path)
+    workbook.close()
+
+
+def _config(
+    fixed_rows: frozenset[str] = frozenset(),
+    category_registry: CategoryRegistry = CategoryRegistry(),
+) -> AppConfig:
     return AppConfig(
         sheet_name="Net worth",
         tracker_currency="DKK",
@@ -542,4 +684,5 @@ def _config(fixed_rows: frozenset[str] = frozenset()) -> AppConfig:
         historical_mappings={},
         rules=(),
         fixed_rows=fixed_rows,
+        category_registry=category_registry,
     )

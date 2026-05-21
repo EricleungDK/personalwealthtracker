@@ -267,3 +267,4 @@ These backlog items are not active tasks yet.
 - 2026-05-20: Split the category registry PRD into local issues `ISSUE-016` through `ISSUE-020` and updated `.agent/issues/kanban.md`.
 - 2026-05-20: Created EOD summary in `docs/Daily_blogpost/2026-05-20.md`.
 - 2026-05-21: Implemented `ISSUE-016` YAML category registry foundation: config now supports tree-shaped parent/leaf categories, allowed new-leaf parents, duplicate detection, flat-category compatibility, explicit aliases, and migrated `config/categories.yaml` to the registry schema; full test suite passed with 115 tests.
+- 2026-05-21: Implemented `ISSUE-017` leaf category review workbook controls: review workbooks now include `new_parent_category` and `new_leaf_category`, `manual_category` dropdowns use registry leaf rows, parent dropdowns use allowed new-leaf parents, `Category Options` exposes parent/leaf metadata, and old reviewed workbooks remain importable; full test suite passed with 116 tests.

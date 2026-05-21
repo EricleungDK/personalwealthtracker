@@ -382,6 +382,8 @@ def _write_review_workbook(
         "target_cell",
         "workbook_reason",
         "manual_category",
+        "new_parent_category",
+        "new_leaf_category",
         "learn_to_memory",
     ]
     audit_headers = [
@@ -398,7 +400,16 @@ def _write_review_workbook(
         "review_required",
         "reason",
     ]
-    options_headers = ["row_number", "category", "learnable", "status"]
+    options_headers = [
+        "row_number",
+        "category",
+        "learnable",
+        "status",
+        "category_type",
+        "allows_new_children",
+        "manual_category_option",
+        "new_parent_category_option",
+    ]
     review_sheet.append(review_headers)
     audit_sheet.append(audit_headers)
     options_sheet.append(options_headers)
@@ -440,22 +451,72 @@ def _write_review_workbook(
                     update.reason if update else None,
                     None,
                     None,
+                    None,
+                    None,
                 ]
             )
 
-    for option in category_options:
-        options_sheet.append([option.row_number, option.category, option.learnable, option.status])
+    manual_category_options = [
+        option.category for option in category_options if option.category_type == "leaf"
+    ]
+    new_parent_category_options = [
+        option.category for option in category_options if option.allows_new_children
+    ]
+    option_rows = max(
+        len(category_options),
+        len(manual_category_options),
+        len(new_parent_category_options),
+    )
+    for index in range(option_rows):
+        if index < len(category_options):
+            option = category_options[index]
+            context_values = [
+                option.row_number,
+                option.category,
+                option.learnable,
+                option.status,
+                option.category_type,
+                option.allows_new_children,
+            ]
+        else:
+            context_values = [None, None, None, None, None, None]
+        options_sheet.append(
+            [
+                *context_values,
+                manual_category_options[index] if index < len(manual_category_options) else None,
+                new_parent_category_options[index]
+                if index < len(new_parent_category_options)
+                else None,
+            ]
+        )
 
-    if category_options:
-        option_end_row = len(category_options) + 1
+    if manual_category_options:
+        option_end_row = len(manual_category_options) + 1
+        option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
         manual_category_validation = DataValidation(
             type="list",
-            formula1=f"'Category Options'!$B$2:$B${option_end_row}",
+            formula1=f"'Category Options'!${option_column}$2:${option_column}${option_end_row}",
             allow_blank=True,
         )
         review_sheet.add_data_validation(manual_category_validation)
         manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
         manual_category_validation.add(f"{manual_category_column}2:{manual_category_column}1048576")
+
+    if new_parent_category_options:
+        option_end_row = len(new_parent_category_options) + 1
+        option_column = get_column_letter(options_headers.index("new_parent_category_option") + 1)
+        new_parent_category_validation = DataValidation(
+            type="list",
+            formula1=f"'Category Options'!${option_column}$2:${option_column}${option_end_row}",
+            allow_blank=True,
+        )
+        review_sheet.add_data_validation(new_parent_category_validation)
+        new_parent_category_column = get_column_letter(
+            review_headers.index("new_parent_category") + 1
+        )
+        new_parent_category_validation.add(
+            f"{new_parent_category_column}2:{new_parent_category_column}1048576"
+        )
 
     learn_validation = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
     review_sheet.add_data_validation(learn_validation)
