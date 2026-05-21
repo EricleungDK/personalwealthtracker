@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,24 @@ class RecurringRule:
 
 
 @dataclass(frozen=True)
+class CategoryRegistry:
+    leaf_categories: tuple[str, ...] = ()
+    parent_categories: tuple[str, ...] = ()
+    new_leaf_parent_categories: tuple[str, ...] = ()
+    children_by_parent: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    category_type_by_label: dict[str, str] = field(default_factory=dict)
+
+    def is_leaf_category(self, label: str) -> bool:
+        return label in self.leaf_categories
+
+    def is_parent_category(self, label: str) -> bool:
+        return label in self.parent_categories
+
+    def allows_new_leaf_children(self, label: str) -> bool:
+        return label in self.new_leaf_parent_categories
+
+
+@dataclass(frozen=True)
 class AppConfig:
     sheet_name: str
     tracker_currency: str
@@ -46,6 +64,7 @@ class AppConfig:
     fixed_rows: frozenset[str]
     carry_forward_rows: frozenset[str] = frozenset()
     recurring_rules: tuple[RecurringRule, ...] = ()
+    category_registry: CategoryRegistry = field(default_factory=CategoryRegistry)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -79,6 +98,7 @@ def load_config(config_dir: Path) -> AppConfig:
     statement = settings.get("statement", {})
     thresholds = settings.get("confidence_thresholds", {})
     writer = settings.get("writer", {})
+    category_registry = _category_registry(categories)
 
     rules = tuple(
         Rule(
@@ -115,8 +135,9 @@ def load_config(config_dir: Path) -> AppConfig:
         reject_threshold=float(thresholds.get("reject_below", 0.60)),
         overwrite_fixed_rows=bool(writer.get("overwrite_fixed_rows", False)),
         highlight_auto_filled_cells=bool(writer.get("highlight_auto_filled_cells", False)),
-        categories=tuple(str(category) for category in categories.get("categories", [])),
+        categories=category_registry.leaf_categories,
         aliases={str(k): str(v) for k, v in categories.get("aliases", {}).items()},
+        category_registry=category_registry,
         historical_mappings={
             str(k): str(v) for k, v in rules_doc.get("historical_mappings", {}).items()
         },
@@ -127,6 +148,135 @@ def load_config(config_dir: Path) -> AppConfig:
         ),
         recurring_rules=recurring_rules,
     )
+
+
+def _category_registry(doc: dict[str, Any]) -> CategoryRegistry:
+    if "category_registry" in doc:
+        return _tree_category_registry(doc["category_registry"])
+    return _flat_category_registry(doc.get("categories", []))
+
+
+def _flat_category_registry(items: Any) -> CategoryRegistry:
+    if not isinstance(items, list):
+        raise ValueError("Expected categories to be a list.")
+
+    seen: dict[str, str] = {}
+    leaves: list[str] = []
+    type_by_label: dict[str, str] = {}
+    for item in items:
+        label = str(item)
+        _record_category_label(label, seen)
+        leaves.append(label)
+        type_by_label[label] = "leaf"
+
+    return CategoryRegistry(
+        leaf_categories=tuple(leaves),
+        category_type_by_label=type_by_label,
+    )
+
+
+def _tree_category_registry(items: Any) -> CategoryRegistry:
+    if not isinstance(items, list):
+        raise ValueError("Expected category_registry to be a list.")
+
+    seen: dict[str, str] = {}
+    leaves: list[str] = []
+    parents: list[str] = []
+    new_leaf_parents: list[str] = []
+    children_by_parent: dict[str, tuple[str, ...]] = {}
+    type_by_label: dict[str, str] = {}
+
+    for item in items:
+        label = _category_label(item)
+        node_type = _category_node_type(item)
+        _record_category_label(label, seen)
+
+        if node_type == "leaf":
+            leaves.append(label)
+            type_by_label[label] = "leaf"
+            continue
+
+        parents.append(label)
+        type_by_label[label] = node_type
+        child_labels = tuple(_tree_child_labels(item, seen, leaves, type_by_label))
+        if child_labels:
+            children_by_parent[label] = child_labels
+        if node_type != "derived" and _allows_new_children(item):
+            new_leaf_parents.append(label)
+
+    return CategoryRegistry(
+        leaf_categories=tuple(leaves),
+        parent_categories=tuple(parents),
+        new_leaf_parent_categories=tuple(new_leaf_parents),
+        children_by_parent=children_by_parent,
+        category_type_by_label=type_by_label,
+    )
+
+
+def _tree_child_labels(
+    item: Any,
+    seen: dict[str, str],
+    leaves: list[str],
+    type_by_label: dict[str, str],
+) -> list[str]:
+    if not isinstance(item, dict):
+        return []
+    children = item.get("children", [])
+    if children is None:
+        return []
+    if not isinstance(children, list):
+        raise ValueError(f"Expected children for category {_category_label(item)!r} to be a list.")
+
+    child_labels: list[str] = []
+    for child in children:
+        label = _category_label(child)
+        if _category_node_type(child) != "leaf":
+            raise ValueError(f"Category child {label!r} must be a leaf.")
+        _record_category_label(label, seen)
+        leaves.append(label)
+        child_labels.append(label)
+        type_by_label[label] = "leaf"
+    return child_labels
+
+
+def _category_label(item: Any) -> str:
+    if isinstance(item, dict):
+        if "label" not in item:
+            raise ValueError("Category registry entries must include a label.")
+        return str(item["label"])
+    return str(item)
+
+
+def _category_node_type(item: Any) -> str:
+    if not isinstance(item, dict):
+        return "leaf"
+    raw_type = str(item.get("type", item.get("kind", ""))).strip().casefold()
+    if not raw_type:
+        raw_type = "parent" if "children" in item else "leaf"
+    if raw_type == "section":
+        return "parent"
+    if raw_type not in {"leaf", "parent", "derived"}:
+        raise ValueError(f"Unsupported category type {raw_type!r}.")
+    if raw_type == "leaf" and item.get("children"):
+        raise ValueError(f"Leaf category {_category_label(item)!r} cannot define children.")
+    return raw_type
+
+
+def _allows_new_children(item: Any) -> bool:
+    return isinstance(item, dict) and bool(item.get("allow_new_children", False))
+
+
+def _record_category_label(label: str, seen: dict[str, str]) -> None:
+    normalized = label.strip().casefold()
+    if not normalized:
+        raise ValueError("Category label cannot be empty.")
+    existing = seen.get(normalized)
+    if existing is not None:
+        raise ValueError(
+            "Duplicate category label after trimming/case-folding: "
+            f"{existing!r} conflicts with {label!r}."
+        )
+    seen[normalized] = label
 
 
 def _merge_rules_docs(base: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:

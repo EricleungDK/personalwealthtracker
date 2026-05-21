@@ -8,7 +8,7 @@ Last updated: 2026-05-20
 - Framework: Python local CLI.
 - Package manager: uv with `pyproject.toml`.
 - Product requirements: Defined from `personal_wealth_tracker_project_case_background.md`.
-- Implementation status: CSV-first monthly dry-run, review workbook decisions, category memory learning, and safe copied-workbook commit flow implemented.
+- Implementation status: CSV-first monthly dry-run, review workbook decisions, category memory learning, safe copied-workbook commit flow, and YAML-backed category registry foundation implemented.
 
 ## Active Tasks
 
@@ -266,3 +266,4 @@ These backlog items are not active tasks yet.
 - 2026-05-20: Created local PRD `.agent/issues/2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md` for YAML-backed category registry and missing leaf category review flow.
 - 2026-05-20: Split the category registry PRD into local issues `ISSUE-016` through `ISSUE-020` and updated `.agent/issues/kanban.md`.
 - 2026-05-20: Created EOD summary in `docs/Daily_blogpost/2026-05-20.md`.
+- 2026-05-21: Implemented `ISSUE-016` YAML category registry foundation: config now supports tree-shaped parent/leaf categories, allowed new-leaf parents, duplicate detection, flat-category compatibility, explicit aliases, and migrated `config/categories.yaml` to the registry schema; full test suite passed with 115 tests.
