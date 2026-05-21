@@ -58,6 +58,8 @@ class WorkbookStructureChange:
     target_range: str | None
     write_action: str
     reason: str
+    parent_category: str | None = None
+    leaf_category: str | None = None
 
 
 @dataclass(frozen=True)

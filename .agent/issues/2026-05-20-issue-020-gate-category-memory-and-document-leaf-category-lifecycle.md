@@ -2,13 +2,12 @@
 type: issue
 id: ISSUE-020
 title: Gate Category Memory And Document Leaf Category Lifecycle
-status: blocked
+status: ready
 slice_type: AFK
 labels:
   - ready-for-agent
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
-blocked_by:
-  - ISSUE-019
+blocked_by: []
 created: 2026-05-20
 ---
 
@@ -37,4 +36,4 @@ Align Category Memory, reports, and documentation with the new parent/leaf categ
 
 ## Blocked By
 
-- [ISSUE-019: Plan And Commit Workbook Leaf Row Insertion](./2026-05-20-issue-019-plan-and-commit-workbook-leaf-row-insertion.md)
+None - can start immediately.
