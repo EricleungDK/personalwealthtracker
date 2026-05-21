@@ -8,7 +8,6 @@ labels:
   - ready-for-agent
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
 blocked_by:
-  - ISSUE-018
   - ISSUE-019
 created: 2026-05-20
 ---
@@ -38,5 +37,4 @@ Align Category Memory, reports, and documentation with the new parent/leaf categ
 
 ## Blocked By
 
-- [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
 - [ISSUE-019: Plan And Commit Workbook Leaf Row Insertion](./2026-05-20-issue-019-plan-and-commit-workbook-leaf-row-insertion.md)

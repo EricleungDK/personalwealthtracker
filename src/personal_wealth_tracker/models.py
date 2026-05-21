@@ -61,6 +61,13 @@ class WorkbookStructureChange:
 
 
 @dataclass(frozen=True)
+class CategoryRegistryAddition:
+    parent_category: str
+    leaf_category: str
+    source_transaction_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class WorkbookPlan:
     updates: list[TrackerUpdate]
     structure_changes: list[WorkbookStructureChange]
@@ -82,3 +89,4 @@ class RunResult:
     review_csv_path: Path
     output_workbook_path: Path | None = None
     review_xlsx_path: Path | None = None
+    category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()

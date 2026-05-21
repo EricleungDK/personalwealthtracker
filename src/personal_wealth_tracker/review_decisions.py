@@ -11,7 +11,13 @@ from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month
 @dataclass(frozen=True)
 class MonthlyReviewDecision:
     transaction_id: str
-    manual_category: str
+    manual_category: str = ""
+    new_parent_category: str = ""
+    new_leaf_category: str = ""
+
+    @property
+    def category(self) -> str:
+        return self.new_leaf_category or self.manual_category
 
 
 def load_monthly_review_decisions(
@@ -79,7 +85,7 @@ def validate_monthly_review_decision_categories(
         {
             decision.manual_category
             for decision in decisions.values()
-            if decision.manual_category not in valid_categories
+            if decision.manual_category and decision.manual_category not in valid_categories
         }
     )
     if missing_categories:
@@ -125,11 +131,25 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
     }
     transaction_id_column = _required_column(headers, "transaction_id")
     manual_category_column = _required_column(headers, "manual_category")
+    new_parent_category_column = headers.get("new_parent_category")
+    new_leaf_category_column = headers.get("new_leaf_category")
 
     decisions: dict[str, MonthlyReviewDecision] = {}
     for row in range(2, sheet.max_row + 1):
         manual_category = str(sheet.cell(row=row, column=manual_category_column).value or "").strip()
-        if not manual_category:
+        new_parent_category = _optional_stripped_cell(sheet, row, new_parent_category_column)
+        new_leaf_category = _optional_display_cell(sheet, row, new_leaf_category_column)
+        if manual_category and new_leaf_category:
+            raise ValueError(
+                f"Review decision row {row} cannot fill both manual_category and "
+                "new_leaf_category."
+            )
+        if new_leaf_category and not new_parent_category:
+            raise ValueError(
+                f"Review decision row {row} with new_leaf_category must include "
+                "new_parent_category."
+            )
+        if not manual_category and not new_leaf_category:
             continue
         transaction_id = str(sheet.cell(row=row, column=transaction_id_column).value or "").strip()
         if not transaction_id:
@@ -139,8 +159,23 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
         decisions[transaction_id] = MonthlyReviewDecision(
             transaction_id=transaction_id,
             manual_category=manual_category,
+            new_parent_category=new_parent_category,
+            new_leaf_category=new_leaf_category,
         )
     return decisions
+
+
+def _optional_stripped_cell(sheet, row: int, column: int | None) -> str:
+    if column is None:
+        return ""
+    return str(sheet.cell(row=row, column=column).value or "").strip()
+
+
+def _optional_display_cell(sheet, row: int, column: int | None) -> str:
+    if column is None:
+        return ""
+    value = str(sheet.cell(row=row, column=column).value or "")
+    return value if value.strip() else ""
 
 
 def _required_column(headers: dict[str, int], column: str) -> int:
@@ -155,7 +190,7 @@ def _apply_decision(
 ) -> CategorizedTransaction:
     return CategorizedTransaction(
         transaction=item.transaction,
-        suggested_category=decision.manual_category,
+        suggested_category=decision.category,
         confidence=1.0,
         categorization_method="monthly_review_decision",
         review_required=False,

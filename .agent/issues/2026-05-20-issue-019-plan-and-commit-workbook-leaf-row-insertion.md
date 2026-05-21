@@ -2,13 +2,12 @@
 type: issue
 id: ISSUE-019
 title: Plan And Commit Workbook Leaf Row Insertion
-status: blocked
+status: ready
 slice_type: AFK
 labels:
   - ready-for-agent
 parent: 2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md
-blocked_by:
-  - ISSUE-018
+blocked_by: []
 created: 2026-05-20
 ---
 
@@ -37,4 +36,4 @@ When a registered leaf category does not exist in the tracker workbook, plan a w
 
 ## Blocked By
 
-- [ISSUE-018: Register New Leaf Categories From Reviewed Runs](./2026-05-20-issue-018-register-new-leaf-categories-from-reviewed-runs.md)
+None - can start immediately.
