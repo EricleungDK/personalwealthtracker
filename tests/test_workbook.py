@@ -6,7 +6,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
-from personal_wealth_tracker.config import AppConfig
+from personal_wealth_tracker.config import AppConfig, CategoryRegistry
 from personal_wealth_tracker.models import CategorizedTransaction, Transaction
 from personal_wealth_tracker.workbook import commit_updates, plan_updates, plan_workbook_changes
 
@@ -550,6 +550,101 @@ def test_commit_updates_creates_year_block_with_preserved_structure_and_cleared_
         copied.close()
 
 
+def test_plan_workbook_changes_plans_missing_registered_leaf_row_insertion(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_leaf_category_workbook(tracker)
+    config = _leaf_category_config()
+
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-pet", "Pet Supplies", "-42.50")],
+        2026,
+        "Apr",
+        config,
+    )
+
+    assert len(plan.structure_changes) == 1
+    change = plan.structure_changes[0]
+    assert change.change_type == "insert_leaf_category"
+    assert change.write_action == "write"
+    assert change.parent_category == "Living expenses"
+    assert change.leaf_category == "Pet Supplies"
+    assert change.source_range == "7:7"
+    assert change.target_range == "8:8"
+    assert "Insert missing leaf category Pet Supplies under Living expenses" in change.reason
+
+    assert len(plan.updates) == 1
+    update = plan.updates[0]
+    assert update.category == "Pet Supplies"
+    assert update.target_row == 8
+    assert update.target_cell == "C8"
+    assert update.write_action == "write"
+
+
+def test_commit_updates_inserts_missing_leaf_row_only_in_copied_workbook(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_leaf_category_workbook(tracker)
+    config = _leaf_category_config()
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-pet", "Pet Supplies", "-42.50")],
+        2026,
+        "Apr",
+        config,
+    )
+
+    output_path = commit_updates(
+        tracker,
+        plan.updates,
+        config,
+        tmp_path / "processed",
+        structure_changes=plan.structure_changes,
+    )
+
+    original = load_workbook(tracker, data_only=False)
+    copied = load_workbook(output_path, data_only=False)
+    try:
+        original_sheet = original["Net worth"]
+        copied_sheet = copied["Net worth"]
+
+        assert original_sheet["B8"].value == "Services"
+        assert original_sheet["C5"].value == "=SUM(C6:C7)"
+        assert original_sheet["B8"].fill.fgColor.rgb != "00FFFF00"
+
+        assert copied_sheet["B8"].value == "Pet Supplies"
+        assert copied_sheet["C8"].value == 42.5
+        assert copied_sheet["B8"].fill.fgColor.rgb == "00FFFF00"
+        assert copied_sheet["C8"].number_format == "#,##0.00"
+        assert copied_sheet["C5"].value == "=SUM(C6:C8)"
+        assert copied_sheet["B9"].value == "Services"
+    finally:
+        original.close()
+        copied.close()
+
+
+def test_plan_workbook_changes_blocks_ambiguous_leaf_parent_formula(tmp_path):
+    tracker = _workbook_path(tmp_path)
+    _create_leaf_category_workbook(tracker, parent_formula="=C6+C7")
+    config = _leaf_category_config()
+
+    plan = plan_workbook_changes(
+        tracker,
+        [_categorized("tx-pet", "Pet Supplies", "-42.50")],
+        2026,
+        "Apr",
+        config,
+    )
+
+    assert len(plan.structure_changes) == 1
+    change = plan.structure_changes[0]
+    assert change.change_type == "insert_leaf_category"
+    assert change.write_action == "review"
+    assert change.target_range == "8:8"
+    assert "Parent formula is not a simple SUM range" in change.reason
+    assert plan.updates[0].write_action == "review"
+    assert plan.updates[0].reason == "Target category row not found."
+
+
 def _create_workbook(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -577,6 +672,28 @@ def _create_workbook(path: Path) -> None:
     sheet["B21"] = "Taxes"
     sheet["B22"] = "Expense claims"
     sheet["B23"] = "Mastercard refund"
+    workbook.save(path)
+    workbook.close()
+
+
+def _create_leaf_category_workbook(path: Path, parent_formula: str = "=SUM(C6:C7)") -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    sheet["C2"] = 2026
+    sheet["C3"] = "Apr"
+    sheet["B5"] = "Living expenses"
+    sheet["C5"] = parent_formula
+    sheet["B6"] = "Food& Drinks (monthly)"
+    sheet["C6"] = 125
+    sheet["B7"] = "Traveling"
+    sheet["C7"] = 86.1
+    sheet["B8"] = "Services"
+    sheet["C8"] = "=SUM(C9:C9)"
+    sheet["B9"] = "Apple Cloud"
+    sheet["C9"] = 25
+    sheet["B7"].fill = PatternFill(fill_type="solid", fgColor="FFFF00")
+    sheet["C7"].number_format = "#,##0.00"
     workbook.save(path)
     workbook.close()
 
@@ -622,6 +739,44 @@ def _config(
         rules=(),
         fixed_rows=fixed_rows,
         carry_forward_rows=carry_forward_rows,
+    )
+
+
+def _leaf_category_config() -> AppConfig:
+    return AppConfig(
+        sheet_name="Net worth",
+        tracker_currency="DKK",
+        category_column=2,
+        year_header_row=2,
+        month_header_row=3,
+        statement_currency="DKK",
+        auto_write_threshold=0.85,
+        review_threshold=0.60,
+        reject_threshold=0.60,
+        overwrite_fixed_rows=False,
+        highlight_auto_filled_cells=False,
+        categories=("Food& Drinks (monthly)", "Traveling", "Pet Supplies", "Apple Cloud"),
+        aliases={},
+        historical_mappings={},
+        rules=(),
+        fixed_rows=frozenset(),
+        category_registry=CategoryRegistry(
+            leaf_categories=("Food& Drinks (monthly)", "Traveling", "Pet Supplies", "Apple Cloud"),
+            parent_categories=("Living expenses", "Services"),
+            new_leaf_parent_categories=("Living expenses", "Services"),
+            children_by_parent={
+                "Living expenses": ("Food& Drinks (monthly)", "Traveling", "Pet Supplies"),
+                "Services": ("Apple Cloud",),
+            },
+            category_type_by_label={
+                "Living expenses": "parent",
+                "Food& Drinks (monthly)": "leaf",
+                "Traveling": "leaf",
+                "Pet Supplies": "leaf",
+                "Services": "parent",
+                "Apple Cloud": "leaf",
+            },
+        ),
     )
 
 
