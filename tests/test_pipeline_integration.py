@@ -3,6 +3,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 import pytest
 
+from personal_wealth_tracker.config import load_config
 from personal_wealth_tracker.pipeline import run_pipeline
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
@@ -461,6 +462,219 @@ def test_pipeline_rejects_manual_review_category_missing_from_current_tracker(
         )
 
 
+def test_pipeline_registers_new_leaf_category_from_review_decisions(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    transaction = first_result.categorized_transactions[0].transaction
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        include_new_category_columns=True,
+        rows=[
+            {
+                "transaction_id": transaction.transaction_id,
+                "description": transaction.description,
+                "amount": str(transaction.amount),
+                "manual_category": "",
+                "new_parent_category": "Living expenses",
+                "new_leaf_category": "Pet Supplies",
+            }
+        ],
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        review_decisions_path=review_decisions,
+    )
+
+    reviewed = result.categorized_transactions[0]
+    assert reviewed.suggested_category == "Pet Supplies"
+    assert reviewed.categorization_method == "monthly_review_decision"
+    assert reviewed.review_required is False
+    assert result.output_workbook_path is None
+    update = result.updates[0]
+    assert update.category == "Pet Supplies"
+    assert update.write_action == "review"
+    assert update.reason == "Target category row not found."
+
+    config = load_config(config_dir)
+    assert "Pet Supplies" in config.category_registry.leaf_categories
+    assert config.category_registry.children_by_parent["Living expenses"] == (
+        "Apple Cloud",
+        "Traveling",
+        "Pet Supplies",
+    )
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "## Category Registry Updates" in report
+    assert "Pet Supplies under Living expenses" in report
+    audit = result.audit_path.read_text(encoding="utf-8")
+    assert '"record_type": "category_registry_addition"' in audit
+    assert '"leaf_category": "Pet Supplies"' in audit
+
+
+def test_pipeline_rejects_new_leaf_category_duplicate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        include_new_category_columns=True,
+        rows=[
+            {
+                "transaction_id": first_result.transactions[0].transaction_id,
+                "description": "duplicate leaf",
+                "amount": "-1",
+                "manual_category": "",
+                "new_parent_category": "Living expenses",
+                "new_leaf_category": " apple cloud ",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Duplicate category label.*Apple Cloud.*apple cloud"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=statement,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
+def test_pipeline_rejects_new_leaf_category_for_invalid_parent(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        include_new_category_columns=True,
+        rows=[
+            {
+                "transaction_id": first_result.transactions[0].transaction_id,
+                "description": "invalid parent",
+                "amount": "-1",
+                "manual_category": "",
+                "new_parent_category": "Income (net)",
+                "new_leaf_category": "Pet Supplies",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="new_parent_category.*Income \\(net\\).*not allowed"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=statement,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
+def test_pipeline_rejects_review_row_with_manual_and_new_leaf_category(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        include_new_category_columns=True,
+        rows=[
+            {
+                "transaction_id": first_result.transactions[0].transaction_id,
+                "description": "conflicting row",
+                "amount": "-1",
+                "manual_category": "Apple Cloud",
+                "new_parent_category": "Living expenses",
+                "new_leaf_category": "Pet Supplies",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="manual_category.*new_leaf_category"):
+        run_pipeline(
+            tracker_path=tracker,
+            statement_path=statement,
+            config_dir=config_dir,
+            year=2026,
+            month="Apr",
+            output_dir=tmp_path / "reports",
+            review_decisions_path=review_decisions,
+        )
+
+
 def test_pipeline_rejects_review_decisions_with_unsupported_transaction_id_scheme(
     tmp_path, monkeypatch
 ):
@@ -555,6 +769,62 @@ fixed_rows: []
     )
 
 
+def _create_category_registry_config(config_dir: Path) -> None:
+    config_dir.mkdir(parents=True)
+    _write(
+        config_dir / "settings.yaml",
+        """
+tracker:
+  sheet_name: "Net worth"
+  currency: "DKK"
+  category_column: 2
+  year_header_row: 2
+  month_header_row: 3
+statement:
+  currency: "DKK"
+confidence_thresholds:
+  auto_write: 0.85
+  review_required: 0.60
+  reject_below: 0.60
+writer:
+  overwrite_fixed_rows: false
+  highlight_auto_filled_cells: false
+""",
+    )
+    _write(
+        config_dir / "categories.yaml",
+        """
+category_registry:
+  - label: "Living expenses"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Apple Cloud"
+      - "Traveling"
+  - label: "Income (net)"
+    type: "derived"
+  - "Full-time job (net)"
+aliases: {}
+""",
+    )
+    _write(
+        config_dir / "rules.yaml",
+        """
+historical_mappings: {}
+rules: []
+fixed_rows: []
+""",
+    )
+
+
+def _write_unknown_shop_statement(path: Path) -> None:
+    _write(
+        path,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1111;2222;Yes\n",
+    )
+
+
 def _write(path: Path, content: str) -> None:
     path.write_text(content.lstrip(), encoding="utf-8")
 
@@ -574,43 +844,46 @@ def _write_review_decisions(
     month: str,
     rows: list[dict[str, str]],
     transaction_id_scheme: str = TRANSACTION_ID_SCHEME_VERSION,
+    include_new_category_columns: bool = False,
 ) -> None:
     workbook = Workbook()
     review_sheet = workbook.active
     review_sheet.title = "Review Required"
-    review_sheet.append(
-        [
-            "transaction_id",
-            "date",
-            "description",
-            "amount",
-            "direction",
-            "merchant_identity",
-            "suggested_category",
-            "confidence",
-            "method",
-            "reason",
-            "manual_category",
-            "learn_to_memory",
-        ]
-    )
+    headers = [
+        "transaction_id",
+        "date",
+        "description",
+        "amount",
+        "direction",
+        "merchant_identity",
+        "suggested_category",
+        "confidence",
+        "method",
+        "reason",
+        "manual_category",
+    ]
+    if include_new_category_columns:
+        headers.extend(["new_parent_category", "new_leaf_category"])
+    headers.append("learn_to_memory")
+    review_sheet.append(headers)
     for row in rows:
-        review_sheet.append(
-            [
-                row["transaction_id"],
-                "2026-04-01",
-                row["description"],
-                row["amount"],
-                "expense",
-                "",
-                "",
-                "",
-                "",
-                "",
-                row["manual_category"],
-                "",
-            ]
-        )
+        payload = {
+            "transaction_id": row["transaction_id"],
+            "date": "2026-04-01",
+            "description": row["description"],
+            "amount": row["amount"],
+            "direction": "expense",
+            "merchant_identity": "",
+            "suggested_category": "",
+            "confidence": "",
+            "method": "",
+            "reason": "",
+            "manual_category": row["manual_category"],
+            "new_parent_category": row.get("new_parent_category", ""),
+            "new_leaf_category": row.get("new_leaf_category", ""),
+            "learn_to_memory": "",
+        }
+        review_sheet.append([payload[header] for header in headers])
     metadata_sheet = workbook.create_sheet("Run Metadata")
     for key, value in [
         ("reporting_year", year),

@@ -5,8 +5,8 @@ from pathlib import Path
 
 from .categorizer import categorize_transactions
 from .category_memory import load_category_memory
-from .config import load_config
-from .models import RunResult, Transaction
+from .config import load_config, register_category_registry_additions
+from .models import CategoryRegistryAddition, RunResult, Transaction
 from .nordea_csv import parse_nordea_csv
 from .nordea_pdf import parse_nordea_pdf
 from .reporting import write_outputs
@@ -72,8 +72,16 @@ def run_pipeline(
         config,
         category_memory=load_category_memory(category_memory_dir),
     )
+    category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     if review_decisions_path is not None:
         review_decisions = load_monthly_review_decisions(review_decisions_path, year, month)
+        category_registry_additions = _category_registry_additions(review_decisions)
+        if category_registry_additions:
+            category_registry_additions = register_category_registry_additions(
+                config_dir,
+                category_registry_additions,
+            )
+            config = load_config(config_dir)
         valid_categories = {
             option.category
             for option in workbook_category_options(tracker_path, year, month, config)
@@ -117,6 +125,7 @@ def run_pipeline(
         structure_changes=structure_changes,
         statement_parser=statement_parser,
         workbook_config=config,
+        category_registry_additions=category_registry_additions,
         review_xlsx_path=_review_xlsx_output_path(
             output_dir,
             year,
@@ -140,6 +149,24 @@ def run_pipeline(
         review_csv_path=review_csv_path,
         output_workbook_path=output_workbook_path,
         review_xlsx_path=review_xlsx_path,
+        category_registry_additions=category_registry_additions,
+    )
+
+
+def _category_registry_additions(review_decisions) -> tuple[CategoryRegistryAddition, ...]:
+    additions_by_category: dict[tuple[str, str], list[str]] = {}
+    for decision in review_decisions.values():
+        if not decision.new_leaf_category:
+            continue
+        key = (decision.new_parent_category, decision.new_leaf_category)
+        additions_by_category.setdefault(key, []).append(decision.transaction_id)
+    return tuple(
+        CategoryRegistryAddition(
+            parent_category=parent_category,
+            leaf_category=leaf_category,
+            source_transaction_ids=tuple(transaction_ids),
+        )
+        for (parent_category, leaf_category), transaction_ids in additions_by_category.items()
     )
 
 

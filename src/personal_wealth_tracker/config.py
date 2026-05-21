@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from .models import CategoryRegistryAddition
+
 
 @dataclass(frozen=True)
 class Rule:
@@ -147,6 +149,83 @@ def load_config(config_dir: Path) -> AppConfig:
             str(row) for row in rules_doc.get("carry_forward_rows", [])
         ),
         recurring_rules=recurring_rules,
+    )
+
+
+def register_category_registry_additions(
+    config_dir: Path,
+    additions: tuple[CategoryRegistryAddition, ...],
+) -> tuple[CategoryRegistryAddition, ...]:
+    if not additions:
+        return ()
+
+    path = config_dir / "categories.yaml"
+    doc = _load_yaml(path)
+    registry = _category_registry(doc)
+    _validate_category_registry_additions(registry, additions)
+
+    if "category_registry" not in doc:
+        raise ValueError("New leaf category registration requires category_registry config.")
+    nodes = doc["category_registry"]
+    if not isinstance(nodes, list):
+        raise ValueError("Expected category_registry to be a list.")
+
+    for addition in additions:
+        parent_node = _category_registry_parent_node(nodes, addition.parent_category)
+        children = parent_node.setdefault("children", [])
+        if not isinstance(children, list):
+            raise ValueError(
+                f"Expected children for category {addition.parent_category!r} to be a list."
+            )
+        children.append(addition.leaf_category)
+
+    _write_yaml(path, doc)
+    return additions
+
+
+def _validate_category_registry_additions(
+    registry: CategoryRegistry,
+    additions: tuple[CategoryRegistryAddition, ...],
+) -> None:
+    seen = {
+        label.strip().casefold(): label
+        for label in registry.category_type_by_label
+    }
+    for addition in additions:
+        if not registry.allows_new_leaf_children(addition.parent_category):
+            raise ValueError(
+                "Review decisions contain new_parent_category "
+                f"{addition.parent_category!r}, which is not allowed to receive new leaf "
+                "categories."
+            )
+        normalized = addition.leaf_category.strip().casefold()
+        if not normalized:
+            raise ValueError("Review decisions contain blank new_leaf_category.")
+        existing = seen.get(normalized)
+        if existing is not None:
+            raise ValueError(
+                "Duplicate category label after trimming/case-folding: "
+                f"{existing!r} conflicts with {addition.leaf_category!r}."
+            )
+        seen[normalized] = addition.leaf_category
+
+
+def _category_registry_parent_node(nodes: list[Any], parent_category: str) -> dict[str, Any]:
+    for node in nodes:
+        if isinstance(node, dict) and _category_label(node) == parent_category:
+            return node
+    raise ValueError(f"Category registry parent {parent_category!r} was not found.")
+
+
+def _write_yaml(path: Path, doc: dict[str, Any]) -> None:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError("PyYAML is required. Install dependencies with `uv sync`.") from exc
+
+    path.write_text(
+        yaml.safe_dump(doc, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
     )
 
 

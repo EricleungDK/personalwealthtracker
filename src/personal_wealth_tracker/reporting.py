@@ -8,7 +8,12 @@ from pathlib import Path
 
 from .category_memory import normalize_merchant_identity
 from .config import AppConfig
-from .models import CategorizedTransaction, TrackerUpdate, WorkbookStructureChange
+from .models import (
+    CategorizedTransaction,
+    CategoryRegistryAddition,
+    TrackerUpdate,
+    WorkbookStructureChange,
+)
 from .utils import TRANSACTION_ID_SCHEME_VERSION
 from .workbook import WorkbookCategoryOption, workbook_category_options
 
@@ -25,6 +30,7 @@ def write_outputs(
     structure_changes: list[WorkbookStructureChange] | None = None,
     statement_parser: str = "nordea-pdf",
     workbook_config: AppConfig | None = None,
+    category_registry_additions: tuple[CategoryRegistryAddition, ...] = (),
     review_xlsx_path: Path | None = None,
 ) -> tuple[Path, Path, Path, Path, Path]:
     structure_changes = structure_changes or []
@@ -46,6 +52,7 @@ def write_outputs(
         categorized,
         updates,
         structure_changes,
+        category_registry_additions,
     )
     _write_audit(
         audit_path,
@@ -58,6 +65,7 @@ def write_outputs(
         categorized,
         updates,
         structure_changes,
+        category_registry_additions,
     )
     _write_categorized_csv(categorized_path, categorized)
     _write_review_csv(review_path, categorized, updates)
@@ -93,6 +101,7 @@ def _write_report(
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange],
+    category_registry_additions: tuple[CategoryRegistryAddition, ...],
 ) -> None:
     total = len(categorized)
     review_count = sum(1 for item in categorized if item.review_required)
@@ -157,6 +166,23 @@ def _write_report(
     lines.extend(
         [
             "",
+            "## Category Registry Updates",
+            "",
+        ]
+    )
+    if category_registry_additions:
+        for addition in category_registry_additions:
+            source_ids = ", ".join(addition.source_transaction_ids)
+            lines.append(
+                f"- Registered {addition.leaf_category} under "
+                f"{addition.parent_category} ({source_ids})."
+            )
+    else:
+        lines.append("- No category registry updates.")
+
+    lines.extend(
+        [
+            "",
             "## Proposed Updates",
             "",
         ]
@@ -211,6 +237,7 @@ def _write_audit(
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange],
+    category_registry_additions: tuple[CategoryRegistryAddition, ...],
 ) -> None:
     update_by_transaction = {
         transaction_id: update
@@ -219,6 +246,21 @@ def _write_audit(
     }
     timestamp = datetime.now().isoformat(timespec="seconds")
     with path.open("w", encoding="utf-8") as handle:
+        for addition in category_registry_additions:
+            payload = {
+                "record_type": "category_registry_addition",
+                "run_timestamp": timestamp,
+                "mode": mode,
+                "statement_parser": statement_parser,
+                "source_statement": str(source_statement),
+                "target_workbook": str(tracker_path),
+                "target_year": year,
+                "target_month": month,
+                "parent_category": addition.parent_category,
+                "leaf_category": addition.leaf_category,
+                "source_transaction_ids": list(addition.source_transaction_ids),
+            }
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         for change in structure_changes:
             payload = {
                 "record_type": "workbook_structure_change",
