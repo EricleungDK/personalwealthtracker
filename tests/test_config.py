@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 
 import pytest
 
@@ -75,6 +76,89 @@ carry_forward_rows:
     assert config.carry_forward_rows == frozenset(
         {"Public Carry Forward", "Private Carry Forward"}
     )
+
+
+def test_load_config_supports_private_proxy_split_rules(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(
+        tmp_path / "categories.yaml",
+        """
+category_registry:
+  - label: Living expenses
+    type: parent
+    allow_new_children: true
+    children:
+      - Parent A
+      - Parent B
+aliases: {}
+""",
+    )
+    _write(tmp_path / "rules.yaml", "{}\n")
+    _write(
+        tmp_path / "rules.local.yaml",
+        """
+proxy_split_rules:
+  - name: example_transfer
+    match_keywords: [revolut]
+    direction: expense
+    conversion_rate: "0.82"
+    monthly_limit: 1
+    allocations:
+      - role: parent_a
+        category: Parent A
+        base_amount: "8000"
+      - role: parent_b
+        category: Parent B
+        base_amount: "4000"
+""",
+    )
+
+    config = load_config(tmp_path)
+
+    rule = config.proxy_split_rules[0]
+    assert rule.name == "example_transfer"
+    assert rule.match_keywords == ("revolut",)
+    assert rule.direction == "expense"
+    assert rule.conversion_rate == Decimal("0.82")
+    assert rule.monthly_limit == 1
+    assert [(item.role, item.category, item.base_amount) for item in rule.allocations] == [
+        ("parent_a", "Parent A", Decimal("8000")),
+        ("parent_b", "Parent B", Decimal("4000")),
+    ]
+
+
+def test_load_config_rejects_proxy_split_targets_that_are_not_leaf_categories(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(
+        tmp_path / "categories.yaml",
+        """
+category_registry:
+  - label: Living expenses
+    type: parent
+    allow_new_children: true
+    children:
+      - Parent A
+aliases: {}
+""",
+    )
+    _write(tmp_path / "rules.yaml", "{}\n")
+    _write(
+        tmp_path / "rules.local.yaml",
+        """
+proxy_split_rules:
+  - name: example_transfer
+    match_keywords: [revolut]
+    direction: expense
+    conversion_rate: "0.82"
+    allocations:
+      - role: parent_a
+        category: Living expenses
+        base_amount: "8000"
+""",
+    )
+
+    with pytest.raises(ValueError, match="proxy_split_rules.*Living expenses.*leaf"):
+        load_config(tmp_path)
 
 
 def test_project_config_includes_mastercard_refund_category_and_directional_rules():

@@ -195,4 +195,9 @@ def _apply_decision(
         categorization_method="monthly_review_decision",
         review_required=False,
         reason="Monthly review decision.",
+        source_transaction_id=item.source_transaction_id,
+        split_rule=item.split_rule,
+        split_role=item.split_role,
+        allocated_amount=item.allocated_amount,
+        residual_amount=item.residual_amount,
     )

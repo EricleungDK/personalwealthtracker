@@ -87,6 +87,55 @@ def test_project_overview_documents_maps_components_scripts_and_terms():
     assert overview.count("```mermaid") >= 4
 
 
+def test_proxy_split_transfer_documentation_is_in_sync():
+    workflow = (REPO_ROOT / "docs" / "monthly_workflow.md").read_text(encoding="utf-8")
+    overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
+    local_example = (REPO_ROOT / "config" / "rules.local.example.yaml").read_text(
+        encoding="utf-8"
+    )
+    domain_language = (REPO_ROOT / ".agent" / "System" / "domain_language.md").read_text(
+        encoding="utf-8"
+    )
+    data_contracts = (REPO_ROOT / ".agent" / "System" / "data_contracts.md").read_text(
+        encoding="utf-8"
+    )
+
+    workflow_phrases = [
+        "Proxy Split Transfer",
+        "proxy_split_source",
+        "proxy_split_allocation",
+        "proxy_split_residual",
+        "proxy_split_blocked",
+        "Residual Review Line",
+        "Review Required column order",
+    ]
+    for phrase in workflow_phrases:
+        assert phrase in workflow
+
+    overview_phrases = [
+        "Proxy Split Transfer:",
+        "Residual Review Line:",
+        "rules.local.yaml",
+    ]
+    for phrase in overview_phrases:
+        assert phrase in overview
+
+    local_example_phrases = [
+        "proxy_split_rules",
+        "conversion_rate",
+        "monthly_limit",
+        "allocations",
+    ]
+    for phrase in local_example_phrases:
+        assert phrase in local_example
+
+    for phrase in ["**Proxy Split Transfer**", "**Residual Review Line**"]:
+        assert phrase in domain_language
+
+    for phrase in ["## Future Proxy Split Rules", "Review workbook rows for proxy split"]:
+        assert phrase in data_contracts
+
+
 def test_category_registry_leaf_lifecycle_documentation_is_in_sync():
     workflow = (REPO_ROOT / "docs" / "monthly_workflow.md").read_text(encoding="utf-8")
     overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")

@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 
 from openpyxl import Workbook, load_workbook
 import pytest
@@ -50,6 +51,292 @@ def test_pipeline_dry_run_writes_outputs_without_changing_workbook(tmp_path, mon
     assert result.review_csv_path.exists()
     assert result.review_xlsx_path == tmp_path / "reports" / "review_required_2026_apr.xlsx"
     assert result.review_xlsx_path.exists()
+
+
+def test_pipeline_applies_exact_proxy_split_rule_without_double_counting_source(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_proxy_split_tracker(tracker)
+    _create_proxy_split_config(config_dir)
+    _write_revolut_statement(statement, amount="-9840,00")
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    assert len(result.transactions) == 1
+    assert len(result.categorized_transactions) == 3
+    source_transaction_id = result.transactions[0].transaction_id
+    source_line = next(
+        item
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_source"
+    )
+    assert source_line.transaction.transaction_id == source_transaction_id
+    assert source_line.suggested_category is None
+    assert source_line.review_required is False
+    assert source_line.split_rule == "example_transfer"
+    assert source_line.split_role == "source"
+
+    allocations = {
+        item.suggested_category: item
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_allocation"
+    }
+    assert set(allocations) == {"Parent A", "Parent B"}
+    assert allocations["Parent A"].transaction.transaction_id == (
+        f"{source_transaction_id}:split:example_transfer:parent_a"
+    )
+    assert allocations["Parent B"].transaction.transaction_id == (
+        f"{source_transaction_id}:split:example_transfer:parent_b"
+    )
+    assert allocations["Parent A"].transaction.amount == Decimal("-6560.00")
+    assert allocations["Parent B"].transaction.amount == Decimal("-3280.00")
+    assert allocations["Parent A"].source_transaction_id == source_transaction_id
+    assert allocations["Parent B"].source_transaction_id == source_transaction_id
+    assert allocations["Parent A"].split_rule == "example_transfer"
+    assert allocations["Parent B"].split_rule == "example_transfer"
+
+    updates = {update.category: update for update in result.updates}
+    assert set(updates) == {"Parent A", "Parent B"}
+    assert updates["Parent A"].amount == Decimal("6560.00")
+    assert updates["Parent B"].amount == Decimal("3280.00")
+    assert source_transaction_id not in {
+        transaction_id
+        for update in result.updates
+        for transaction_id in update.source_transactions
+    }
+
+    categorized_csv = result.categorized_csv_path.read_text(encoding="utf-8")
+    assert "proxy_split_source" in categorized_csv
+    assert "proxy_split_allocation" in categorized_csv
+    assert f"{source_transaction_id}:split:example_transfer:parent_a" in categorized_csv
+    assert f"{source_transaction_id}:split:example_transfer:parent_b" in categorized_csv
+
+    review_csv = result.review_csv_path.read_text(encoding="utf-8")
+    assert "proxy_split_source" in review_csv
+    assert "proxy_split_allocation" in review_csv
+    assert f"{source_transaction_id}:split:example_transfer:parent_a" in review_csv
+
+    audit = result.audit_path.read_text(encoding="utf-8")
+    assert '"categorization_method": "proxy_split_source"' in audit
+    assert '"categorization_method": "proxy_split_allocation"' in audit
+    assert f"{source_transaction_id}:split:example_transfer:parent_a" in audit
+    assert "Parent A: 6560.00" in result.report_path.read_text(encoding="utf-8")
+
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        audit_sheet = workbook["All Transactions"]
+        headers = {cell.value: index for index, cell in enumerate(audit_sheet[1], start=1)}
+        methods = [
+            audit_sheet.cell(row=row, column=headers["method"]).value
+            for row in range(2, audit_sheet.max_row + 1)
+        ]
+    finally:
+        workbook.close()
+    assert methods.count("proxy_split_source") == 1
+    assert methods.count("proxy_split_allocation") == 2
+
+
+def test_pipeline_emits_residual_proxy_split_review_line_for_larger_transfer(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_proxy_split_tracker(tracker)
+    _create_proxy_split_config(config_dir)
+    _write_revolut_statement(statement, amount="-12000,00")
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    source_transaction_id = result.transactions[0].transaction_id
+    residual = next(
+        item
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_residual"
+    )
+    assert residual.transaction.transaction_id == (
+        f"{source_transaction_id}:split:example_transfer:residual"
+    )
+    assert residual.transaction.amount == Decimal("-2160.00")
+    assert residual.review_required is True
+    assert residual.suggested_category is None
+    assert residual.source_transaction_id == source_transaction_id
+    assert residual.split_rule == "example_transfer"
+    assert residual.split_role == "residual"
+    assert residual.residual_amount == Decimal("2160.00")
+
+    updates = {update.category: update for update in result.updates}
+    assert set(updates) == {"Parent A", "Parent B"}
+    assert "proxy_split_residual" in result.review_csv_path.read_text(encoding="utf-8")
+
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        review_sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        review_ids = [
+            review_sheet.cell(row=row, column=headers["transaction_id"]).value
+            for row in range(2, review_sheet.max_row + 1)
+        ]
+    finally:
+        workbook.close()
+    assert residual.transaction.transaction_id in review_ids
+
+
+def test_pipeline_applies_review_decision_to_residual_proxy_split_line_only(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_proxy_split_tracker(tracker)
+    _create_proxy_split_config(config_dir)
+    _write_revolut_statement(statement, amount="-12000,00")
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    residual = next(
+        item
+        for item in first_result.categorized_transactions
+        if item.categorization_method == "proxy_split_residual"
+    )
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        rows=[
+            {
+                "transaction_id": residual.transaction.transaction_id,
+                "description": residual.transaction.description,
+                "amount": str(residual.transaction.amount),
+                "manual_category": "Traveling",
+            }
+        ],
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        review_decisions_path=review_decisions,
+    )
+
+    reviewed_residual = next(
+        item
+        for item in result.categorized_transactions
+        if item.transaction.transaction_id == residual.transaction.transaction_id
+    )
+    assert reviewed_residual.suggested_category == "Traveling"
+    assert reviewed_residual.categorization_method == "monthly_review_decision"
+    assert reviewed_residual.review_required is False
+    assert reviewed_residual.transaction.amount == Decimal("-2160.00")
+    assert reviewed_residual.source_transaction_id == first_result.transactions[0].transaction_id
+
+    updates = {update.category: update for update in result.updates}
+    assert updates["Parent A"].amount == Decimal("6560.00")
+    assert updates["Parent B"].amount == Decimal("3280.00")
+    assert updates["Traveling"].amount == Decimal("2160.00")
+    assert updates["Traveling"].source_transactions == (residual.transaction.transaction_id,)
+
+
+def test_pipeline_keeps_underfunded_proxy_split_candidate_review_only(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_proxy_split_tracker(tracker)
+    _create_proxy_split_config(config_dir)
+    _write_revolut_statement(statement, amount="-9000,00")
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    assert len(result.categorized_transactions) == 1
+    blocked = result.categorized_transactions[0]
+    assert blocked.categorization_method == "proxy_split_blocked"
+    assert blocked.review_required is True
+    assert blocked.suggested_category is None
+    assert blocked.split_rule == "example_transfer"
+    assert blocked.split_role == "source"
+    assert "below configured proxy split allocation total" in blocked.reason
+    assert result.updates == []
+    assert "proxy_split_blocked" in result.review_csv_path.read_text(encoding="utf-8")
+
+
+def test_pipeline_blocks_multiple_proxy_split_candidates_in_one_reporting_month(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_proxy_split_tracker(tracker)
+    _create_proxy_split_config(config_dir)
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/04;-9840,00;50000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n"
+        "2026/04/18;-12000,00;38000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n",
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    assert len(result.categorized_transactions) == 2
+    assert {item.categorization_method for item in result.categorized_transactions} == {
+        "proxy_split_blocked"
+    }
+    assert all(item.review_required for item in result.categorized_transactions)
+    assert all(
+        "Multiple proxy split candidates" in item.reason
+        for item in result.categorized_transactions
+    )
+    assert result.updates == []
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "Multiple proxy split candidates" in report
+    assert "Parent A: 6560.00" not in report
 
 
 def test_pipeline_dry_run_reports_missing_period_creation_without_changing_workbook(
@@ -702,6 +989,84 @@ def test_pipeline_rejects_review_decisions_with_unsupported_transaction_id_schem
             output_dir=tmp_path / "reports",
             review_decisions_path=review_decisions,
         )
+
+
+def _create_proxy_split_tracker(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    sheet["C2"] = 2026
+    sheet["C3"] = "Apr"
+    sheet["B5"] = "Parent A"
+    sheet["B6"] = "Parent B"
+    sheet["B7"] = "Traveling"
+    workbook.save(path)
+    workbook.close()
+
+
+def _create_proxy_split_config(config_dir: Path) -> None:
+    config_dir.mkdir(parents=True)
+    _write(
+        config_dir / "settings.yaml",
+        """
+tracker:
+  sheet_name: "Net worth"
+  currency: "DKK"
+  category_column: 2
+  year_header_row: 2
+  month_header_row: 3
+statement:
+  currency: "DKK"
+confidence_thresholds:
+  auto_write: 0.85
+  review_required: 0.60
+  reject_below: 0.60
+writer:
+  overwrite_fixed_rows: false
+  highlight_auto_filled_cells: false
+""",
+    )
+    _write(
+        config_dir / "categories.yaml",
+        """
+category_registry:
+  - label: "Living expenses"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Parent A"
+      - "Parent B"
+      - "Traveling"
+aliases: {}
+""",
+    )
+    _write(config_dir / "rules.yaml", "historical_mappings: {}\nrules: []\nfixed_rows: []\n")
+    _write(
+        config_dir / "rules.local.yaml",
+        """
+proxy_split_rules:
+  - name: example_transfer
+    match_keywords: [revolut]
+    direction: expense
+    conversion_rate: "0.82"
+    monthly_limit: 1
+    allocations:
+      - role: parent_a
+        category: Parent A
+        base_amount: "8000"
+      - role: parent_b
+        category: Parent B
+        base_amount: "4000"
+""",
+    )
+
+
+def _write_revolut_statement(path: Path, amount: str) -> None:
+    _write(
+        path,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        f"2026/04/04;{amount};50000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n",
+    )
 
 
 def _create_tracker(path: Path) -> None:

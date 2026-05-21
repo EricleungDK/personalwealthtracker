@@ -195,39 +195,45 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "date",
             "description",
             "amount",
-            "direction",
-            "merchant_identity",
+            "manual_category",
+            "new_parent_category",
+            "new_leaf_category",
+            "learn_to_memory",
+            "split_role",
+            "split_rule",
+            "source_transaction_id",
+            "allocated_amount",
+            "residual_amount",
             "suggested_category",
-            "confidence",
             "method",
             "reason",
             "workbook_action",
             "target_cell",
             "workbook_reason",
-            "manual_category",
-            "new_parent_category",
-            "new_leaf_category",
-            "learn_to_memory",
+            "merchant_identity",
+            "confidence",
+            "direction",
         ]
-        assert [review_sheet.cell(row=2, column=column).value for column in range(1, 14)] == [
+        assert [review_sheet.cell(row=2, column=column).value for column in range(1, 9)] == [
             "tx-review",
             "2026-05-15",
             "UNKNOWN SHOP",
             "-42.50",
-            "expense",
-            "UNKNOWN SHOP",
             None,
-            "0.00",
-            "unmatched",
-            "No historical or keyword rule matched.",
+            None,
+            None,
+            None,
+        ]
+        assert [review_sheet.cell(row=2, column=column).value for column in range(9, 14)] == [
+            None,
+            None,
             None,
             None,
             None,
         ]
         assert review_sheet["N2"].value is None
-        assert review_sheet["O2"].value is None
-        assert review_sheet["P2"].value is None
-        assert review_sheet["Q2"].value is None
+        assert review_sheet["O2"].value == "unmatched"
+        assert review_sheet["P2"].value == "No historical or keyword rule matched."
 
         audit_sheet = workbook["All Transactions"]
         assert [cell.value for cell in audit_sheet[1]] == [
@@ -243,6 +249,11 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "method",
             "review_required",
             "reason",
+            "split_role",
+            "split_rule",
+            "source_transaction_id",
+            "allocated_amount",
+            "residual_amount",
         ]
         assert audit_sheet.max_row == 3
         assert audit_sheet["A2"].value == "tx-review"
@@ -288,14 +299,14 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         validations = tuple(review_sheet.data_validations.dataValidation)
         assert any(
             validation.formula1 == "'Category Options'!$G$2:$G$4"
-            and "N2" in validation.sqref
+            and "E2" in validation.sqref
             for validation in validations
         )
-        assert not any("P2" in validation.sqref for validation in validations)
+        assert not any("G2" in validation.sqref for validation in validations)
         assert any(
             validation.formula1 == '"yes,no"'
             and validation.allow_blank
-            and "Q2" in validation.sqref
+            and "H2" in validation.sqref
             for validation in validations
         )
 
@@ -414,15 +425,86 @@ def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path
         validations = tuple(review_sheet.data_validations.dataValidation)
         assert any(
             validation.formula1 == "'Category Options'!$G$2:$G$3"
-            and "N2" in validation.sqref
+            and "E2" in validation.sqref
             for validation in validations
         )
         assert any(
             validation.formula1 == "'Category Options'!$H$2:$H$3"
-            and "O2" in validation.sqref
+            and "F2" in validation.sqref
             for validation in validations
         )
-        assert not any("P2" in validation.sqref for validation in validations)
+        assert not any("G2" in validation.sqref for validation in validations)
+    finally:
+        workbook.close()
+
+
+def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_blank(tmp_path):
+    categorized = [
+        _categorized(
+            "tx-normal",
+            "UNKNOWN SHOP",
+            "-42.50",
+            "",
+            "No historical or keyword rule matched.",
+            review_required=True,
+            method="unmatched",
+            confidence=0.0,
+        ),
+        _categorized(
+            "tx-source:split:example_transfer:residual",
+            "REVOLUT [example_transfer:residual]",
+            "-2160.00",
+            "",
+            "Proxy split residual needs current-month review.",
+            review_required=True,
+            method="proxy_split_residual",
+            confidence=0.0,
+            source_transaction_id="tx-source",
+            split_rule="example_transfer",
+            split_role="residual",
+            residual_amount=Decimal("2160.00"),
+        ),
+    ]
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=categorized,
+        updates=[],
+    )
+
+    workbook = load_workbook(review_xlsx_path, data_only=True)
+    try:
+        review_sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        normal = {
+            header: review_sheet.cell(row=2, column=column).value
+            for header, column in headers.items()
+        }
+        residual = {
+            header: review_sheet.cell(row=3, column=column).value
+            for header, column in headers.items()
+        }
+        assert normal["split_role"] is None
+        assert normal["split_rule"] is None
+        assert normal["source_transaction_id"] is None
+        assert normal["allocated_amount"] is None
+        assert normal["residual_amount"] is None
+        assert residual["split_role"] == "residual"
+        assert residual["split_rule"] == "example_transfer"
+        assert residual["source_transaction_id"] == "tx-source"
+        assert residual["residual_amount"] == "2160.00"
+
+        audit_sheet = workbook["All Transactions"]
+        audit_headers = {cell.value: index for index, cell in enumerate(audit_sheet[1], start=1)}
+        assert audit_sheet.cell(row=3, column=audit_headers["split_role"]).value == "residual"
+        assert audit_sheet.cell(row=3, column=audit_headers["split_rule"]).value == (
+            "example_transfer"
+        )
     finally:
         workbook.close()
 
@@ -588,6 +670,11 @@ def _categorized(
     method: str = "rule",
     confidence: float = 0.95,
     merchant: str | None = None,
+    source_transaction_id: str | None = None,
+    split_rule: str | None = None,
+    split_role: str | None = None,
+    allocated_amount: Decimal | None = None,
+    residual_amount: Decimal | None = None,
 ) -> CategorizedTransaction:
     amount_value = Decimal(amount)
     return CategorizedTransaction(
@@ -606,6 +693,11 @@ def _categorized(
         categorization_method=method,
         review_required=review_required,
         reason=reason,
+        source_transaction_id=source_transaction_id,
+        split_rule=split_rule,
+        split_role=split_role,
+        allocated_amount=allocated_amount,
+        residual_amount=residual_amount,
     )
 
 

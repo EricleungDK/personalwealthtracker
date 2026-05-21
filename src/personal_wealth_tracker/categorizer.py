@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from decimal import Decimal, ROUND_HALF_UP
+
 from .category_memory import CategoryMemory, match_category_memory
-from .config import AppConfig, RecurringRule, Rule
+from .config import AppConfig, ProxySplitAllocation, ProxySplitRule, RecurringRule, Rule
 from .models import CategorizedTransaction, Transaction
 from .utils import normalize_text
 
@@ -24,7 +27,200 @@ def categorize_transactions(
     config: AppConfig,
     category_memory: CategoryMemory | None = None,
 ) -> list[CategorizedTransaction]:
-    return [_categorize(transaction, config, category_memory) for transaction in transactions]
+    proxy_split_results = _proxy_split_results_by_transaction(transactions, config)
+    categorized: list[CategorizedTransaction] = []
+    for transaction in transactions:
+        split_items = proxy_split_results.get(transaction.transaction_id)
+        if split_items is not None:
+            categorized.extend(split_items)
+            continue
+        categorized.append(_categorize(transaction, config, category_memory))
+    return categorized
+
+
+def _proxy_split_results_by_transaction(
+    transactions: list[Transaction], config: AppConfig
+) -> dict[str, list[CategorizedTransaction]]:
+    results: dict[str, list[CategorizedTransaction]] = {}
+    assigned_transaction_ids: set[str] = set()
+    for rule in config.proxy_split_rules:
+        candidates = [
+            transaction
+            for transaction in transactions
+            if transaction.transaction_id not in assigned_transaction_ids
+            and _matches_proxy_split_rule(transaction, rule)
+        ]
+        if not candidates:
+            continue
+
+        allocation_total = _allocation_total(rule)
+        eligible = [transaction for transaction in candidates if abs(transaction.amount) >= allocation_total]
+        underfunded = [transaction for transaction in candidates if abs(transaction.amount) < allocation_total]
+
+        if rule.monthly_limit is not None and len(eligible) > rule.monthly_limit:
+            for transaction in eligible:
+                results[transaction.transaction_id] = [
+                    _blocked_proxy_split(
+                        transaction,
+                        rule,
+                        "Multiple proxy split candidates matched this reporting month; review required.",
+                    )
+                ]
+        else:
+            for transaction in eligible:
+                results[transaction.transaction_id] = _proxy_split_result(transaction, rule)
+
+        for transaction in underfunded:
+            results[transaction.transaction_id] = [
+                _blocked_proxy_split(
+                    transaction,
+                    rule,
+                    "Proxy split candidate below configured proxy split allocation total; review required.",
+                )
+            ]
+
+        assigned_transaction_ids.update(transaction.transaction_id for transaction in candidates)
+    return results
+
+
+def _proxy_split_result(transaction: Transaction, rule: ProxySplitRule) -> list[CategorizedTransaction]:
+    allocations = tuple(
+        (allocation, _allocation_amount(allocation, rule))
+        for allocation in rule.allocations
+    )
+    allocation_total = sum((amount for _, amount in allocations), Decimal("0.00"))
+    residual = (abs(transaction.amount) - allocation_total).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    source_id = transaction.transaction_id
+    split_items = [
+        CategorizedTransaction(
+            transaction=transaction,
+            suggested_category=None,
+            confidence=1.0,
+            categorization_method="proxy_split_source",
+            review_required=False,
+            reason=f"Proxy split source for {rule.name}; excluded from workbook totals.",
+            source_transaction_id=source_id,
+            split_rule=rule.name,
+            split_role="source",
+        )
+    ]
+    for allocation, amount in allocations:
+        split_items.append(
+            CategorizedTransaction(
+                transaction=_split_transaction(transaction, rule, allocation, amount),
+                suggested_category=allocation.category,
+                confidence=1.0,
+                categorization_method="proxy_split_allocation",
+                review_required=False,
+                reason=(
+                    "Proxy split allocation: "
+                    f"{allocation.base_amount} * {rule.conversion_rate} = {amount} DKK."
+                ),
+                source_transaction_id=source_id,
+                split_rule=rule.name,
+                split_role=allocation.role,
+                allocated_amount=amount,
+            )
+        )
+    if residual >= Decimal("0.01"):
+        split_items.append(
+            CategorizedTransaction(
+                transaction=_residual_transaction(transaction, rule, residual),
+                suggested_category=None,
+                confidence=0.0,
+                categorization_method="proxy_split_residual",
+                review_required=True,
+                reason="Proxy split residual needs current-month review.",
+                source_transaction_id=source_id,
+                split_rule=rule.name,
+                split_role="residual",
+                residual_amount=residual,
+            )
+        )
+    return split_items
+
+
+def _allocation_total(rule: ProxySplitRule) -> Decimal:
+    return sum(
+        (_allocation_amount(allocation, rule) for allocation in rule.allocations),
+        Decimal("0.00"),
+    )
+
+
+def _blocked_proxy_split(
+    transaction: Transaction, rule: ProxySplitRule, reason: str
+) -> CategorizedTransaction:
+    return CategorizedTransaction(
+        transaction=transaction,
+        suggested_category=None,
+        confidence=0.0,
+        categorization_method="proxy_split_blocked",
+        review_required=True,
+        reason=reason,
+        source_transaction_id=transaction.transaction_id,
+        split_rule=rule.name,
+        split_role="source",
+    )
+
+
+def _matches_proxy_split_rule(transaction: Transaction, rule: ProxySplitRule) -> bool:
+    normalized_description = normalize_text(transaction.description)
+    if rule.direction and not _direction_matches(transaction, normalized_description, rule.direction):
+        return False
+    return any(normalize_text(keyword) in normalized_description for keyword in rule.match_keywords)
+
+
+def _allocation_amount(allocation: ProxySplitAllocation, rule: ProxySplitRule) -> Decimal:
+    return (allocation.base_amount * rule.conversion_rate).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
+
+def _residual_transaction(source: Transaction, rule: ProxySplitRule, amount: Decimal) -> Transaction:
+    signed_amount = amount if source.amount >= 0 else -amount
+    return replace(
+        source,
+        transaction_id=f"{source.transaction_id}:split:{rule.name}:residual",
+        description=f"{source.description} [{rule.name}:residual]",
+        amount=signed_amount,
+        balance=None,
+        original_amount=None,
+        original_currency=None,
+        details=(
+            *source.details,
+            f"proxy_split_source={source.transaction_id}",
+            f"proxy_split_rule={rule.name}",
+            "proxy_split_role=residual",
+        ),
+    )
+
+
+def _split_transaction(
+    source: Transaction,
+    rule: ProxySplitRule,
+    allocation: ProxySplitAllocation,
+    amount: Decimal,
+) -> Transaction:
+    signed_amount = amount if source.amount >= 0 else -amount
+    return replace(
+        source,
+        transaction_id=f"{source.transaction_id}:split:{rule.name}:{allocation.role}",
+        description=f"{source.description} [{rule.name}:{allocation.role}]",
+        amount=signed_amount,
+        balance=None,
+        original_amount=allocation.base_amount,
+        original_currency=None,
+        details=(
+            *source.details,
+            f"proxy_split_source={source.transaction_id}",
+            f"proxy_split_rule={rule.name}",
+            f"proxy_split_role={allocation.role}",
+        ),
+    )
 
 
 def _categorize(

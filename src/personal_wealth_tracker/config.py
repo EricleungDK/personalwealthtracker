@@ -29,6 +29,23 @@ class RecurringRule:
 
 
 @dataclass(frozen=True)
+class ProxySplitAllocation:
+    role: str
+    category: str
+    base_amount: Decimal
+
+
+@dataclass(frozen=True)
+class ProxySplitRule:
+    name: str
+    match_keywords: tuple[str, ...]
+    direction: str | None
+    conversion_rate: Decimal
+    allocations: tuple[ProxySplitAllocation, ...]
+    monthly_limit: int | None = 1
+
+
+@dataclass(frozen=True)
 class CategoryRegistry:
     leaf_categories: tuple[str, ...] = ()
     parent_categories: tuple[str, ...] = ()
@@ -66,6 +83,7 @@ class AppConfig:
     fixed_rows: frozenset[str]
     carry_forward_rows: frozenset[str] = frozenset()
     recurring_rules: tuple[RecurringRule, ...] = ()
+    proxy_split_rules: tuple[ProxySplitRule, ...] = ()
     category_registry: CategoryRegistry = field(default_factory=CategoryRegistry)
 
 
@@ -149,7 +167,91 @@ def load_config(config_dir: Path) -> AppConfig:
             str(row) for row in rules_doc.get("carry_forward_rows", [])
         ),
         recurring_rules=recurring_rules,
+        proxy_split_rules=_proxy_split_rules(rules_doc, category_registry),
     )
+
+
+def _proxy_split_rules(
+    rules_doc: dict[str, Any],
+    category_registry: CategoryRegistry,
+) -> tuple[ProxySplitRule, ...]:
+    rules: list[ProxySplitRule] = []
+    for index, item in enumerate(rules_doc.get("proxy_split_rules", []), start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"proxy_split_rules entry {index} must be a mapping.")
+        name = str(item.get("name", "")).strip()
+        if not name:
+            raise ValueError(f"proxy_split_rules entry {index} must include a name.")
+        keywords = tuple(str(keyword) for keyword in item.get("match_keywords", []))
+        if not keywords:
+            raise ValueError(f"proxy_split_rules {name!r} must include match_keywords.")
+        conversion_rate = _positive_decimal(
+            item.get("conversion_rate"),
+            f"proxy_split_rules {name!r} conversion_rate",
+        )
+        monthly_limit = item.get("monthly_limit", 1)
+        if monthly_limit is not None:
+            monthly_limit = int(monthly_limit)
+            if monthly_limit <= 0:
+                raise ValueError(f"proxy_split_rules {name!r} monthly_limit must be positive.")
+        allocations = _proxy_split_allocations(name, item.get("allocations"), category_registry)
+        rules.append(
+            ProxySplitRule(
+                name=name,
+                match_keywords=keywords,
+                direction=item.get("direction"),
+                conversion_rate=conversion_rate,
+                allocations=allocations,
+                monthly_limit=monthly_limit,
+            )
+        )
+    return tuple(rules)
+
+
+def _proxy_split_allocations(
+    rule_name: str,
+    raw_allocations: Any,
+    category_registry: CategoryRegistry,
+) -> tuple[ProxySplitAllocation, ...]:
+    if not isinstance(raw_allocations, list) or not raw_allocations:
+        raise ValueError(f"proxy_split_rules {rule_name!r} must include allocations.")
+    allocations: list[ProxySplitAllocation] = []
+    for index, item in enumerate(raw_allocations, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"proxy_split_rules {rule_name!r} allocation {index} must be a mapping."
+            )
+        role = str(item.get("role", "")).strip()
+        if not role:
+            raise ValueError(
+                f"proxy_split_rules {rule_name!r} allocation {index} must include a role."
+            )
+        category = str(item.get("category", "")).strip()
+        if not category_registry.is_leaf_category(category):
+            raise ValueError(
+                f"proxy_split_rules {rule_name!r} allocation category {category!r} "
+                "must be a leaf category."
+            )
+        allocations.append(
+            ProxySplitAllocation(
+                role=role,
+                category=category,
+                base_amount=_positive_decimal(
+                    item.get("base_amount"),
+                    f"proxy_split_rules {rule_name!r} allocation {role!r} base_amount",
+                ),
+            )
+        )
+    return tuple(allocations)
+
+
+def _positive_decimal(value: Any, label: str) -> Decimal:
+    if value is None:
+        raise ValueError(f"{label} is required.")
+    amount = Decimal(str(value))
+    if amount <= 0:
+        raise ValueError(f"{label} must be positive.")
+    return amount
 
 
 def register_category_registry_additions(
@@ -368,6 +470,10 @@ def _merge_rules_docs(base: dict[str, Any], local: dict[str, Any]) -> dict[str, 
     merged["recurring_rules"] = [
         *base.get("recurring_rules", []),
         *local.get("recurring_rules", []),
+    ]
+    merged["proxy_split_rules"] = [
+        *base.get("proxy_split_rules", []),
+        *local.get("proxy_split_rules", []),
     ]
     merged["fixed_rows"] = sorted({*base.get("fixed_rows", []), *local.get("fixed_rows", [])})
     merged["carry_forward_rows"] = sorted(

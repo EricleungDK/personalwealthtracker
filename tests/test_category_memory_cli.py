@@ -172,6 +172,43 @@ def test_import_review_workbook_skips_non_learnable_fields(tmp_path, capsys):
     assert [mapping.category for mapping in memory.mappings] == ["Food& Drinks (monthly)"]
 
 
+def test_import_review_workbook_skips_proxy_split_residual_decisions(tmp_path, capsys):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": (
+                    f"{TRANSACTION_ID_SCHEME_VERSION}:source:001"
+                    ":split:example_transfer:residual"
+                ),
+                "description": "REVOLUT residual",
+                "amount": "-2160.00",
+                "manual_category": "Traveling",
+                "learn_to_memory": "yes",
+            }
+        ],
+        category_options=[("Traveling", True)],
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Imported category memory decisions: 0" in captured.out
+    memory = load_category_memory(memory_dir)
+    assert memory.mappings == ()
+
+
 def test_import_review_workbook_validates_learned_categories_against_registry_leaves(
     tmp_path, capsys
 ):

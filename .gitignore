@@ -8,6 +8,10 @@ __pycache__/
 dist/
 build/
 
+# Local agent tooling
+.agents/
+skills-lock.json
+
 # Secrets and local credentials
 .env
 .env.*
