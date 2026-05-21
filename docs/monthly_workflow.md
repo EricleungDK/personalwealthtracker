@@ -2,6 +2,8 @@
 
 Use this runbook when updating the tracker workbook for one reporting month.
 
+For a non-technical map of the project structure, components, outputs, scripts, and terminology, see [project_overview.md](project_overview.md).
+
 ## 1. Prepare Local Inputs
 
 - Export the Nordea current-account CSV for the reporting month.

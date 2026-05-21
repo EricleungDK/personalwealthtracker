@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-16
+Last updated: 2026-05-20
 
 ## Project State
 
@@ -8,7 +8,7 @@ Last updated: 2026-05-16
 - Framework: Python local CLI.
 - Package manager: uv with `pyproject.toml`.
 - Product requirements: Defined from `personal_wealth_tracker_project_case_background.md`.
-- Implementation status: Nordea PDF-first MVP scaffold implemented and dry-run validated.
+- Implementation status: CSV-first monthly dry-run, review workbook decisions, category memory learning, and safe copied-workbook commit flow implemented.
 
 ## Active Tasks
 
@@ -17,6 +17,7 @@ Last updated: 2026-05-16
 | SETUP-001 | COMPLETE | Codex | Created baseline folder structure and starter guidance files. |
 | MVP1-001 | COMPLETE | Codex | Implemented local Nordea PDF parsing, deterministic categorization, safe workbook planning/writing, reports, and tests. |
 | PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | READY | Codex | Created PRD and implementation issues for stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
+| PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW | READY | Codex | Created PRD and implementation issues for YAML-backed parent/leaf category registry, new leaf category requests during review, registry updates from reviewed runs, workbook row insertion, and Category Memory gating. |
 
 ## Active Delegations
 
@@ -95,6 +96,13 @@ Last updated: 2026-05-16
 | 2026-05-16 | Monthly Review Decisions should take precedence over automatic categorization for exact transaction IDs. | A reviewed current-month decision should override automatic category suggestions for that transaction, while workbook safety checks still determine whether the resulting category can be written. |
 | 2026-05-16 | Optimize classification quality using transaction classification rate and no-review rate as primary metrics. | The user’s real-CSV concern is whether transactions receive categories and avoid manual review; workbook write rate remains a separate safety/commit metric. |
 | 2026-05-16 | Dry-run reports should include Categorization Quality diagnostics. | Monthly review needs objective metrics for classified transactions, no-review transactions, unmatched rows, review-required rows, and counts by categorization method. |
+| 2026-05-20 | Treat workbook grouping rows such as `Insurance`, `Living expenses`, and `Services` as Parent/Section Rows rather than valid transaction categories. | The user wants manual review choices to target leaf rows under those parents, not the parent totals themselves. |
+| 2026-05-20 | Treat rows such as `Rent`, `Parent B`, `Parent A`, and `Shopping` as Leaf Category Rows. | Leaf rows are the correct targets for `manual_category`, workbook updates, and Category Memory learning. |
+| 2026-05-20 | Add missing leaf categories through separate manual review fields rather than overloading `manual_category`. | `manual_category` remains the existing-leaf decision, while `new_parent_category` and `new_leaf_category` express a category creation request. |
+| 2026-05-20 | Make YAML the durable category registry for parent/leaf semantics. | The workbook remains the financial target and context source, but category structure should not permanently live in two places. |
+| 2026-05-20 | Allow the reviewed second run to register validated new leaf categories in YAML. | The user wants YAML updated by the second review pass so future runs know the category; workbook financial values remain governed by existing commit safety. |
+| 2026-05-20 | Insert missing workbook leaf rows only through planned structure changes and copied-workbook commit. | The tracker workbook should mirror the registry, but row insertion and formula updates must be reviewable and safe. |
+| 2026-05-20 | Category Memory may learn newly added categories only after leaf registry validation succeeds. | Memory must not point to missing, parent, derived, or otherwise invalid category targets. |
 
 ## Open Questions
 
@@ -253,3 +261,8 @@ These backlog items are not active tasks yet.
 - 2026-05-16: Implemented ISSUE-013 review workbook generation: dry runs now write `review_required_<period>.xlsx` with review queue, all-transactions audit, workbook-derived category options/dropdowns, run metadata, and Categorization Quality report diagnostics.
 - 2026-05-16: Implemented ISSUE-014 Monthly Review Decisions: monthly runs can explicitly apply reviewed XLSX decisions by transaction ID using `--review-decisions`, with metadata validation and workbook safety preserved.
 - 2026-05-16: Implemented ISSUE-015 Category Memory learning from reviewed XLSX artifacts, using opt-in `learn_to_memory=yes` and learnable workbook-field validation while preserving CSV compatibility.
+- 2026-05-17: Added `docs/project_overview.md` as the user-facing project map with Mermaid diagrams for structure, monthly flow, components, outputs, scripts, and glossary terms.
+- 2026-05-20: Grilled the manual review category hierarchy idea and resolved Parent/Section Row versus Leaf Category Row terminology.
+- 2026-05-20: Created local PRD `.agent/issues/2026-05-20-prd-yaml-category-registry-and-leaf-category-review-flow.md` for YAML-backed category registry and missing leaf category review flow.
+- 2026-05-20: Split the category registry PRD into local issues `ISSUE-016` through `ISSUE-020` and updated `.agent/issues/kanban.md`.
+- 2026-05-20: Created EOD summary in `docs/Daily_blogpost/2026-05-20.md`.
