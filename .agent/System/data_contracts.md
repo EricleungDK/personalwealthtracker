@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-05-13
+Last updated: 2026-05-21
 
 ## Transaction
 
@@ -23,7 +23,7 @@ Nordea CSV transactions may include raw source details such as `Name`, `Title`, 
 - `transaction`: normalized transaction.
 - `suggested_category`: existing tracker row category or null.
 - `confidence`: deterministic confidence score.
-- `categorization_method`: `historical`, `rule`, or `unmatched`.
+- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, or `unmatched`.
 - `review_required`: true when the transaction must not be auto-written.
 - `reason`: human-readable explanation for report and audit.
 
@@ -58,10 +58,48 @@ Every run writes:
 - JSONL audit log.
 - Categorized transaction CSV.
 - Review-required CSV.
+- Review-required XLSX workbook.
 
 Outputs are ignored because they may contain sensitive transaction data.
 
 Report and audit outputs include the bank statement parser name, such as `nordea-csv` or `nordea-pdf`, so a run can be traced to the source format used.
+
+Reports include a `Category Registry Updates` section. Existing `manual_category` decisions remain monthly review decisions, while validated `new_parent_category` and `new_leaf_category` rows are reported as category registry additions.
+
+Audit logs use `category_registry_addition` records for validated new leaf registrations. These records include the parent category, leaf category, reporting period, source transaction IDs, statement parser, source statement, and target workbook.
+
+## Review Workbook
+
+The manual review workbook contains:
+
+- `Review Required`: the operator work queue.
+- `All Transactions`: audit context for every parsed transaction.
+- `Category Options`: workbook/category registry option metadata.
+- `Run Metadata`: reporting period, statement parser, generated timestamp, and transaction ID scheme.
+
+Review decision columns:
+
+- `manual_category`: current-month decision for an existing Leaf Category Row. It must target a leaf category from the YAML category registry.
+- `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
+- `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
+- `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.
+
+Older reviewed workbooks without `new_parent_category` and `new_leaf_category` remain importable for existing manual category decisions.
+
+## Category Registry
+
+`config/categories.yaml` is the durable category registry. It supports:
+
+- parent entries with `allow_new_children` and `children`,
+- leaf string entries,
+- derived entries that are never direct transaction targets,
+- explicit aliases that resolve old or short labels to registry labels.
+
+Parent/Section Row labels group child rows and may allow reviewed new leaf requests. Leaf Category Row labels are the valid targets for `manual_category`, workbook value planning, and Category Memory learning. Derived rows such as workbook totals are allowed as context but not as write or memory targets.
+
+The registry rejects duplicate labels using case-insensitive trimmed matching while preserving exact display labels in YAML and reports.
+
+Category Memory learning validates against leaf categories. Learning skips Parent/Section Row labels, derived rows, missing categories, and other non-leaf targets. A newly registered leaf can be learned only after the reviewed second run has added it to the YAML registry.
 
 ## Future Investment Valuation
 

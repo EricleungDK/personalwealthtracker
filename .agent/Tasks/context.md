@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-20
+Last updated: 2026-05-21
 
 ## Project State
 
@@ -8,7 +8,7 @@ Last updated: 2026-05-20
 - Framework: Python local CLI.
 - Package manager: uv with `pyproject.toml`.
 - Product requirements: Defined from `personal_wealth_tracker_project_case_background.md`.
-- Implementation status: CSV-first monthly dry-run, review workbook decisions, category memory learning, safe copied-workbook commit flow, and YAML-backed category registry foundation implemented.
+- Implementation status: CSV-first monthly dry-run, review workbook decisions, Category Memory learning with YAML leaf validation, safe copied-workbook commit flow, YAML-backed category registry, reviewed new leaf registration, workbook leaf row insertion, and updated operator docs implemented.
 
 ## Active Tasks
 
@@ -16,8 +16,8 @@ Last updated: 2026-05-20
 |---------|--------|-------|-------|
 | SETUP-001 | COMPLETE | Codex | Created baseline folder structure and starter guidance files. |
 | MVP1-001 | COMPLETE | Codex | Implemented local Nordea PDF parsing, deterministic categorization, safe workbook planning/writing, reports, and tests. |
-| PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | READY | Codex | Created PRD and implementation issues for stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
-| PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW | READY | Codex | Created PRD and implementation issues for YAML-backed parent/leaf category registry, new leaf category requests during review, registry updates from reviewed runs, workbook row insertion, and Category Memory gating. |
+| PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | COMPLETE | Codex | Implemented stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
+| PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW | COMPLETE | Codex | Implemented YAML-backed parent/leaf category registry, new leaf category requests during review, registry updates from reviewed runs, workbook row insertion, Category Memory gating, and documentation updates. |
 
 ## Active Delegations
 
@@ -113,14 +113,7 @@ Last updated: 2026-05-20
 - Investment account statement support needs a separate ingestion contract before asset rows such as JEPI, OXY, or portfolio balances are automated.
 - Crypto/digital asset automation needs a separate dedicated valuation source before it is in scope.
 - USD-to-DKK conversion policy needs exact configuration shape and reporting/audit fields before investment statement support is implemented.
-- Manual review output needs exact XLSX/CSV column schemas and import behavior for confirmed decisions, using current Tracker Workbook row labels as the authoritative category option source.
-- Review workbook UX needs a clear warning/status column for selected categories that are derived, fixed, or otherwise unsafe to learn/write.
-- Manual review improvements should be promoted into implementation issues as separate slices: stable transaction IDs, XLSX review workbook generation, Monthly Review Decision import/application, and Category Memory XLSX learning.
-- Monthly Review Decision application needs a `--review-decisions` CLI option with period and transaction-ID validation.
-- Review workbooks need a `Run Metadata` sheet containing reporting period, statement parser, generated timestamp, and transaction ID scheme version.
 - Current transaction ID generation is only partially aligned with Monthly Review Decisions: Nordea CSV/PDF IDs include parser row index, which is stable for identical exports but may change if export ordering changes.
-- Category Memory import from review artifacts needs validation that `learn_to_memory=yes` targets only learnable workbook fields and warns/skips learning for derived or fixed rows.
-- Current categorizer precedence differs from the desired review-decision model: code currently checks historical mappings and recurring rules before category memory and has no Monthly Review Decision layer.
 - Low real-CSV transaction classification rate and no-review rate need measurement by method, category, and merchant identity before deciding whether to add local rules, memory bootstrap, or model-assisted suggestions.
 
 ## Grilling Session Results
@@ -270,3 +263,4 @@ These backlog items are not active tasks yet.
 - 2026-05-21: Implemented `ISSUE-017` leaf category review workbook controls: review workbooks now include `new_parent_category` and `new_leaf_category`, `manual_category` dropdowns use registry leaf rows, parent dropdowns use allowed new-leaf parents, `Category Options` exposes parent/leaf metadata, and old reviewed workbooks remain importable; full test suite passed with 116 tests.
 - 2026-05-21: Implemented `ISSUE-018` reviewed-run new leaf registration: reviewed decisions can validate `new_parent_category`/`new_leaf_category`, reject conflicts, invalid parents, and duplicate labels, update `config/categories.yaml`, classify current-month transactions to the new leaf, and report/audit category registry additions without workbook commit mode; full test suite passed with 120 tests.
 - 2026-05-21: Implemented `ISSUE-019` workbook leaf row insertion: planner now creates `insert_leaf_category` structure changes for registered leaves missing from the workbook, copied-workbook commit inserts the row under the parent using sibling formatting, safe parent `SUM` formulas expand to include the new row, ambiguous formulas block the structure commit, and original workbooks remain unchanged; full test suite passed with 123 tests.
+- 2026-05-21: Implemented `ISSUE-020` Category Memory gating and leaf lifecycle documentation: `learn-category-memory` validates targets against YAML leaf categories, skips parent/derived/missing/non-leaf categories, newly registered leaves can be learned after registry validation, reports distinguish category registry additions, and monthly workflow, project overview, domain language, architecture, data contracts, issue tracker, and documentation tests now cover the parent/leaf lifecycle; full test suite passed with 125 tests.

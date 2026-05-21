@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-05-13
+Last updated: 2026-05-21
 
 ## Runtime Flow
 
@@ -10,13 +10,16 @@ Last updated: 2026-05-13
 4. `nordea_csv.py` parses Nordea CSV exports into normalized bank transactions using merchant-rich fields for categorization and raw CSV fields for audit.
 5. `nordea_pdf.py` remains available as a fallback/legacy parser for Nordea PDFs with embedded text.
 6. The statement currency is validated against config before transactions are normalized.
-7. `categorizer.py` applies historical mappings first, then recurring amount/date rules, then keyword rules.
+7. `categorizer.py` applies Category Memory first, then historical mappings, recurring amount/date rules, and keyword rules.
 8. The pipeline rejects statements containing transactions outside the requested target month.
 9. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
 10. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
-11. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
-12. `reporting.py` writes report, audit, categorized CSV, and review CSV outputs with the statement parser name.
-13. Commit mode creates a backup and writes eligible updates to a copied workbook only.
+11. Reviewed monthly decisions, when supplied, override categorization by exact transaction ID.
+12. Reviewed new leaf category requests validate against the YAML category registry and may update `config/categories.yaml` before workbook planning.
+13. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
+14. `workbook.py` plans missing registered leaf rows as structure changes and can insert them into a copied workbook only when placement, sibling formatting, and parent formulas are safe.
+15. `reporting.py` writes report, audit, categorized CSV, review CSV, and review XLSX outputs with the statement parser name.
+16. Commit mode creates a backup and writes eligible updates to a copied workbook only.
 
 ## Parser Design
 
@@ -30,9 +33,12 @@ Both bank statement parsers reject non-DKK input for MVP 1. The PDF parser rejec
 
 ## Safety Design
 
-Workbook updates are planned before writing. A planned update becomes writable only when:
+The YAML category registry classifies workbook labels as parent/section rows, leaf category rows, or derived rows. Parent/section rows organize the workbook and may allow reviewed child creation. Leaf category rows are the valid targets for transaction categorization, workbook value planning, and Category Memory learning. Derived rows can appear in context and reports but are not direct write targets.
+
+Workbook updates are planned before writing. A planned value update becomes writable only when:
 
 - the category row exists,
+- the category is a leaf category in the registry or otherwise allowed by compatibility rules,
 - the target month column exists,
 - all source transactions are high-confidence,
 - all parsed transactions belong to the requested target month,
@@ -41,6 +47,8 @@ Workbook updates are planned before writing. A planned update becomes writable o
 - the target cell is empty,
 - the target cell is not a formula.
 - all included transactions have high-confidence deterministic category matches.
+
+Reviewed `new_parent_category` and `new_leaf_category` values create a category-registry update, not a financial workbook value write. If the new leaf is missing from the workbook, dry-run reports an `insert_leaf_category` structure change. Commit mode applies that structure change only to a copied workbook and blocks ambiguous parent formula updates.
 
 Commit mode writes only planned updates whose action is `write`.
 
@@ -67,9 +75,10 @@ Commit mode writes only planned updates whose action is `write`.
 - Investment workbook planning should map explicit holding values to individual asset rows; total-only values require a configured total row or review.
 - Digital asset rows should not be automated from bank or investment account statements unless a future dedicated valuation source is added.
 - Cross-source checks should report mismatches between related cashflow and investment evidence without changing the authority of either source outside its own evidence type.
-- Category memory can be added as a private local store under `data/category_memory/`, populated only from confirmed review decisions and kept separate from `config/rules.local.yaml`; one confirmed decision can become a deterministic future match, but automatic workbook writes still require all writer safeguards.
-- The learning workflow should be a separate CLI path that imports a reviewed decision file into category memory, rather than prompting during monthly dry-run or commit execution.
-- Commit mode should not import reviewed decisions in the same command; changed category memory should be validated through a later dry run before workbook writing.
+- Category memory is a private local store under `data/category_memory/`, populated only from confirmed review decisions and kept separate from `config/rules.local.yaml`; one confirmed decision can become a deterministic future match, but automatic workbook writes still require all writer safeguards.
+- Category Memory learning validates targets against YAML leaf categories and skips parent, derived, missing, or non-leaf labels.
+- The learning workflow is a separate CLI path that imports a reviewed decision file into category memory, rather than prompting during monthly dry-run or commit execution.
+- Commit mode should not import category memory in the same command; changed category memory should be validated through a later dry run before workbook writing.
 - Bank API ingestion can feed the same normalized transaction model.
 - Local LLM classification can be added after deterministic rules fail.
 - Google Drive integration can wrap workbook download/upload while preserving the same writer safeguards.

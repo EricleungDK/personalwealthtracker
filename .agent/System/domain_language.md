@@ -88,6 +88,22 @@ _Avoid_: Auto-write candidate
 A user-approved category assignment for a review-only transaction.
 _Avoid_: Model guess, unconfirmed match
 
+**Parent/Section Row**:
+A tracker workbook row that groups or totals child rows and is not a valid transaction category target.
+_Avoid_: Manual category target, subcategory
+
+**Leaf Category Row**:
+A tracker workbook row under a parent or section that can receive source-backed transaction values, current-month manual review decisions, and Category Memory learning.
+_Avoid_: Section total, derived row
+
+**Category Registry**:
+The YAML-backed category source that records parent, leaf, derived, alias, and allowed-new-child rules.
+_Avoid_: Workbook-only category truth, hidden category list
+
+**New Leaf Category Request**:
+A manual review row that fills `new_parent_category` and `new_leaf_category` to add a missing leaf category after registry validation.
+_Avoid_: Overloaded manual_category, automatic alias creation
+
 **Category Memory**:
 Private local categorization knowledge learned from confirmed review decisions.
 _Avoid_: Public rule, self-trained guess
@@ -213,7 +229,13 @@ _Avoid_: Credit card settlement, liability payment
 - A **Pre-Filled Recurring Value** is a kind of **Manual Workbook Value** and remains untouched by default.
 - A **Deterministic Category Match** can support an automatic write only when all workbook safety checks also pass.
 - A **Review-Only Transaction** can appear in reports but does not contribute to an automatic workbook write.
+- A **Parent/Section Row** may appear in workbook context and review option metadata, but it must not be selected as a transaction category.
+- A **Leaf Category Row** is the normal target for `manual_category`, workbook value planning, and Category Memory learning.
+- The **Category Registry** is the durable source for deciding whether a category is parent, leaf, derived, or allowed to receive a **New Leaf Category Request**.
+- A **New Leaf Category Request** must provide an allowed **Parent/Section Row** and a unique **Leaf Category Row** label.
+- A reviewed second run may update the **Category Registry** with a valid **New Leaf Category Request** before planning workbook structure changes.
 - A **Confirmed Review Decision** can create or update **Category Memory**.
+- Rule: Category Memory can learn only Leaf Category Row targets that exist in the Category Registry.
 - **Category Memory** must not be learned from unconfirmed automatic matches.
 - **Category Memory** is generated private data and remains separate from a hand-written **Local Rule**.
 - **Category Memory** uses **Merchant Identity** as its default matching key.
