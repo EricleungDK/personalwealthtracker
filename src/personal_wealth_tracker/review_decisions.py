@@ -91,7 +91,7 @@ def validate_monthly_review_decision_categories(
     if missing_categories:
         raise ValueError(
             "Review decisions contain manual_category values not found in the current "
-            "tracker workbook: "
+            "tracker workbook or YAML leaf category registry: "
             + ", ".join(missing_categories)
         )
 

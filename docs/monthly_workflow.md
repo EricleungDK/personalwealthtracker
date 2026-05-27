@@ -76,9 +76,9 @@ Dry-run outputs use these categorization methods:
 - `proxy_split_source`: the original transfer kept for audit and excluded from direct workbook totals.
 - `proxy_split_allocation`: a counted fixed allocation such as `Parent A` or `Parent B`.
 - `proxy_split_residual`: a Residual Review Line for the leftover amount from a larger transfer.
-- `proxy_split_blocked`: a candidate that stayed review-only because it was underfunded or multiple candidates matched in the same Reporting Month.
+- `proxy_split_blocked`: a candidate that stayed review-only because it was underfunded or the number of same-month candidates exceeded the rule's configured `monthly_limit`.
 
-Exact `9840 DKK` transfers produce only Parent A and Parent B allocation lines. Larger transfers produce Parent A and Parent B allocations plus a residual row for current-month review. Smaller transfers and duplicate monthly candidates stay review-only. Residual review decisions apply only to the current month and should not be learned into Category Memory.
+Exact `9840 DKK` transfers produce only Parent A and Parent B allocation lines. Larger transfers produce Parent A and Parent B allocations plus a residual row for current-month review. Smaller transfers and candidates over the configured monthly limit stay review-only. Set `monthly_limit` in `config/rules.local.yaml` to the number of same-month transfers that are expected to receive the fixed Parent A/Parent B split. Residual review decisions apply only to the current month and should not be learned into Category Memory.
 
 Review Required column order keeps the core transaction context first, then `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory`, with split metadata such as `split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, and `residual_amount` farther right.
 
@@ -100,7 +100,7 @@ Review decisions are current-month overrides:
 
 - Filled `manual_category` values are applied by exact `transaction_id`.
 - Blank `manual_category` values are ignored.
-- Manual categories must be existing Leaf Category Row labels from the YAML category registry.
+- Manual categories must be existing tracker workbook labels or Leaf Category Row labels from the YAML category registry.
 - Filled `new_parent_category` and `new_leaf_category` values request a missing Leaf Category Row under an allowed Parent/Section Row.
 - New leaf category requests are validated against `config/categories.yaml`, reject duplicate labels, and are reported in the `Category Registry Updates` report section.
 - A reviewed second run can register the new leaf category in YAML during dry-run behavior. This is a category-registry update, not a workbook financial value write.
@@ -116,7 +116,7 @@ If `--review-decisions` points at the default generated review workbook, the rev
 
 ## 5. Optionally Learn Future Memory
 
-After editing the review workbook, import only rows where `manual_category` is filled and `learn_to_memory` is `yes` into category memory:
+After editing the review workbook, import only rows where either `manual_category` or a reviewed `new_leaf_category` is filled and `learn_to_memory` is `yes` into category memory:
 
 ```bash
 uv run wealth-tracker learn-category-memory \
@@ -125,8 +125,8 @@ uv run wealth-tracker learn-category-memory \
 ```
 
 The command still accepts reviewed CSV files for automation and older workflows.
-Learning and workbook commit are separate steps. `manual_category` fixes the current month; `learn_to_memory` is an explicit opt-in for future runs. Rows with blank or non-yes `learn_to_memory` are not learned, and non-learnable category options are skipped.
-Reviewed XLSX learning validates the workbook metadata, supported transaction ID scheme, and YAML leaf category registry. Category Memory skips Parent/Section Row labels, derived rows, missing categories, and other non-leaf targets. A newly registered Leaf Category Row can be learned after the reviewed second run has added it to `config/categories.yaml`.
+Learning and workbook commit are separate steps. `manual_category` and reviewed `new_leaf_category` choices fix the current month; `learn_to_memory` is an explicit opt-in for future runs. Rows with blank or non-yes `learn_to_memory` are not learned, and non-learnable category options are skipped.
+Reviewed XLSX learning validates the workbook metadata, supported transaction ID scheme, and YAML leaf category registry. Category Memory skips Parent/Section Row labels, derived rows, missing categories, fixed rows, and other non-leaf targets. A newly registered Leaf Category Row can be learned after the reviewed second run has added it to `config/categories.yaml`, even before the new row has been inserted into the tracker workbook.
 Learned Category Memory is used before hand-written historical mappings, recurring rules, and keyword rules in future monthly runs.
 
 After learning, run the dry-run again with `--review-decisions` and review the new categorization before committing workbook changes.

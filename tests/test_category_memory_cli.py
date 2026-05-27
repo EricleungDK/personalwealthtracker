@@ -279,6 +279,52 @@ def test_import_review_workbook_validates_learned_categories_against_registry_le
     ]
 
 
+def test_import_review_workbook_learns_reviewed_new_leaf_after_registry_validation(
+    tmp_path, capsys
+):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    config_dir = tmp_path / "config"
+    _create_category_registry_config(config_dir)
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": "tx-new-leaf",
+                "description": "PET SHOP",
+                "amount": "-42.50",
+                "manual_category": "",
+                "new_parent_category": "Living expenses",
+                "new_leaf_category": "Pet Supplies",
+                "learn_to_memory": "yes",
+            }
+        ],
+        category_options=[
+            ("Food& Drinks (monthly)", True),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+            "--config-dir",
+            str(config_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Imported category memory decisions: 1" in captured.out
+    memory = load_category_memory(memory_dir)
+    assert [(mapping.merchant_identity, mapping.category) for mapping in memory.mappings] == [
+        ("PET SHOP", "Pet Supplies"),
+    ]
+
+
 def test_import_review_workbook_rejects_unsupported_transaction_id_scheme(tmp_path, capsys):
     decisions_path = tmp_path / "review_required_2026_apr.xlsx"
     memory_dir = tmp_path / "data" / "category_memory"
@@ -699,6 +745,8 @@ def _write_review_workbook_decisions(
             "method",
             "reason",
             "manual_category",
+            "new_parent_category",
+            "new_leaf_category",
             "learn_to_memory",
             "recurring",
             "amount_tolerance",
@@ -720,6 +768,8 @@ def _write_review_workbook_decisions(
                 "",
                 "",
                 row["manual_category"],
+                row.get("new_parent_category", ""),
+                row.get("new_leaf_category", ""),
                 row["learn_to_memory"],
                 row.get("recurring", ""),
                 row.get("amount_tolerance", ""),

@@ -1,6 +1,6 @@
 # Product Requirements
 
-Last updated: 2026-05-21
+Last updated: 2026-05-27
 
 ## Goal
 
@@ -69,3 +69,4 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - USD investment values should convert to DKK using a user-maintained fixed rate and record the applied rate in reports/audit logs.
 - Combined monthly planning should eventually merge bank cashflow evidence and investment valuation evidence while reporting cross-source mismatches.
 - Missing period/year creation should create safe workbook structure only when the existing workbook pattern is unambiguous.
+- Local LLM categorization may be added as an explicit opt-in review-assistance layer for unmatched transactions and low-confidence deterministic suggestions, using minimized on-device prompt context and existing review workbook suggestion fields.

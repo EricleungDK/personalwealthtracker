@@ -85,7 +85,7 @@ def run_pipeline(
         valid_categories = {
             option.category
             for option in workbook_category_options(tracker_path, year, month, config)
-        }
+        } | set(config.category_registry.leaf_categories)
         validate_monthly_review_decision_categories(review_decisions, valid_categories)
         categorized = apply_monthly_review_decisions(
             categorized,
