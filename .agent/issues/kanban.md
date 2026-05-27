@@ -1,18 +1,22 @@
 ---
 type: kanban
-updated: 2026-05-21
+updated: 2026-05-27
 ---
 
 # Local Issue Kanban
 
 ## Ready For Agent
 
-No issues currently ready.
+- [ISSUE-026: Add Local LLM Opt-In Provider Scaffold](./2026-05-27-issue-026-add-local-llm-opt-in-provider-scaffold.md)
 
 ## Blocked
 
 - [ISSUE-005: Add Investment Statement Evidence](./2026-05-11-issue-005-add-investment-statement-evidence.md)
 - [ISSUE-006: Combine Monthly Planning Evidence](./2026-05-11-issue-006-combine-monthly-planning-evidence.md)
+- [ISSUE-027: Suggest Existing Leaf Categories With Local Gemma](./2026-05-27-issue-027-suggest-existing-leaf-categories-with-local-gemma.md)
+- [ISSUE-028: Apply Local Gemma To Low-Confidence Review Rows](./2026-05-27-issue-028-apply-local-gemma-to-low-confidence-review-rows.md)
+- [ISSUE-029: Handle Local Gemma No-Suggestion And New-Leaf Candidates](./2026-05-27-issue-029-handle-local-gemma-no-suggestion-and-new-leaf-candidates.md)
+- [ISSUE-030: Add Local Gemma Evaluation Diagnostics And Docs](./2026-05-27-issue-030-add-local-gemma-evaluation-diagnostics-and-docs.md)
 
 ## In Progress
 

@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-05-21
+Last updated: 2026-05-27
 
 ## Transaction
 
@@ -23,9 +23,24 @@ Nordea CSV transactions may include raw source details such as `Name`, `Title`, 
 - `transaction`: normalized transaction.
 - `suggested_category`: existing tracker row category or null.
 - `confidence`: deterministic confidence score.
-- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, or `unmatched`.
+- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, future review-only methods such as `local_llm_gemma`, or `unmatched`.
 - `review_required`: true when the transaction must not be auto-written.
 - `reason`: human-readable explanation for report and audit.
+
+Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, and `reason`, but it remains review-required and is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
+
+## Future Local LLM Suggestion Contract
+
+A local LLM provider response should be parsed into a small structured suggestion contract before it can affect categorized outputs:
+
+- `transaction_id`: the transaction being suggested for.
+- `status`: one of `category`, `no_suggestion`, `new_leaf_candidate`, or `provider_unavailable`.
+- `suggested_category`: required only when `status` is `category`; must be an existing YAML Leaf Category Row.
+- `new_leaf_candidate`: optional display label hint when `status` is `new_leaf_candidate`; it must not update the Category Registry directly.
+- `confidence`: provider confidence or locally derived confidence in the `0.0` to `1.0` range.
+- `rationale`: short review-facing explanation suitable for the existing `reason` field.
+
+Invalid JSON, missing required fields, categories outside the Allowed Category Set, timeouts, unavailable Ollama, or unavailable models should be treated as provider failures. Provider failures should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run.
 
 ## TrackerUpdate
 
@@ -79,7 +94,7 @@ The manual review workbook contains:
 
 Review decision columns:
 
-- `manual_category`: current-month decision for an existing Leaf Category Row. It must target a leaf category from the YAML category registry.
+- `manual_category`: current-month decision for an existing tracker workbook label or registered YAML Leaf Category Row. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.
@@ -124,7 +139,7 @@ Parent/Section Row labels group child rows and may allow reviewed new leaf reque
 
 The registry rejects duplicate labels using case-insensitive trimmed matching while preserving exact display labels in YAML and reports.
 
-Category Memory learning validates against leaf categories. Learning skips Parent/Section Row labels, derived rows, missing categories, and other non-leaf targets. A newly registered leaf can be learned only after the reviewed second run has added it to the YAML registry.
+Category Memory learning validates against leaf categories. Learning skips Parent/Section Row labels, derived rows, missing categories, fixed rows, and other non-leaf targets. A reviewed `new_leaf_category` can be learned only after the reviewed second run has added it to the YAML registry, even before the new row has been inserted into the tracker workbook.
 
 ## Future Proxy Split Rules
 
@@ -138,7 +153,7 @@ A proxy split transfer whose tracker-currency amount is smaller than the configu
 
 Residual review decisions apply to the current monthly run only and should not be imported into Category Memory, because the residual represents a leftover allocation rather than a stable merchant identity.
 
-Recurring proxy split rules should support a monthly application limit. The Revolut family split rule should default to at most one automatic application per reporting month; if multiple Revolut expense candidates match, the run should require review instead of auto-splitting all candidates.
+Recurring proxy split rules should support a monthly application limit. The Revolut family split rule should default to at most one automatic application per reporting month, but the private local rule may raise `monthly_limit` when multiple same-month transfers are intentional. Candidates beyond the configured limit should require review instead of auto-splitting all candidates.
 
 Categorized output should preserve the original source transaction as a proxy split source line for audit and should add separate proxy split allocation lines for the configured category allocations. The source line should not directly contribute to workbook totals; allocation lines contribute to their configured categories. If a residual amount exists, a residual review line should be emitted separately.
 

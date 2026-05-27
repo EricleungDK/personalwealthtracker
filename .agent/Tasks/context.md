@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-21
+Last updated: 2026-05-27
 
 ## Project State
 
@@ -19,6 +19,7 @@ Last updated: 2026-05-21
 | PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | COMPLETE | Codex | Implemented stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
 | PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW | COMPLETE | Codex | Implemented YAML-backed parent/leaf category registry, new leaf category requests during review, registry updates from reviewed runs, workbook row insertion, Category Memory gating, and documentation updates. |
 | PRD-2026-05-21-PROXY-SPLIT-TRANSFER-RULES | COMPLETE | Codex | Implemented proxy split transfers, Revolut family allocations, residual review lines, trigger safety gates, split metadata, review workbook column order, docs, and tests. |
+| PRD-2026-05-27-LOCAL-GEMMA-REVIEW-SUGGESTIONS | READY | Codex | Grilling complete; local PRD and issues `ISSUE-026` through `ISSUE-030` created for explicit opt-in Local LLM Mode using local Gemma through Ollama. |
 
 ## Active Delegations
 
@@ -115,9 +116,18 @@ Last updated: 2026-05-21
 | 2026-05-21 | Do not learn residual proxy split review decisions into Category Memory. | Residual amounts are leftover pieces of a composite transfer, so their reviewed category should apply to the current run only. |
 | 2026-05-21 | Limit recurring Revolut family proxy split automation to one application per reporting month. | If multiple Revolut expense candidates cover the fixed allocation total, the run should require review instead of double-counting Dad and Mom. |
 | 2026-05-21 | Preserve proxy split source lines while adding counted allocation lines. | Categorized output should keep the original Revolut transaction for audit, exclude it from direct workbook totals, and add Dad/Mom plus optional residual split lines. |
+| 2026-05-26 | Treat the Revolut family proxy split monthly limit as a configurable safety threshold rather than a fixed product rule. | The user may intentionally make two same-month Revolut transfers that should each split into Dad and Mom portions; candidates beyond the configured `monthly_limit` still fail closed for review. |
 | 2026-05-21 | Derive proxy split line IDs from the source transaction ID, split rule, and split role. | Residual review decisions need stable identifiers without pretending split lines are separate bank transactions. |
 | 2026-05-21 | Keep review decision columns close to transaction description in the review workbook. | Preferred order is transaction context first, then `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory`, with split/workbook diagnostics farther right. |
 | 2026-05-21 | Use decimal two-place rounding for proxy split allocation math. | Fixed allocations are rounded before residual calculation; residual below 0.01 DKK is zero, and negative residual means the rule does not apply. |
+| 2026-05-27 | If local Gemma categorization is explored, use minimized prompt context by default. | Even on-device LLM processing should avoid raw Nordea descriptions unless evaluation shows minimized context is insufficient; suggested inputs are Merchant Identity, amount, date, direction, and the YAML leaf-category set. |
+| 2026-05-27 | Local Gemma suggestions may return only an existing YAML leaf category, `no_suggestion`, or an LLM New Leaf Candidate. | Existing leaves remain review-only suggestions; new leaf candidates must go through the existing reviewed `new_parent_category`/`new_leaf_category` workflow and never update the registry automatically. |
+| 2026-05-27 | Local Gemma review output should reuse existing suggestion fields instead of adding primary review columns. | Keep the Review Required sheet narrow by writing model suggestions into `suggested_category`, `method`, `confidence`, and `reason`, while user-confirmed decisions remain in `manual_category` or the reviewed new-leaf fields. |
+| 2026-05-27 | Local Gemma may run on unmatched transactions and low-confidence deterministic suggestions that already require review. | High-confidence deterministic matches should remain authoritative; Gemma is a review-assistance layer for unresolved or low-confidence review rows, not a replacement for confirmed rules or Category Memory. |
+| 2026-05-27 | Local Gemma categorization should be explicit opt-in, not automatic when Ollama is available. | The monthly run should require an intentional flag or config setting such as `--local-llm-suggestions`, with provider/model configured separately, so model use remains a deliberate review-assistance choice. |
+| 2026-05-27 | Local Gemma integration should call Ollama's local HTTP API rather than shelling out to `ollama run`. | The HTTP API is easier to mock in tests, enforce timeouts, validate structured responses, and report provider failures without parsing CLI output. |
+| 2026-05-27 | Local Gemma provider failures should not fail monthly planning. | If Ollama is unavailable, times out, the model is missing, or the response cannot be validated, the run should keep the original deterministic or unmatched review state and report a warning. |
+| 2026-05-27 | Initial local Gemma model configuration should target `gemma4:e4b` with `gemma4:e2b` as the fallback for the user's Apple Silicon M1 16 GB MacBook. | E4B should be feasible for low-volume monthly review assistance on 16 GB unified memory; E2B gives a lighter fallback if speed or memory is unacceptable. |
 
 ## Open Questions
 
@@ -130,6 +140,7 @@ Last updated: 2026-05-21
 - USD-to-DKK conversion policy needs exact configuration shape and reporting/audit fields before investment statement support is implemented.
 - Current transaction ID generation is only partially aligned with Monthly Review Decisions: Nordea CSV/PDF IDs include parser row index, which is stable for identical exports but may change if export ordering changes.
 - Low real-CSV transaction classification rate and no-review rate need measurement by method, category, and merchant identity before deciding whether to add local rules, memory bootstrap, or model-assisted suggestions.
+- Local Gemma categorization implementation is tracked by `PRD-2026-05-27-LOCAL-GEMMA-REVIEW-SUGGESTIONS` and issues `ISSUE-026` through `ISSUE-030`; exact provider config field names and baseline metric details should be finalized during those slices.
 
 ## Grilling Session Results
 
@@ -284,3 +295,15 @@ These backlog items are not active tasks yet.
 
 - 2026-05-21: Implemented `ISSUE-021` through `ISSUE-025` proxy split transfer rules: private local config loading/validation, exact Dad/Mom allocation dry run, residual review lines, underfunded/duplicate safety gates, review workbook column reordering and split metadata, operator docs, and local config example; full test suite passed with 135 tests.
 - 2026-05-21: Cleaned obsolete planning/background files, marked `.agents/` and `skills-lock.json` as local-only tooling, and refreshed agent/product documentation to match the implemented CSV-first CLI.
+- 2026-05-26: Debugged a real two-Revolut-transfer month where the proxy split rule was blocked by `monthly_limit: 1`; raised the local ignored rule to `monthly_limit: 2`, added pipeline regression coverage for two configured proxy splits in one reporting month, and updated proxy split documentation to describe configurable monthly limits.
+- 2026-05-27: Debugged new leaf Category Memory learning for `transportation`; found that reviewed `new_leaf_category` rows were classified for the current month but skipped by `learn-category-memory` because only `manual_category` was imported. Updated the importer and docs so reviewed new leaves can be learned after YAML registry validation, even before workbook row insertion.
+- 2026-05-27: Debugged follow-up review-decision import for registered leaves (`electricity`, `healthcare`, `tax return`, `transportation`) that were in YAML but not yet in the tracker workbook. Updated validation so `manual_category` accepts registered YAML leaf categories as well as workbook labels, allowing workbook planning to handle missing row insertion.
+- 2026-05-27: Resolved the first local Gemma categorization boundary: local model prompts should use minimized transaction context by default, not raw Nordea descriptions.
+- 2026-05-27: Resolved local Gemma suggestion output boundaries: existing YAML leaf category, `no_suggestion`, or an LLM New Leaf Candidate that must flow through user-reviewed category creation.
+- 2026-05-27: Resolved local Gemma review workbook shape: reuse existing `suggested_category`, `method`, `confidence`, and `reason` fields instead of adding primary review columns.
+- 2026-05-27: Resolved local Gemma invocation scope: run it on unmatched transactions and low-confidence deterministic suggestions that already require review, while leaving high-confidence deterministic matches alone.
+- 2026-05-27: Resolved local Gemma activation boundary: model suggestions should require explicit opt-in rather than running automatically whenever a local provider is installed.
+- 2026-05-27: Resolved local Gemma provider integration direction: use Ollama's local HTTP API instead of shelling out to `ollama run`.
+- 2026-05-27: Resolved local Gemma failure behavior: provider failures, timeouts, missing models, and invalid structured responses should keep ordinary manual review output and report warnings instead of failing the monthly run.
+- 2026-05-27: Resolved initial local Gemma model target for the user's Apple Silicon M1 16 GB MacBook: default to `gemma4:e4b` with `gemma4:e2b` as a fallback if performance is poor.
+- 2026-05-27: Created local PRD `.agent/issues/2026-05-27-prd-local-gemma-review-suggestions.md` and local issues `ISSUE-026` through `ISSUE-030` for explicit opt-in local Gemma review suggestions.

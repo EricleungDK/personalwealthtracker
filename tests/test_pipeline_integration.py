@@ -339,6 +339,70 @@ def test_pipeline_blocks_multiple_proxy_split_candidates_in_one_reporting_month(
     assert "Dad: 6560.00" not in report
 
 
+def test_pipeline_allows_multiple_proxy_split_candidates_up_to_configured_limit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_proxy_split_tracker(tracker)
+    _create_proxy_split_config(config_dir, monthly_limit=2)
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/04;-9840,00;50000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n"
+        "2026/04/18;-15000,00;35000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n",
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+    )
+
+    assert len(result.transactions) == 2
+    assert sum(
+        1
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_source"
+    ) == 2
+    assert sum(
+        1
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_allocation"
+        and item.suggested_category == "Dad"
+    ) == 2
+    assert sum(
+        1
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_allocation"
+        and item.suggested_category == "Mom"
+    ) == 2
+    assert not any(
+        item.categorization_method == "proxy_split_blocked"
+        for item in result.categorized_transactions
+    )
+
+    residuals = [
+        item
+        for item in result.categorized_transactions
+        if item.categorization_method == "proxy_split_residual"
+    ]
+    assert len(residuals) == 1
+    assert residuals[0].transaction.amount == Decimal("-5160.00")
+
+    updates = {update.category: update for update in result.updates}
+    assert updates["Dad"].amount == Decimal("13120.00")
+    assert updates["Mom"].amount == Decimal("6560.00")
+    assert "Multiple proxy split candidates" not in result.report_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_pipeline_dry_run_reports_missing_period_creation_without_changing_workbook(
     tmp_path, monkeypatch
 ):
@@ -749,6 +813,65 @@ def test_pipeline_rejects_manual_review_category_missing_from_current_tracker(
         )
 
 
+def test_pipeline_accepts_manual_review_category_registered_as_missing_leaf(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    first_result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "first_reports",
+    )
+    transaction = first_result.categorized_transactions[0].transaction
+    config_path = config_dir / "categories.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            '      - "Traveling"\n',
+            '      - "Traveling"\n      - "Pet Supplies"\n',
+        ),
+        encoding="utf-8",
+    )
+    review_decisions = tmp_path / "review_required_2026_apr.xlsx"
+    _write_review_decisions(
+        review_decisions,
+        year=2026,
+        month="Apr",
+        rows=[
+            {
+                "transaction_id": transaction.transaction_id,
+                "description": transaction.description,
+                "amount": str(transaction.amount),
+                "manual_category": "Pet Supplies",
+            }
+        ],
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        review_decisions_path=review_decisions,
+    )
+
+    reviewed = result.categorized_transactions[0]
+    assert reviewed.suggested_category == "Pet Supplies"
+    assert reviewed.categorization_method == "monthly_review_decision"
+    assert result.updates[0].category == "Pet Supplies"
+    assert result.updates[0].reason == "Target category row not found."
+
+
 def test_pipeline_registers_new_leaf_category_from_review_decisions(
     tmp_path, monkeypatch
 ):
@@ -1004,7 +1127,7 @@ def _create_proxy_split_tracker(path: Path) -> None:
     workbook.close()
 
 
-def _create_proxy_split_config(config_dir: Path) -> None:
+def _create_proxy_split_config(config_dir: Path, monthly_limit: int = 1) -> None:
     config_dir.mkdir(parents=True)
     _write(
         config_dir / "settings.yaml",
@@ -1043,13 +1166,13 @@ aliases: {}
     _write(config_dir / "rules.yaml", "historical_mappings: {}\nrules: []\nfixed_rows: []\n")
     _write(
         config_dir / "rules.local.yaml",
-        """
+        f"""
 proxy_split_rules:
   - name: revolut_family_transfer
     match_keywords: [revolut]
     direction: expense
     conversion_rate: "0.82"
-    monthly_limit: 1
+    monthly_limit: {monthly_limit}
     allocations:
       - role: dad
         category: Dad

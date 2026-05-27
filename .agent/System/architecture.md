@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-05-21
+Last updated: 2026-05-27
 
 ## Runtime Flow
 
@@ -81,5 +81,8 @@ Commit mode writes only planned updates whose action is `write`.
 - Commit mode should not import category memory in the same command; changed category memory should be validated through a later dry run before workbook writing.
 - Proxy split rules can be introduced as a deterministic categorization step for one source transaction that needs multiple category allocations. Concrete personal rules should be read from ignored local config, while tracked code validates that allocation targets are registry leaf categories, that the source amount covers all fixed allocations before splitting, and that recurring monthly split limits are not exceeded.
 - Bank API ingestion can feed the same normalized transaction model.
-- Local LLM classification can be added after deterministic rules fail.
+- Local LLM classification can be added as an explicit opt-in review-assistance step for unmatched transactions and low-confidence deterministic suggestions that already require review.
+- Future Local LLM Mode should integrate with Ollama through its local HTTP API rather than shelling out to `ollama run`, so provider calls can be mocked, timed out, and validated as structured review-only suggestions.
+- Local LLM provider failures, timeouts, unavailable models, and invalid structured responses should not fail the monthly planning run. The run should keep the original deterministic or unmatched review state and report a warning.
+- The first local Gemma provider target should be configured for the user's Apple Silicon M1 16 GB machine with `gemma4:e4b` as the default model and `gemma4:e2b` as the fallback model if performance is unacceptable.
 - Google Drive integration can wrap workbook download/upload while preserving the same writer safeguards.

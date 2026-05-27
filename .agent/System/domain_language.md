@@ -117,7 +117,7 @@ The configured transaction match criteria and minimum tracker-currency amount re
 _Avoid_: Partial split, weak merchant guess
 
 **Monthly Proxy Split Limit**:
-A rule limit that prevents a recurring proxy split from being applied more than once in the same reporting month without review.
+A rule limit that controls how many same-month candidate transactions may receive the same recurring proxy split automatically before additional candidates require review.
 _Avoid_: Duplicate family allocation, silent repeated split
 
 **Deterministic Category Match**:
@@ -127,6 +127,26 @@ _Avoid_: Guess, fuzzy match
 **Review-Only Transaction**:
 A transaction that may be reported with a suggestion but must not be written automatically.
 _Avoid_: Auto-write candidate
+
+**Local LLM Mode**:
+An optional on-device model-assisted categorization mode that processes minimized transaction context locally and returns review-only suggestions.
+_Avoid_: Remote API mode, deterministic rule, auto-write authority
+
+**LLM Category Suggestion**:
+A model-generated candidate category for a review-only transaction, limited to an existing leaf category, `no_suggestion`, or a new leaf candidate, and requiring user confirmation before it can affect workbook writes or Category Memory.
+_Avoid_: Deterministic Category Match, Confirmed Review Decision, automatic category
+
+**LLM New Leaf Candidate**:
+A model-generated hint that the transaction may need a category not yet present in the allowed category set; it can only become a New Leaf Category Request through user review.
+_Avoid_: Automatic category creation, registry update, invented write target
+
+**Allowed Category Set**:
+The current YAML-validated leaf categories supplied as the only valid category choices for an LLM category suggestion.
+_Avoid_: Free-form category list, workbook section rows, invented categories
+
+**LLM Prompt Context**:
+The minimized transaction and category data passed to a local model for review-only categorization, defaulting to merchant identity, amount, date, direction, and the allowed category set.
+_Avoid_: Full raw bank statement, account numbers, audit log dump
 
 **Confirmed Review Decision**:
 A user-approved category assignment for a review-only transaction.

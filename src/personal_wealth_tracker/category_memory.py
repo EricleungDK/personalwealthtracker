@@ -51,9 +51,15 @@ def import_reviewed_decisions(
     memory_dir: Path,
     config_dir: Path = Path("config"),
 ) -> CategoryMemoryImportResult:
-    leaf_categories = frozenset(load_config(config_dir).category_registry.leaf_categories)
+    config = load_config(config_dir)
+    leaf_categories = frozenset(config.category_registry.leaf_categories)
     if decisions_path.suffix.lower() == ".xlsx":
-        return _import_review_workbook_decisions(decisions_path, memory_dir, leaf_categories)
+        return _import_review_workbook_decisions(
+            decisions_path,
+            memory_dir,
+            leaf_categories,
+            config.fixed_rows,
+        )
 
     mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
     skipped_unconfirmed = 0
@@ -145,6 +151,7 @@ def _import_review_workbook_decisions(
     decisions_path: Path,
     memory_dir: Path,
     leaf_categories: frozenset[str],
+    fixed_rows: frozenset[str],
 ) -> CategoryMemoryImportResult:
     mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
     imported_count = 0
@@ -161,10 +168,16 @@ def _import_review_workbook_decisions(
             raise ValueError("Reviewed workbook is missing 'Run Metadata'.")
 
         _validate_review_workbook_metadata(workbook["Run Metadata"])
-        learnable_categories = _learnable_categories(workbook["Category Options"]) & leaf_categories
+        learnable_categories = _learnable_categories(
+            workbook["Category Options"],
+            leaf_categories,
+            fixed_rows,
+        )
         for row_number, row in _worksheet_dicts(workbook["Review Required"]):
             manual_category = (row.get("manual_category") or "").strip()
-            if not manual_category:
+            new_leaf_category = (row.get("new_leaf_category") or "").strip()
+            category = new_leaf_category or manual_category
+            if not category:
                 skipped_unlearned_count += 1
                 continue
             if not _is_confirmed(row.get("learn_to_memory", "")):
@@ -174,7 +187,7 @@ def _import_review_workbook_decisions(
             if _is_proxy_split_residual_id(transaction_id):
                 skipped_unlearned_count += 1
                 continue
-            if manual_category not in learnable_categories:
+            if category not in learnable_categories:
                 skipped_non_learnable_count += 1
                 continue
 
@@ -183,7 +196,7 @@ def _import_review_workbook_decisions(
                 mappings,
                 {
                     "merchant_identity": normalize_merchant_identity(description),
-                    "category": manual_category,
+                    "category": category,
                     "source_transaction_ids": [transaction_id],
                     **_recurring_hint_payload(row, row_number),
                 },
@@ -253,18 +266,27 @@ def _validate_review_workbook_metadata(sheet) -> None:
         )
 
 
-def _learnable_categories(sheet) -> frozenset[str]:
+def _learnable_categories(
+    sheet,
+    leaf_categories: frozenset[str],
+    fixed_rows: frozenset[str],
+) -> frozenset[str]:
     headers = _worksheet_headers(sheet)
     category_column = _required_column(headers, "category", sheet.title)
     learnable_column = _required_column(headers, "learnable", sheet.title)
     categories: set[str] = set()
+    category_options: set[str] = set()
     for row in range(2, sheet.max_row + 1):
         category = str(sheet.cell(row=row, column=category_column).value or "").strip()
         if not category:
             continue
+        category_options.add(category)
         if _is_truthy(sheet.cell(row=row, column=learnable_column).value):
             categories.add(category)
-    return frozenset(categories)
+
+    workbook_leaves = categories & leaf_categories
+    missing_workbook_leaves = leaf_categories - category_options - fixed_rows
+    return frozenset(workbook_leaves | missing_workbook_leaves)
 
 
 def _worksheet_dicts(sheet) -> list[tuple[int, dict[str, str]]]:

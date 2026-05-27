@@ -1,75 +1,78 @@
 category_registry:
-  - label: "Assets"
-    type: "parent"
-    allow_new_children: true
-    children:
-      - "Saving Account"
-      - "JEPI"
-      - "OXY"
-      - "CRYPTO"
-  - label: "Cashflow"
-    type: "derived"
-  - "Expense claims"
-  - "Nordea Credit Card"
-  - "Mastercard refund"
-  - label: "Income (net)"
-    type: "derived"
-  - "Full-time job (net)"
-  - label: "Labour market contribution"
-    type: "derived"
-  - label: "Taxes"
-    type: "derived"
-  - label: "Recurring payments"
-    type: "derived"
-  - label: "Living expenses"
-    type: "parent"
-    allow_new_children: true
-    children:
-      - "Rent (monthly)"
-      - "Mom"
-      - "Dad"
-      - "Shopping (monthly)"
-      - "Food& Drinks (monthly)"
-      - "Lunch (monthly)"
-      - "Cleaning costs (monthly)"
-      - "Traveling"
-  - label: "Services"
-    type: "parent"
-    allow_new_children: true
-    children:
-      - "Disney+"
-      - "Louis Nielsen"
-      - "Apple Cloud"
-      - "Fitness center membership (monthly)"
-      - "Google Cloud"
-      - "Max (yearly)"
-      - "Metro (monthly)"
-      - "Akasse"
-      - "Mobile phone (monthly)"
-      - "Banking account fees (monthly)"
-  - label: "Insurance"
-    type: "parent"
-    allow_new_children: true
-    children:
-      - "House insurance Tryg (yearly, in Jan)"
-      - "Liability insurance (yearly, in Apr)"
-  - label: "Investments"
-    type: "parent"
-    allow_new_children: true
-    children:
-      - "Annuity K43"
-      - "Annuity M12"
-      - "Stock investment plan"
-  - label: "Total net worth"
-    type: "derived"
-
+- label: Assets
+  type: parent
+  allow_new_children: true
+  children:
+  - Saving Account
+  - JEPI
+  - OXY
+  - CRYPTO
+  - tax return
+- label: Cashflow
+  type: derived
+- Expense claims
+- Nordea Credit Card
+- Mastercard refund
+- label: Income (net)
+  type: derived
+- Full-time job (net)
+- label: Labour market contribution
+  type: derived
+- label: Taxes
+  type: derived
+- label: Recurring payments
+  type: derived
+- label: Living expenses
+  type: parent
+  allow_new_children: true
+  children:
+  - Rent (monthly)
+  - Mom
+  - Dad
+  - Shopping (monthly)
+  - Food& Drinks (monthly)
+  - Lunch (monthly)
+  - Cleaning costs (monthly)
+  - Traveling
+  - electricity
+  - transportation
+- label: Services
+  type: parent
+  allow_new_children: true
+  children:
+  - Disney+
+  - Louis Nielsen
+  - Apple Cloud
+  - Fitness center membership (monthly)
+  - Google Cloud
+  - Max (yearly)
+  - Metro (monthly)
+  - Akasse
+  - Mobile phone (monthly)
+  - Banking account fees (monthly)
+  - healthcare
+- label: Insurance
+  type: parent
+  allow_new_children: true
+  children:
+  - House insurance Tryg (yearly, in Jan)
+  - Liability insurance (yearly, in Apr)
+- label: Investments
+  type: parent
+  allow_new_children: true
+  children:
+  - Annuity K43
+  - Annuity M12
+  - Stock investment plan
+- label: Total net worth
+  type: derived
 aliases:
-  Rent: "Rent (monthly)"
-  Shopping: "Shopping (monthly)"
-  "Food & Drinks": "Food& Drinks (monthly)"
-  Food: "Food& Drinks (monthly)"
-  Lunch: "Lunch (monthly)"
-  "Fitness center membership": "Fitness center membership (monthly)"
-  Metro: "Metro (monthly)"
-  "Mobile phone": "Mobile phone (monthly)"
-  "Banking account fees": "Banking account fees (monthly)"
+  Rent: Rent (monthly)
+  Shopping: Shopping (monthly)
+  Food & Drinks: Food& Drinks (monthly)
+  Food: Food& Drinks (monthly)
+  Lunch: Lunch (monthly)
+  Fitness center membership: Fitness center membership (monthly)
+  Metro: Metro (monthly)
+  Mobile phone: Mobile phone (monthly)
+  Banking account fees: Banking account fees (monthly)
