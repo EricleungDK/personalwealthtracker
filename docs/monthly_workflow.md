@@ -34,6 +34,28 @@ Dry-run does not modify the workbook. It writes local outputs under `reports/`:
 - `review_required_<year>_<month>.xlsx` - manual review workbook with transaction context, category dropdowns from the tracker workbook, category option safety context, and run metadata.
 - `audit_<year>_<month>.jsonl` - machine-readable audit records.
 
+### Optional Local LLM Mode
+
+Local LLM Mode is explicit opt-in. It never runs merely because Ollama is installed. Add `--local-llm-suggestions` only when you want review-only local model assistance:
+
+```bash
+uv run wealth-tracker \
+  --tracker "Net Worth Tracker.xlsx" \
+  --statement "data/raw_statements/ignored-nordea-export.csv" \
+  --statement-format auto \
+  --year 2026 \
+  --month Apr \
+  --local-llm-suggestions
+```
+
+The committed defaults target `gemma4:e4b` through Ollama's local HTTP API, with `gemma4:e2b` as the fallback model for the user's M1 16 GB MacBook. Settings live under `local_llm` in `config/settings.yaml`.
+
+Local model output is review-only. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations remain authoritative. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
+
+Prompt context is minimized by default: merchant identity, amount, date, direction, and YAML leaf category choices. raw Nordea descriptions are excluded unless `include_raw_description: true` is deliberately configured later for evaluation.
+
+If Ollama is unavailable, the model is missing, a call times out, or a response is invalid, the run continues with ordinary manual review output. The report's `Local LLM Mode` section and audit log show eligible rows, provider attempts, existing-leaf suggestions, `no_suggestion`, new-leaf candidates, invalid responses, provider failures, and warnings.
+
 ## 3. Review The Outputs
 
 Check the report first:

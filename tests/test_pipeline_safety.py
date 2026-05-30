@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from personal_wealth_tracker.config import AppConfig
-from personal_wealth_tracker.models import CategorizedTransaction, Transaction
+from personal_wealth_tracker.models import CategorizedTransaction, LocalLLMAvailability, Transaction
 from personal_wealth_tracker.pipeline import _validate_target_period, run_pipeline
 
 
@@ -224,6 +224,75 @@ def test_pipeline_preserves_target_period_validation_after_csv_parsing(monkeypat
             month="Apr",
             output_dir=tmp_path,
         )
+
+
+def test_pipeline_does_not_call_local_llm_client_when_mode_is_disabled(monkeypatch, tmp_path):
+    _stub_pipeline_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
+    )
+
+    class FailingClient:
+        def check_availability(self, _config):
+            raise AssertionError("local LLM client should not be called without explicit opt-in")
+
+    result = run_pipeline(
+        tracker_path=Path("tracker.xlsx"),
+        statement_path=Path("statement.csv"),
+        config_dir=Path("config"),
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path,
+        local_llm_client=FailingClient(),
+    )
+
+    assert result.local_llm_diagnostics.enabled is False
+
+
+def test_pipeline_keeps_review_output_when_local_llm_provider_is_unavailable(
+    monkeypatch, tmp_path
+):
+    _stub_pipeline_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
+    )
+
+    class UnavailableClient:
+        def check_availability(self, _config):
+            return LocalLLMAvailability(
+                available=False,
+                model=None,
+                warning="Ollama is unavailable at http://localhost:11434.",
+            )
+
+    result = run_pipeline(
+        tracker_path=Path("tracker.xlsx"),
+        statement_path=Path("statement.csv"),
+        config_dir=Path("config"),
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path,
+        local_llm_suggestions=True,
+        local_llm_client=UnavailableClient(),
+    )
+
+    assert result.categorized_transactions[0].categorization_method == "unmatched"
+    assert result.categorized_transactions[0].review_required is True
+    assert result.local_llm_diagnostics.enabled is True
+    assert result.local_llm_diagnostics.provider_failure_count == 1
+    assert result.local_llm_diagnostics.warnings == (
+        "Ollama is unavailable at http://localhost:11434.",
+    )
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "## Local LLM Mode" in report
+    assert "- Status: enabled" in report
+    assert "- Provider failures: 1" in report
+    assert "Ollama is unavailable" in report
+    audit = result.audit_path.read_text(encoding="utf-8")
+    assert '"record_type": "local_llm_warning"' in audit
+    assert "Ollama is unavailable" in audit
 
 
 def _empty_workbook_plan():

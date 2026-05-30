@@ -91,6 +91,89 @@ def test_cli_passes_review_decisions_to_pipeline(monkeypatch, tmp_path):
     assert captured["review_decisions_path"] == review_decisions
 
 
+def test_cli_passes_local_llm_opt_in_to_pipeline(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_pipeline(**kwargs):
+        captured.update(kwargs)
+        return RunResult(
+            mode="dry-run",
+            target_year=2026,
+            target_month="Apr",
+            statement_parser="nordea-csv",
+            transactions=[],
+            categorized_transactions=[],
+            updates=[],
+            structure_changes=[],
+            report_path=tmp_path / "report.md",
+            audit_path=tmp_path / "audit.jsonl",
+            categorized_csv_path=tmp_path / "categorized.csv",
+            review_csv_path=tmp_path / "review.csv",
+        )
+
+    monkeypatch.setattr("personal_wealth_tracker.cli.run_pipeline", fake_run_pipeline)
+
+    exit_code = main(
+        [
+            "--tracker",
+            "tracker.xlsx",
+            "--statement",
+            "statement.csv",
+            "--statement-format",
+            "nordea-csv",
+            "--year",
+            "2026",
+            "--month",
+            "Apr",
+            "--local-llm-suggestions",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["local_llm_suggestions"] is True
+
+
+def test_cli_disables_local_llm_mode_by_default(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_pipeline(**kwargs):
+        captured.update(kwargs)
+        return RunResult(
+            mode="dry-run",
+            target_year=2026,
+            target_month="Apr",
+            statement_parser="nordea-csv",
+            transactions=[],
+            categorized_transactions=[],
+            updates=[],
+            structure_changes=[],
+            report_path=tmp_path / "report.md",
+            audit_path=tmp_path / "audit.jsonl",
+            categorized_csv_path=tmp_path / "categorized.csv",
+            review_csv_path=tmp_path / "review.csv",
+        )
+
+    monkeypatch.setattr("personal_wealth_tracker.cli.run_pipeline", fake_run_pipeline)
+
+    exit_code = main(
+        [
+            "--tracker",
+            "tracker.xlsx",
+            "--statement",
+            "statement.csv",
+            "--statement-format",
+            "nordea-csv",
+            "--year",
+            "2026",
+            "--month",
+            "Apr",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["local_llm_suggestions"] is False
+
+
 def test_cli_reports_pipeline_validation_errors_without_traceback(monkeypatch, capsys):
     def fake_run_pipeline(**_kwargs):
         raise ValueError(

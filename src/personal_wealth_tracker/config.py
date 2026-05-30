@@ -64,6 +64,16 @@ class CategoryRegistry:
 
 
 @dataclass(frozen=True)
+class LocalLLMSettings:
+    provider: str = "ollama"
+    endpoint: str = "http://localhost:11434"
+    model: str = "gemma4:e4b"
+    fallback_model: str = "gemma4:e2b"
+    timeout_seconds: float = 30.0
+    include_raw_description: bool = False
+
+
+@dataclass(frozen=True)
 class AppConfig:
     sheet_name: str
     tracker_currency: str
@@ -85,6 +95,7 @@ class AppConfig:
     recurring_rules: tuple[RecurringRule, ...] = ()
     proxy_split_rules: tuple[ProxySplitRule, ...] = ()
     category_registry: CategoryRegistry = field(default_factory=CategoryRegistry)
+    local_llm: LocalLLMSettings = field(default_factory=LocalLLMSettings)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -118,6 +129,7 @@ def load_config(config_dir: Path) -> AppConfig:
     statement = settings.get("statement", {})
     thresholds = settings.get("confidence_thresholds", {})
     writer = settings.get("writer", {})
+    local_llm = settings.get("local_llm", {})
     category_registry = _category_registry(categories)
 
     rules = tuple(
@@ -168,6 +180,22 @@ def load_config(config_dir: Path) -> AppConfig:
         ),
         recurring_rules=recurring_rules,
         proxy_split_rules=_proxy_split_rules(rules_doc, category_registry),
+        local_llm=_local_llm_settings(local_llm),
+    )
+
+
+def _local_llm_settings(doc: Any) -> LocalLLMSettings:
+    if doc is None:
+        doc = {}
+    if not isinstance(doc, dict):
+        raise ValueError("Expected local_llm settings to be a mapping.")
+    return LocalLLMSettings(
+        provider=str(doc.get("provider", "ollama")),
+        endpoint=str(doc.get("endpoint", "http://localhost:11434")).rstrip("/"),
+        model=str(doc.get("model", "gemma4:e4b")),
+        fallback_model=str(doc.get("fallback_model", "gemma4:e2b")),
+        timeout_seconds=float(doc.get("timeout_seconds", 30.0)),
+        include_raw_description=bool(doc.get("include_raw_description", False)),
     )
 
 

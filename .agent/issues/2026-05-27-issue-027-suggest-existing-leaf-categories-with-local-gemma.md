@@ -2,13 +2,12 @@
 type: issue
 id: ISSUE-027
 title: Suggest Existing Leaf Categories With Local Gemma
-status: blocked
+status: done
 slice_type: AFK
 labels:
-  - blocked
+  - done
 parent: 2026-05-27-prd-local-gemma-review-suggestions.md
-blocked_by:
-  - ISSUE-026
+blocked_by: []
 created: 2026-05-27
 ---
 
@@ -24,16 +23,16 @@ Use the configured local Gemma provider to produce structured review-only sugges
 
 ## Acceptance Criteria
 
-- [ ] Local Gemma is invoked for unmatched transactions only in this slice.
-- [ ] Prompt context includes Merchant Identity, amount, date, direction, and YAML Leaf Category Row choices.
-- [ ] Raw Nordea descriptions are excluded from prompts by default.
-- [ ] The Allowed Category Set excludes Parent/Section Rows, derived rows, and missing categories.
-- [ ] A valid model response for an existing leaf category populates `suggested_category`, `method`, `confidence`, and `reason`.
-- [ ] The categorization method identifies the model suggestion, for example `local_llm_gemma`.
-- [ ] Model suggestions remain `review_required=true` and cannot auto-write workbook values.
-- [ ] The Review Required workbook does not gain new primary LLM suggestion columns.
-- [ ] Invalid JSON, missing fields, and categories outside the Allowed Category Set leave the original unmatched review state intact and produce a warning.
-- [ ] Tests cover prompt construction, valid existing-leaf suggestions, invalid provider responses, review workbook shape, report output, and audit output with mocked provider calls.
+- [x] Local Gemma is invoked for unmatched transactions only in this slice.
+- [x] Prompt context includes Merchant Identity, amount, date, direction, and YAML Leaf Category Row choices.
+- [x] Raw Nordea descriptions are excluded from prompts by default.
+- [x] The Allowed Category Set excludes Parent/Section Rows, derived rows, and missing categories.
+- [x] A valid model response for an existing leaf category populates `suggested_category`, `method`, `confidence`, and `reason`.
+- [x] The categorization method identifies the model suggestion, for example `local_llm_gemma`.
+- [x] Model suggestions remain `review_required=true` and cannot auto-write workbook values.
+- [x] The Review Required workbook does not gain new primary LLM suggestion columns.
+- [x] Invalid JSON, missing fields, and categories outside the Allowed Category Set leave the original unmatched review state intact and produce a warning.
+- [x] Tests cover prompt construction, valid existing-leaf suggestions, invalid provider responses, review workbook shape, report output, and audit output with mocked provider calls.
 
 ## Blocked By
 

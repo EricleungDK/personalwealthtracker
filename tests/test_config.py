@@ -78,6 +78,57 @@ carry_forward_rows:
     )
 
 
+def test_load_config_defaults_local_llm_provider_settings(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(
+        tmp_path / "categories.yaml",
+        "categories:\n  - Public Category\naliases: {}\n",
+    )
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.local_llm.provider == "ollama"
+    assert config.local_llm.endpoint == "http://localhost:11434"
+    assert config.local_llm.model == "gemma4:e4b"
+    assert config.local_llm.fallback_model == "gemma4:e2b"
+    assert config.local_llm.timeout_seconds == 30.0
+    assert config.local_llm.include_raw_description is False
+
+
+def test_load_config_supports_local_llm_provider_overrides(tmp_path):
+    _write(
+        tmp_path / "settings.yaml",
+        """
+tracker:
+  currency: DKK
+statement:
+  currency: DKK
+local_llm:
+  provider: ollama
+  endpoint: "http://127.0.0.1:11435"
+  model: "gemma4:e2b"
+  fallback_model: "gemma4:e4b"
+  timeout_seconds: 5
+  include_raw_description: true
+""",
+    )
+    _write(
+        tmp_path / "categories.yaml",
+        "categories:\n  - Public Category\naliases: {}\n",
+    )
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.local_llm.provider == "ollama"
+    assert config.local_llm.endpoint == "http://127.0.0.1:11435"
+    assert config.local_llm.model == "gemma4:e2b"
+    assert config.local_llm.fallback_model == "gemma4:e4b"
+    assert config.local_llm.timeout_seconds == 5.0
+    assert config.local_llm.include_raw_description is True
+
+
 def test_load_config_supports_private_proxy_split_rules(tmp_path):
     _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
     _write(

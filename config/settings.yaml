@@ -18,3 +18,11 @@ confidence_thresholds:
 writer:
   overwrite_fixed_rows: false
   highlight_auto_filled_cells: false
+
+local_llm:
+  provider: "ollama"
+  endpoint: "http://localhost:11434"
+  model: "gemma4:e4b"
+  fallback_model: "gemma4:e2b"
+  timeout_seconds: 30
+  include_raw_description: false

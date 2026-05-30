@@ -2,9 +2,9 @@
 type: prd
 id: PRD-2026-05-27-LOCAL-GEMMA-REVIEW-SUGGESTIONS
 title: Local Gemma Review Suggestions
-status: ready-for-agent
+status: complete
 labels:
-  - ready-for-agent
+  - done
 created: 2026-05-27
 ---
 

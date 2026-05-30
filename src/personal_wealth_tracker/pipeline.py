@@ -6,6 +6,7 @@ from pathlib import Path
 from .categorizer import categorize_transactions
 from .category_memory import load_category_memory
 from .config import load_config, register_category_registry_additions
+from .local_llm import apply_local_llm_suggestions, disabled_diagnostics
 from .models import CategoryRegistryAddition, RunResult, Transaction
 from .nordea_csv import parse_nordea_csv
 from .nordea_pdf import parse_nordea_pdf
@@ -51,6 +52,8 @@ def run_pipeline(
     category_memory_dir: Path = Path("data/category_memory"),
     statement_format: str = "auto",
     review_decisions_path: Path | None = None,
+    local_llm_suggestions: bool = False,
+    local_llm_client: object | None = None,
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -91,6 +94,13 @@ def run_pipeline(
             categorized,
             review_decisions,
         )
+    local_llm_diagnostics = disabled_diagnostics(config.local_llm)
+    if local_llm_suggestions:
+        categorized, local_llm_diagnostics = apply_local_llm_suggestions(
+            categorized,
+            config,
+            client=local_llm_client,
+        )
     workbook_plan = plan_workbook_changes(tracker_path, categorized, year, month, config)
     updates = workbook_plan.updates
     structure_changes = workbook_plan.structure_changes
@@ -126,6 +136,7 @@ def run_pipeline(
         statement_parser=statement_parser,
         workbook_config=config,
         category_registry_additions=category_registry_additions,
+        local_llm_diagnostics=local_llm_diagnostics,
         review_xlsx_path=_review_xlsx_output_path(
             output_dir,
             year,
@@ -150,6 +161,7 @@ def run_pipeline(
         output_workbook_path=output_workbook_path,
         review_xlsx_path=review_xlsx_path,
         category_registry_additions=category_registry_additions,
+        local_llm_diagnostics=local_llm_diagnostics,
     )
 
 

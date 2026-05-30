@@ -1,22 +1,18 @@
 ---
 type: kanban
-updated: 2026-05-27
+updated: 2026-05-28
 ---
 
 # Local Issue Kanban
 
 ## Ready For Agent
 
-- [ISSUE-026: Add Local LLM Opt-In Provider Scaffold](./2026-05-27-issue-026-add-local-llm-opt-in-provider-scaffold.md)
+No issues currently ready.
 
 ## Blocked
 
 - [ISSUE-005: Add Investment Statement Evidence](./2026-05-11-issue-005-add-investment-statement-evidence.md)
 - [ISSUE-006: Combine Monthly Planning Evidence](./2026-05-11-issue-006-combine-monthly-planning-evidence.md)
-- [ISSUE-027: Suggest Existing Leaf Categories With Local Gemma](./2026-05-27-issue-027-suggest-existing-leaf-categories-with-local-gemma.md)
-- [ISSUE-028: Apply Local Gemma To Low-Confidence Review Rows](./2026-05-27-issue-028-apply-local-gemma-to-low-confidence-review-rows.md)
-- [ISSUE-029: Handle Local Gemma No-Suggestion And New-Leaf Candidates](./2026-05-27-issue-029-handle-local-gemma-no-suggestion-and-new-leaf-candidates.md)
-- [ISSUE-030: Add Local Gemma Evaluation Diagnostics And Docs](./2026-05-27-issue-030-add-local-gemma-evaluation-diagnostics-and-docs.md)
 
 ## In Progress
 
@@ -47,3 +43,8 @@ No issues currently in progress.
 - [ISSUE-023: Add Proxy Split Trigger Safety Gates](./2026-05-21-issue-023-add-proxy-split-trigger-safety-gates.md)
 - [ISSUE-024: Reorder Review Workbook And Add Split Metadata](./2026-05-21-issue-024-reorder-review-workbook-and-add-split-metadata.md)
 - [ISSUE-025: Document Proxy Split Workflow And Local Config](./2026-05-21-issue-025-document-proxy-split-workflow-and-local-config.md)
+- [ISSUE-026: Add Local LLM Opt-In Provider Scaffold](./2026-05-27-issue-026-add-local-llm-opt-in-provider-scaffold.md)
+- [ISSUE-027: Suggest Existing Leaf Categories With Local Gemma](./2026-05-27-issue-027-suggest-existing-leaf-categories-with-local-gemma.md)
+- [ISSUE-028: Apply Local Gemma To Low-Confidence Review Rows](./2026-05-27-issue-028-apply-local-gemma-to-low-confidence-review-rows.md)
+- [ISSUE-029: Handle Local Gemma No-Suggestion And New-Leaf Candidates](./2026-05-27-issue-029-handle-local-gemma-no-suggestion-and-new-leaf-candidates.md)
+- [ISSUE-030: Add Local Gemma Evaluation Diagnostics And Docs](./2026-05-27-issue-030-add-local-gemma-evaluation-diagnostics-and-docs.md)
