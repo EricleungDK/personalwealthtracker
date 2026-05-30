@@ -75,6 +75,31 @@ class CategoryRegistryAddition:
 
 
 @dataclass(frozen=True)
+class LocalLLMAvailability:
+    available: bool
+    model: str | None
+    warning: str | None = None
+
+
+@dataclass(frozen=True)
+class LocalLLMDiagnostics:
+    enabled: bool = False
+    provider: str = "ollama"
+    endpoint: str = "http://localhost:11434"
+    model: str = "gemma4:e4b"
+    fallback_model: str = "gemma4:e2b"
+    active_model: str | None = None
+    eligible_count: int = 0
+    attempted_count: int = 0
+    existing_leaf_suggestions: int = 0
+    no_suggestion_count: int = 0
+    new_leaf_candidate_count: int = 0
+    invalid_response_count: int = 0
+    provider_failure_count: int = 0
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class WorkbookPlan:
     updates: list[TrackerUpdate]
     structure_changes: list[WorkbookStructureChange]
@@ -97,3 +122,4 @@ class RunResult:
     output_workbook_path: Path | None = None
     review_xlsx_path: Path | None = None
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
+    local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)

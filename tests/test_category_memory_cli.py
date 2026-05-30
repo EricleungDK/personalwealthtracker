@@ -325,6 +325,45 @@ def test_import_review_workbook_learns_reviewed_new_leaf_after_registry_validati
     ]
 
 
+def test_import_review_workbook_does_not_learn_unconfirmed_local_llm_suggestion(
+    tmp_path, capsys
+):
+    decisions_path = tmp_path / "review_required_2026_apr.xlsx"
+    memory_dir = tmp_path / "data" / "category_memory"
+    _write_review_workbook_decisions(
+        decisions_path,
+        review_rows=[
+            {
+                "transaction_id": "tx-local-llm",
+                "description": "UNKNOWN TRAVEL",
+                "amount": "-42.50",
+                "suggested_category": "Traveling",
+                "method": "local_llm_gemma",
+                "manual_category": "",
+                "learn_to_memory": "yes",
+            }
+        ],
+        category_options=[("Traveling", True)],
+    )
+
+    exit_code = main(
+        [
+            "learn-category-memory",
+            "--decisions",
+            str(decisions_path),
+            "--memory-dir",
+            str(memory_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Imported category memory decisions: 0" in captured.out
+    assert "Skipped unlearned decisions: 1" in captured.out
+    memory = load_category_memory(memory_dir)
+    assert memory.mappings == ()
+
+
 def test_import_review_workbook_rejects_unsupported_transaction_id_scheme(tmp_path, capsys):
     decisions_path = tmp_path / "review_required_2026_apr.xlsx"
     memory_dir = tmp_path / "data" / "category_memory"
@@ -763,10 +802,10 @@ def _write_review_workbook_decisions(
                 row["amount"],
                 "expense",
                 "",
-                "",
-                "",
-                "",
-                "",
+                row.get("suggested_category", ""),
+                row.get("confidence", ""),
+                row.get("method", ""),
+                row.get("reason", ""),
                 row["manual_category"],
                 row.get("new_parent_category", ""),
                 row.get("new_leaf_category", ""),

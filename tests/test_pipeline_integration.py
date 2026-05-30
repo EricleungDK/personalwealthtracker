@@ -5,6 +5,7 @@ from openpyxl import Workbook, load_workbook
 import pytest
 
 from personal_wealth_tracker.config import load_config
+from personal_wealth_tracker.models import LocalLLMAvailability
 from personal_wealth_tracker.pipeline import run_pipeline
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
@@ -872,6 +873,70 @@ def test_pipeline_accepts_manual_review_category_registered_as_missing_leaf(
     assert result.updates[0].reason == "Target category row not found."
 
 
+def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    client = _LocalLLMClient(
+        status="category",
+        suggested_category="Traveling",
+        confidence=0.68,
+        rationale="Merchant looks travel related.",
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        local_llm_client=client,
+    )
+
+    item = result.categorized_transactions[0]
+    assert item.suggested_category == "Traveling"
+    assert item.categorization_method == "local_llm_gemma"
+    assert item.review_required is True
+    assert result.updates[0].category == "Traveling"
+    assert result.updates[0].write_action == "review"
+    assert result.updates[0].reason == "One or more source transactions require review."
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "## Local LLM Mode" in report
+    assert "- Status: enabled" in report
+    assert "- Eligible rows: 1" in report
+    assert "- Provider calls attempted: 1" in report
+    assert "- Existing-leaf suggestions: 1" in report
+    assert "- local_llm_gemma: 1" in report
+
+    audit = result.audit_path.read_text(encoding="utf-8")
+    assert '"record_type": "local_llm_summary"' in audit
+    assert '"existing_leaf_suggestions": 1' in audit
+    assert '"categorization_method": "local_llm_gemma"' in audit
+
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        review_sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        assert "llm_suggested_category" not in headers
+        assert "llm_reason" not in headers
+        assert review_sheet.cell(row=2, column=headers["suggested_category"]).value == "Traveling"
+        assert review_sheet.cell(row=2, column=headers["method"]).value == "local_llm_gemma"
+        assert "Merchant looks travel related." in review_sheet.cell(
+            row=2, column=headers["reason"]
+        ).value
+    finally:
+        workbook.close()
+
+
 def test_pipeline_registers_new_leaf_category_from_review_decisions(
     tmp_path, monkeypatch
 ):
@@ -1190,6 +1255,37 @@ def _write_revolut_statement(path: Path, amount: str) -> None:
         "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
         f"2026/04/04;{amount};50000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n",
     )
+
+
+class _LocalLLMClient:
+    def __init__(
+        self,
+        status: str,
+        suggested_category: str,
+        confidence: float,
+        rationale: str,
+    ):
+        self.status = status
+        self.suggested_category = suggested_category
+        self.confidence = confidence
+        self.rationale = rationale
+
+    def check_availability(self, config):
+        return LocalLLMAvailability(available=True, model=config.model)
+
+    def generate(self, config, model, prompt):
+        import json
+
+        transaction_id = json.loads(prompt)["transaction"]["transaction_id"]
+        return json.dumps(
+            {
+                "transaction_id": transaction_id,
+                "status": self.status,
+                "suggested_category": self.suggested_category,
+                "confidence": self.confidence,
+                "rationale": self.rationale,
+            }
+        )
 
 
 def _create_tracker(path: Path) -> None:

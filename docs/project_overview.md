@@ -41,6 +41,7 @@ flowchart LR
   Statement["Nordea statement<br/>CSV preferred, PDF fallback"] --> Parser["Parser<br/>turns bank rows into transactions"]
   Tracker["Tracker workbook<br/>existing Excel file"] --> WorkbookRead["Workbook reader<br/>finds rows, months, formulas, existing values"]
   Rules["Config, category registry, category memory, and local proxy split rules<br/>known categories and learned choices"] --> Categorizer["Categorizer<br/>chooses transaction categories"]
+  LocalLLM["Local LLM Mode<br/>optional review-only Ollama/Gemma suggestions"] --> Planner
 
   Parser --> Categorizer
   Categorizer --> Planner["Workbook planner<br/>decides write, skip, or review"]
@@ -64,6 +65,7 @@ The important split is:
 - The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added.
 - Category Memory learns selected merchant choices for future months.
 - Proxy Split Transfer rules in ignored `rules.local.yaml` can split one intermediary transfer into fixed allocation lines plus an optional Residual Review Line.
+- Local LLM Mode: optional `--local-llm-suggestions` review assistance using local Ollama/Gemma; suggestions stay review-only and reuse existing review workbook suggestion fields.
 - Commit mode writes only safe values into a copied workbook under `data/processed/`.
 
 ## Main Components
@@ -77,6 +79,7 @@ flowchart TD
   Pipeline --> Memory["category_memory.py<br/>private learned categories"]
   Pipeline --> Review["review_decisions.py<br/>reads reviewed XLSX or CSV"]
   Pipeline --> Categorizer["categorizer.py<br/>matches transactions to categories"]
+  Pipeline --> LocalLLM["local_llm.py<br/>optional local Gemma review suggestions"]
   Pipeline --> Workbook["workbook.py<br/>plans and writes workbook changes safely"]
   Pipeline --> Reporting["reporting.py<br/>writes reports, audit logs, review files"]
   Pipeline --> Models["models.py<br/>shared data shapes"]
@@ -91,6 +94,7 @@ Plain-language component roles:
 - `categorizer.py` decides what each transaction probably is.
 - `review_decisions.py` applies your reviewed Excel decisions by exact transaction ID.
 - `category_memory.py` stores future learned category choices in ignored local data.
+- `local_llm.py` talks to Ollama's local HTTP API when `--local-llm-suggestions` is enabled and keeps model output review-only.
 - `workbook.py` protects the tracker workbook from unsafe writes.
 - `reporting.py` produces the files you inspect after a dry run.
 - `cleanup.py` is for separate workbook maintenance tasks, not monthly transaction updates.
@@ -152,6 +156,9 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Review workbook: The Excel file where you choose `manual_category` for existing leaf rows, `new_parent_category` and `new_leaf_category` for missing leaf rows, and optional `learn_to_memory`.
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
 - Category Memory: Private learned merchant/category choices for future runs.
+- Local LLM Mode: Explicit opt-in `--local-llm-suggestions` mode that can add review-only local Ollama/Gemma hints to unmatched or low-confidence rows.
+- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `method`, `confidence`, and `reason` fields; it is not a confirmed decision.
+- LLM New Leaf Candidate: A model hint that a missing leaf row may be needed. It does not fill `new_parent_category` or `new_leaf_category` for you.
 - Proxy Split Transfer: One intermediary bank transfer split into explicit tracker allocation lines while preserving the source transaction for audit.
 - Residual Review Line: The leftover amount from a larger proxy split transfer; it is reviewed for the current month and not learned into Category Memory.
 - Fixed row: A workbook row the automation must not overwrite.

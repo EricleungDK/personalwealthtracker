@@ -199,3 +199,56 @@ def test_category_registry_leaf_lifecycle_documentation_is_in_sync():
     ]
     for phrase in context_phrases:
         assert phrase in agent_context
+
+
+def test_local_llm_mode_documentation_is_in_sync():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / "docs" / "monthly_workflow.md").read_text(encoding="utf-8")
+    overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
+    settings = (REPO_ROOT / "config" / "settings.yaml").read_text(encoding="utf-8")
+    data_contracts = (REPO_ROOT / ".agent" / "System" / "data_contracts.md").read_text(
+        encoding="utf-8"
+    )
+    security = (REPO_ROOT / ".agent" / "System" / "security_privacy.md").read_text(
+        encoding="utf-8"
+    )
+
+    shared_phrases = [
+        "Local LLM Mode",
+        "--local-llm-suggestions",
+        "review-only",
+        "gemma4:e4b",
+        "gemma4:e2b",
+        "raw Nordea descriptions are excluded",
+    ]
+    for phrase in shared_phrases:
+        assert phrase in workflow
+
+    for phrase in [
+        "--local-llm-suggestions",
+        "local Ollama/Gemma review suggestions",
+    ]:
+        assert phrase in readme
+
+    for phrase in [
+        "Local LLM Mode:",
+        "existing review workbook suggestion fields",
+    ]:
+        assert phrase in overview
+
+    for phrase in [
+        "local_llm:",
+        'model: "gemma4:e4b"',
+        'fallback_model: "gemma4:e2b"',
+        "include_raw_description: false",
+    ]:
+        assert phrase in settings
+
+    for phrase in [
+        "`status`: one of `category`, `no_suggestion`, `new_leaf_candidate`",
+        "Invalid JSON",
+        "Provider failures",
+    ]:
+        assert phrase in data_contracts
+
+    assert "raw Nordea descriptions are excluded" in security

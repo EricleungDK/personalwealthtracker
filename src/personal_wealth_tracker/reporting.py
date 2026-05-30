@@ -11,6 +11,7 @@ from .config import AppConfig
 from .models import (
     CategorizedTransaction,
     CategoryRegistryAddition,
+    LocalLLMDiagnostics,
     TrackerUpdate,
     WorkbookStructureChange,
 )
@@ -31,6 +32,7 @@ def write_outputs(
     statement_parser: str = "nordea-pdf",
     workbook_config: AppConfig | None = None,
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = (),
+    local_llm_diagnostics: LocalLLMDiagnostics | None = None,
     review_xlsx_path: Path | None = None,
 ) -> tuple[Path, Path, Path, Path, Path]:
     structure_changes = structure_changes or []
@@ -42,6 +44,7 @@ def write_outputs(
     review_path = output_dir / f"review_required_{period}.csv"
     review_xlsx_path = review_xlsx_path or output_dir / f"review_required_{period}.xlsx"
     category_options = _load_category_options(tracker_path, year, month, workbook_config)
+    local_llm_diagnostics = local_llm_diagnostics or LocalLLMDiagnostics()
 
     _write_report(
         report_path,
@@ -53,6 +56,7 @@ def write_outputs(
         updates,
         structure_changes,
         category_registry_additions,
+        local_llm_diagnostics,
     )
     _write_audit(
         audit_path,
@@ -66,6 +70,7 @@ def write_outputs(
         updates,
         structure_changes,
         category_registry_additions,
+        local_llm_diagnostics,
     )
     _write_categorized_csv(categorized_path, categorized)
     _write_review_csv(review_path, categorized, updates)
@@ -102,6 +107,7 @@ def _write_report(
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange],
     category_registry_additions: tuple[CategoryRegistryAddition, ...],
+    local_llm_diagnostics: LocalLLMDiagnostics,
 ) -> None:
     total = len(categorized)
     review_count = sum(1 for item in categorized if item.review_required)
@@ -141,6 +147,33 @@ def _write_report(
             lines.append(f"- {method}: {count}")
     else:
         lines.append("- none: 0")
+
+    if local_llm_diagnostics.enabled:
+        lines.extend(
+            [
+                "",
+                "## Local LLM Mode",
+                "",
+                "- Status: enabled",
+                f"- Provider: {local_llm_diagnostics.provider}",
+                f"- Endpoint: {local_llm_diagnostics.endpoint}",
+                f"- Model: {local_llm_diagnostics.active_model or local_llm_diagnostics.model}",
+                f"- Fallback model: {local_llm_diagnostics.fallback_model}",
+                f"- Eligible rows: {local_llm_diagnostics.eligible_count}",
+                f"- Provider calls attempted: {local_llm_diagnostics.attempted_count}",
+                f"- Existing-leaf suggestions: {local_llm_diagnostics.existing_leaf_suggestions}",
+                f"- No-suggestion responses: {local_llm_diagnostics.no_suggestion_count}",
+                f"- New-leaf candidates: {local_llm_diagnostics.new_leaf_candidate_count}",
+                f"- Invalid responses: {local_llm_diagnostics.invalid_response_count}",
+                f"- Provider failures: {local_llm_diagnostics.provider_failure_count}",
+                "- Warnings:",
+            ]
+        )
+        if local_llm_diagnostics.warnings:
+            for warning in local_llm_diagnostics.warnings:
+                lines.append(f"- {warning}")
+        else:
+            lines.append("- none")
 
     lines.extend(
         [
@@ -238,6 +271,7 @@ def _write_audit(
     updates: list[TrackerUpdate],
     structure_changes: list[WorkbookStructureChange],
     category_registry_additions: tuple[CategoryRegistryAddition, ...],
+    local_llm_diagnostics: LocalLLMDiagnostics,
 ) -> None:
     update_by_transaction = {
         transaction_id: update
@@ -246,6 +280,39 @@ def _write_audit(
     }
     timestamp = datetime.now().isoformat(timespec="seconds")
     with path.open("w", encoding="utf-8") as handle:
+        if local_llm_diagnostics.enabled:
+            payload = {
+                "record_type": "local_llm_summary",
+                "run_timestamp": timestamp,
+                "mode": mode,
+                "statement_parser": statement_parser,
+                "target_year": year,
+                "target_month": month,
+                "provider": local_llm_diagnostics.provider,
+                "endpoint": local_llm_diagnostics.endpoint,
+                "model": local_llm_diagnostics.model,
+                "fallback_model": local_llm_diagnostics.fallback_model,
+                "active_model": local_llm_diagnostics.active_model,
+                "eligible_count": local_llm_diagnostics.eligible_count,
+                "attempted_count": local_llm_diagnostics.attempted_count,
+                "existing_leaf_suggestions": local_llm_diagnostics.existing_leaf_suggestions,
+                "no_suggestion_count": local_llm_diagnostics.no_suggestion_count,
+                "new_leaf_candidate_count": local_llm_diagnostics.new_leaf_candidate_count,
+                "invalid_response_count": local_llm_diagnostics.invalid_response_count,
+                "provider_failure_count": local_llm_diagnostics.provider_failure_count,
+            }
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            for warning in local_llm_diagnostics.warnings:
+                payload = {
+                    "record_type": "local_llm_warning",
+                    "run_timestamp": timestamp,
+                    "mode": mode,
+                    "statement_parser": statement_parser,
+                    "target_year": year,
+                    "target_month": month,
+                    "warning": warning,
+                }
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         for addition in category_registry_additions:
             payload = {
                 "record_type": "category_registry_addition",

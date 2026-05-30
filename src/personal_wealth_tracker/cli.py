@@ -41,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reviewed XLSX decisions to apply by exact transaction ID.",
     )
     parser.add_argument(
+        "--local-llm-suggestions",
+        action="store_true",
+        help="Explicitly enable local Ollama/Gemma review-only category suggestions.",
+    )
+    parser.add_argument(
         "--commit",
         action="store_true",
         help="Write eligible values to a copied workbook. Dry-run is the default.",
@@ -143,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             commit=args.commit,
             statement_format=args.statement_format,
             review_decisions_path=args.review_decisions,
+            local_llm_suggestions=args.local_llm_suggestions,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

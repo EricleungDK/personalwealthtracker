@@ -12,7 +12,8 @@ MVP 1 is scaffolded as a Python project. It is intentionally local-only:
 - Currency policy: DKK.
 - Default mode: dry-run.
 - Commit mode: writes only to a copied workbook under `data/processed/`.
-- Deferred: Google Drive, bank APIs, scheduler, notifications, budget alerts, and LLM categorization.
+- Optional: local Ollama/Gemma review suggestions with explicit `--local-llm-suggestions`.
+- Deferred: Google Drive, bank APIs, scheduler, notifications, budget alerts, and remote or auto-write LLM categorization.
 
 Nordea CSV is the preferred bank cashflow input because it includes merchant-rich fields that improve deterministic categorization. PDF remains supported as a fallback/legacy input for older statement workflows.
 
@@ -75,6 +76,22 @@ uv run wealth-tracker \
 For local smoke validation, run one dry-run against a real ignored CSV export and inspect the generated report, categorized CSV, review CSV, and audit log under `reports/`. The command must not require moving the real CSV into a committed fixture path. Do not commit real CSV input or generated report/audit outputs.
 
 Investment statements remain separate future PDF evidence. Bank CSV and PDF inputs prove cashflow; future investment account statements should prove month-end asset values or holdings through a separate evidence contract and are not routed through the bank cashflow parser.
+
+## Local LLM Review Suggestions
+
+Local LLM Mode is optional and review-only. Add `--local-llm-suggestions` to ask a local Ollama/Gemma model for local Ollama/Gemma review suggestions on unmatched transactions and low-confidence review rows:
+
+```bash
+uv run wealth-tracker \
+  --tracker "Net Worth Tracker.xlsx" \
+  --statement "data/raw_statements/ignored-nordea-export.csv" \
+  --statement-format auto \
+  --year 2026 \
+  --month Apr \
+  --local-llm-suggestions
+```
+
+The default model is `gemma4:e4b` with `gemma4:e2b` as fallback. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook.
 
 ## PDF Fallback Dry Run
 

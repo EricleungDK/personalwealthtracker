@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Project State
 
@@ -8,7 +8,7 @@ Last updated: 2026-05-27
 - Framework: Python local CLI.
 - Package manager: uv with `pyproject.toml`.
 - Product requirements: Maintained in `.agent/System/product_requirements.md`; original background planning notes have been removed from the repo.
-- Implementation status: CSV-first monthly dry-run, review workbook decisions, Category Memory learning with YAML leaf validation, safe copied-workbook commit flow, YAML-backed category registry, reviewed new leaf registration, workbook leaf row insertion, and updated operator docs implemented.
+- Implementation status: CSV-first monthly dry-run, review workbook decisions, Category Memory learning with YAML leaf validation, safe copied-workbook commit flow, YAML-backed category registry, reviewed new leaf registration, workbook leaf row insertion, explicit opt-in local Ollama/Gemma review suggestions, and updated operator docs implemented.
 
 ## Active Tasks
 
@@ -19,7 +19,7 @@ Last updated: 2026-05-27
 | PRD-2026-05-16-MANUAL-REVIEW-FEEDBACK | COMPLETE | Codex | Implemented stable transaction IDs, review workbook generation, Monthly Review Decisions, and Category Memory learning from reviewed XLSX artifacts. |
 | PRD-2026-05-20-YAML-CATEGORY-REGISTRY-LEAF-REVIEW | COMPLETE | Codex | Implemented YAML-backed parent/leaf category registry, new leaf category requests during review, registry updates from reviewed runs, workbook row insertion, Category Memory gating, and documentation updates. |
 | PRD-2026-05-21-PROXY-SPLIT-TRANSFER-RULES | COMPLETE | Codex | Implemented proxy split transfers, Revolut family allocations, residual review lines, trigger safety gates, split metadata, review workbook column order, docs, and tests. |
-| PRD-2026-05-27-LOCAL-GEMMA-REVIEW-SUGGESTIONS | READY | Codex | Grilling complete; local PRD and issues `ISSUE-026` through `ISSUE-030` created for explicit opt-in Local LLM Mode using local Gemma through Ollama. |
+| PRD-2026-05-27-LOCAL-GEMMA-REVIEW-SUGGESTIONS | COMPLETE | Codex | Implemented explicit opt-in Local LLM Mode using local Gemma through Ollama for review-only suggestions on unmatched and low-confidence review rows. |
 
 ## Active Delegations
 
@@ -128,6 +128,7 @@ Last updated: 2026-05-27
 | 2026-05-27 | Local Gemma integration should call Ollama's local HTTP API rather than shelling out to `ollama run`. | The HTTP API is easier to mock in tests, enforce timeouts, validate structured responses, and report provider failures without parsing CLI output. |
 | 2026-05-27 | Local Gemma provider failures should not fail monthly planning. | If Ollama is unavailable, times out, the model is missing, or the response cannot be validated, the run should keep the original deterministic or unmatched review state and report a warning. |
 | 2026-05-27 | Initial local Gemma model configuration should target `gemma4:e4b` with `gemma4:e2b` as the fallback for the user's Apple Silicon M1 16 GB MacBook. | E4B should be feasible for low-volume monthly review assistance on 16 GB unified memory; E2B gives a lighter fallback if speed or memory is unacceptable. |
+| 2026-05-28 | Local LLM Mode is implemented as a review-only assistance layer. | `--local-llm-suggestions` invokes local Ollama/Gemma only for unmatched and low-confidence review rows, validates structured responses against YAML leaf categories, preserves authoritative deterministic/review/memory/proxy outputs, and reports diagnostics without raw prompt dumps. |
 
 ## Open Questions
 
@@ -140,7 +141,6 @@ Last updated: 2026-05-27
 - USD-to-DKK conversion policy needs exact configuration shape and reporting/audit fields before investment statement support is implemented.
 - Current transaction ID generation is only partially aligned with Monthly Review Decisions: Nordea CSV/PDF IDs include parser row index, which is stable for identical exports but may change if export ordering changes.
 - Low real-CSV transaction classification rate and no-review rate need measurement by method, category, and merchant identity before deciding whether to add local rules, memory bootstrap, or model-assisted suggestions.
-- Local Gemma categorization implementation is tracked by `PRD-2026-05-27-LOCAL-GEMMA-REVIEW-SUGGESTIONS` and issues `ISSUE-026` through `ISSUE-030`; exact provider config field names and baseline metric details should be finalized during those slices.
 
 ## Grilling Session Results
 
@@ -307,3 +307,4 @@ These backlog items are not active tasks yet.
 - 2026-05-27: Resolved local Gemma failure behavior: provider failures, timeouts, missing models, and invalid structured responses should keep ordinary manual review output and report warnings instead of failing the monthly run.
 - 2026-05-27: Resolved initial local Gemma model target for the user's Apple Silicon M1 16 GB MacBook: default to `gemma4:e4b` with `gemma4:e2b` as a fallback if performance is poor.
 - 2026-05-27: Created local PRD `.agent/issues/2026-05-27-prd-local-gemma-review-suggestions.md` and local issues `ISSUE-026` through `ISSUE-030` for explicit opt-in local Gemma review suggestions.
+- 2026-05-28: Implemented local Gemma review suggestions `ISSUE-026` through `ISSUE-030`: added `--local-llm-suggestions`, local Ollama HTTP provider settings/client, minimized prompt construction, YAML leaf validation, existing-leaf/no-suggestion/new-leaf-candidate handling, low-confidence deterministic review-row assistance, precedence safeguards, Local LLM report/audit diagnostics, operator docs, and tests. Targeted affected suite passed with 95 tests.
