@@ -1,13 +1,13 @@
 ---
 type: kanban
-updated: 2026-05-28
+updated: 2026-06-07
 ---
 
 # Local Issue Kanban
 
 ## Ready For Agent
 
-No issues currently ready.
+- [PRD-2026-06-07-LOCAL-WEALTH-TRACKER-AGENT-PUBLIC-PACKAGE: Local Wealth-Tracker Agent Public Package](./2026-06-07-prd-local-wealth-tracker-agent-public-package.md)
 
 ## Blocked
 
