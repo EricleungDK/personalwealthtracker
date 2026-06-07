@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-05-28
+Last updated: 2026-06-06
 
 ## Project State
 
@@ -129,6 +129,7 @@ Last updated: 2026-05-28
 | 2026-05-27 | Local Gemma provider failures should not fail monthly planning. | If Ollama is unavailable, times out, the model is missing, or the response cannot be validated, the run should keep the original deterministic or unmatched review state and report a warning. |
 | 2026-05-27 | Initial local Gemma model configuration should target `gemma4:e4b` with `gemma4:e2b` as the fallback for the user's Apple Silicon M1 16 GB MacBook. | E4B should be feasible for low-volume monthly review assistance on 16 GB unified memory; E2B gives a lighter fallback if speed or memory is unacceptable. |
 | 2026-05-28 | Local LLM Mode is implemented as a review-only assistance layer. | `--local-llm-suggestions` invokes local Ollama/Gemma only for unmatched and low-confidence review rows, validates structured responses against YAML leaf categories, preserves authoritative deterministic/review/memory/proxy outputs, and reports diagnostics without raw prompt dumps. |
+| 2026-06-06 | Supersede the initial local Gemma model target with `gemma4:12b` as primary and `gemma4:e4b` as fallback. | Both models are installed locally through Ollama, and the larger Gemma 4 12B model is now the preferred review-assistance default while preserving a lighter fallback. |
 
 ## Open Questions
 
@@ -308,3 +309,4 @@ These backlog items are not active tasks yet.
 - 2026-05-27: Resolved initial local Gemma model target for the user's Apple Silicon M1 16 GB MacBook: default to `gemma4:e4b` with `gemma4:e2b` as a fallback if performance is poor.
 - 2026-05-27: Created local PRD `.agent/issues/2026-05-27-prd-local-gemma-review-suggestions.md` and local issues `ISSUE-026` through `ISSUE-030` for explicit opt-in local Gemma review suggestions.
 - 2026-05-28: Implemented local Gemma review suggestions `ISSUE-026` through `ISSUE-030`: added `--local-llm-suggestions`, local Ollama HTTP provider settings/client, minimized prompt construction, YAML leaf validation, existing-leaf/no-suggestion/new-leaf-candidate handling, low-confidence deterministic review-row assistance, precedence safeguards, Local LLM report/audit diagnostics, operator docs, and tests. Targeted affected suite passed with 95 tests.
+- 2026-06-06: Updated local LLM defaults and operator docs to use `gemma4:12b` as the primary Ollama model and `gemma4:e4b` as fallback after validating both models are installed locally. Project-level smoke testing exposed a fragile LLM transaction-ID echo and one 30-second provider timeout; the prompt no longer asks the model to echo transaction IDs, exact validation remains if a provider voluntarily returns one, the default provider timeout is now 60 seconds, generation is bounded, and primary per-row provider failures retry the configured fallback model once.

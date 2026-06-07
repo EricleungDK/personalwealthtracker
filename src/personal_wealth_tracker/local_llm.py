@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -57,7 +58,7 @@ class OllamaLocalLLMClient:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0},
+                    "options": {"temperature": 0, "num_predict": 512},
                 }
             ).encode("utf-8"),
             headers={"Content-Type": "application/json"},
@@ -90,7 +91,6 @@ def build_local_llm_prompt(
     prompt = {
         "task": "Suggest a review-only category for this personal tracker transaction.",
         "response_contract": {
-            "transaction_id": transaction.transaction_id,
             "status": "category | no_suggestion | new_leaf_candidate",
             "suggested_category": "Required only for status=category.",
             "confidence": "Number from 0.0 to 1.0.",
@@ -145,9 +145,20 @@ def apply_local_llm_suggestions(
     for index in eligible_indexes:
         item = updated[index]
         prompt = build_local_llm_prompt(item, allowed_categories, settings)
-        attempted_count += 1
+
+        def generate_model(model: str) -> str:
+            nonlocal attempted_count
+            attempted_count += 1
+            return client.generate(settings, model, prompt)
+
         try:
-            raw_response = client.generate(settings, availability.model or settings.model, prompt)
+            raw_response = _generate_with_fallback(
+                generate_model,
+                settings,
+                availability.model or settings.model,
+                item.transaction.transaction_id,
+                warnings,
+            )
             parsed = _parse_response(
                 raw_response,
                 item.transaction.transaction_id,
@@ -205,6 +216,25 @@ def apply_local_llm_suggestions(
         warnings=tuple(warnings),
     )
     return updated, diagnostics
+
+
+def _generate_with_fallback(
+    generate: Callable[[str], str],
+    settings: LocalLLMSettings,
+    active_model: str,
+    transaction_id: str,
+    warnings: list[str],
+) -> str:
+    try:
+        return generate(active_model)
+    except (OSError, TimeoutError, URLError) as exc:
+        if active_model == settings.fallback_model or not settings.fallback_model:
+            raise
+        warnings.append(
+            f"Local LLM primary model {active_model!r} failed for {transaction_id}: "
+            f"{exc}; using fallback {settings.fallback_model!r}."
+        )
+        return generate(settings.fallback_model)
 
 
 def _eligible_indexes(categorized: list[CategorizedTransaction]) -> list[int]:

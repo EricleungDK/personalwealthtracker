@@ -67,9 +67,9 @@ class CategoryRegistry:
 class LocalLLMSettings:
     provider: str = "ollama"
     endpoint: str = "http://localhost:11434"
-    model: str = "gemma4:e4b"
-    fallback_model: str = "gemma4:e2b"
-    timeout_seconds: float = 30.0
+    model: str = "gemma4:12b"
+    fallback_model: str = "gemma4:e4b"
+    timeout_seconds: float = 60.0
     include_raw_description: bool = False
 
 
@@ -192,9 +192,9 @@ def _local_llm_settings(doc: Any) -> LocalLLMSettings:
     return LocalLLMSettings(
         provider=str(doc.get("provider", "ollama")),
         endpoint=str(doc.get("endpoint", "http://localhost:11434")).rstrip("/"),
-        model=str(doc.get("model", "gemma4:e4b")),
-        fallback_model=str(doc.get("fallback_model", "gemma4:e2b")),
-        timeout_seconds=float(doc.get("timeout_seconds", 30.0)),
+        model=str(doc.get("model", "gemma4:12b")),
+        fallback_model=str(doc.get("fallback_model", "gemma4:e4b")),
+        timeout_seconds=float(doc.get("timeout_seconds", 60.0)),
         include_raw_description=bool(doc.get("include_raw_description", False)),
     )
 

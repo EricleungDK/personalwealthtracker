@@ -84,5 +84,5 @@ Commit mode writes only planned updates whose action is `write`.
 - Local LLM classification can be added as an explicit opt-in review-assistance step for unmatched transactions and low-confidence deterministic suggestions that already require review.
 - Future Local LLM Mode should integrate with Ollama through its local HTTP API rather than shelling out to `ollama run`, so provider calls can be mocked, timed out, and validated as structured review-only suggestions.
 - Local LLM provider failures, timeouts, unavailable models, and invalid structured responses should not fail the monthly planning run. The run should keep the original deterministic or unmatched review state and report a warning.
-- The first local Gemma provider target should be configured for the user's Apple Silicon M1 16 GB machine with `gemma4:e4b` as the default model and `gemma4:e2b` as the fallback model if performance is unacceptable.
+- The current local Gemma provider target is `gemma4:12b` as the default model, with `gemma4:e4b` as the fallback model. Provider calls use bounded generation and may retry the fallback model for a row when the primary model times out or fails.
 - Google Drive integration can wrap workbook download/upload while preserving the same writer safeguards.

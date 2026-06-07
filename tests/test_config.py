@@ -90,9 +90,9 @@ def test_load_config_defaults_local_llm_provider_settings(tmp_path):
 
     assert config.local_llm.provider == "ollama"
     assert config.local_llm.endpoint == "http://localhost:11434"
-    assert config.local_llm.model == "gemma4:e4b"
-    assert config.local_llm.fallback_model == "gemma4:e2b"
-    assert config.local_llm.timeout_seconds == 30.0
+    assert config.local_llm.model == "gemma4:12b"
+    assert config.local_llm.fallback_model == "gemma4:e4b"
+    assert config.local_llm.timeout_seconds == 60.0
     assert config.local_llm.include_raw_description is False
 
 

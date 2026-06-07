@@ -91,7 +91,7 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The default model is `gemma4:e4b` with `gemma4:e2b` as fallback. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook.
+The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 60-second provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook.
 
 ## PDF Fallback Dry Run
 

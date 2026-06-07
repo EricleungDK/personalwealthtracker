@@ -217,8 +217,9 @@ def test_local_llm_mode_documentation_is_in_sync():
         "Local LLM Mode",
         "--local-llm-suggestions",
         "review-only",
+        "gemma4:12b",
         "gemma4:e4b",
-        "gemma4:e2b",
+        "60-second provider timeout",
         "raw Nordea descriptions are excluded",
     ]
     for phrase in shared_phrases:
@@ -238,8 +239,9 @@ def test_local_llm_mode_documentation_is_in_sync():
 
     for phrase in [
         "local_llm:",
-        'model: "gemma4:e4b"',
-        'fallback_model: "gemma4:e2b"',
+        'model: "gemma4:12b"',
+        'fallback_model: "gemma4:e4b"',
+        "timeout_seconds: 60",
         "include_raw_description: false",
     ]:
         assert phrase in settings

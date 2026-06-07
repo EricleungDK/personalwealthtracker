@@ -86,8 +86,8 @@ class LocalLLMDiagnostics:
     enabled: bool = False
     provider: str = "ollama"
     endpoint: str = "http://localhost:11434"
-    model: str = "gemma4:e4b"
-    fallback_model: str = "gemma4:e2b"
+    model: str = "gemma4:12b"
+    fallback_model: str = "gemma4:e4b"
     active_model: str | None = None
     eligible_count: int = 0
     attempted_count: int = 0
