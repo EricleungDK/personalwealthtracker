@@ -48,7 +48,7 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The committed defaults target `gemma4:e4b` through Ollama's local HTTP API, with `gemma4:e2b` as the fallback model for the user's M1 16 GB MacBook. Settings live under `local_llm` in `config/settings.yaml`.
+The committed defaults target `gemma4:12b` through Ollama's local HTTP API, with `gemma4:e4b` as the fallback model and a 60-second provider timeout. Settings live under `local_llm` in `config/settings.yaml`.
 
 Local model output is review-only. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations remain authoritative. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
 

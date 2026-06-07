@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-05-27
+Last updated: 2026-06-06
 
 ## Transaction
 
@@ -33,14 +33,14 @@ Future Local LLM Mode should reuse the existing suggestion fields rather than wi
 
 A local LLM provider response should be parsed into a small structured suggestion contract before it can affect categorized outputs:
 
-- `transaction_id`: the transaction being suggested for.
+- `transaction_id`: optional response echo for the transaction being suggested for. The prompt includes one transaction at a time, so responses should not be required to echo the ID; if a provider returns one, it must match exactly.
 - `status`: one of `category`, `no_suggestion`, `new_leaf_candidate`, or `provider_unavailable`.
 - `suggested_category`: required only when `status` is `category`; must be an existing YAML Leaf Category Row.
 - `new_leaf_candidate`: optional display label hint when `status` is `new_leaf_candidate`; it must not update the Category Registry directly.
 - `confidence`: provider confidence or locally derived confidence in the `0.0` to `1.0` range.
 - `rationale`: short review-facing explanation suitable for the existing `reason` field.
 
-Invalid JSON, missing required fields, categories outside the Allowed Category Set, timeouts, unavailable Ollama, or unavailable models should be treated as provider failures. Provider failures should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run.
+Invalid JSON, missing required fields, categories outside the Allowed Category Set, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
 
 ## TrackerUpdate
 

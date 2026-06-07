@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -35,6 +36,20 @@ def test_prompt_uses_minimized_transaction_context_and_yaml_leaf_categories():
     assert "Traveling" in prompt
     assert "RAW NORDEA" not in prompt
     assert "SECRET CONTEXT" not in prompt
+
+
+def test_prompt_does_not_require_model_to_echo_transaction_id():
+    item = _categorized("stable-content-v2:abc123:001", merchant="UNKNOWN SHOP")
+
+    prompt = build_local_llm_prompt(
+        item,
+        allowed_categories=("Apple Cloud", "Traveling"),
+        config=_config().local_llm,
+    )
+
+    payload = json.loads(prompt)
+    assert payload["transaction"]["transaction_id"] == "stable-content-v2:abc123:001"
+    assert "transaction_id" not in payload["response_contract"]
 
 
 def test_valid_existing_leaf_suggestion_updates_unmatched_review_row():
@@ -249,21 +264,44 @@ def test_provider_call_timeout_keeps_original_review_row_and_warns():
     assert "timed out" in diagnostics.warnings[0]
 
 
+def test_primary_call_timeout_retries_fallback_model_for_same_row():
+    client = _FallbackAfterTimeoutClient(
+        fallback_response=(
+            '{"status":"category","suggested_category":"Traveling",'
+            '"confidence":0.62,"rationale":"Fallback model found a travel hint."}'
+        )
+    )
+
+    categorized, diagnostics = apply_local_llm_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        client=client,
+    )
+
+    assert client.models == ["gemma4:12b", "gemma4:e4b"]
+    assert categorized[0].suggested_category == "Traveling"
+    assert categorized[0].categorization_method == "local_llm_gemma"
+    assert diagnostics.attempted_count == 2
+    assert diagnostics.existing_leaf_suggestions == 1
+    assert diagnostics.provider_failure_count == 0
+    assert "using fallback 'gemma4:e4b'" in diagnostics.warnings[0]
+
+
 def test_ollama_client_availability_uses_http_tags_and_fallback_model(monkeypatch):
     captured = {}
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["timeout"] = timeout
-        return _HTTPResponse('{"models":[{"name":"gemma4:e2b"}]}')
+        return _HTTPResponse('{"models":[{"name":"gemma4:e4b"}]}')
 
     monkeypatch.setattr("personal_wealth_tracker.local_llm.urlopen", fake_urlopen)
 
     availability = OllamaLocalLLMClient().check_availability(_config().local_llm)
 
-    assert captured == {"url": "http://localhost:11434/api/tags", "timeout": 30.0}
+    assert captured == {"url": "http://localhost:11434/api/tags", "timeout": 60.0}
     assert availability.available is True
-    assert availability.model == "gemma4:e2b"
+    assert availability.model == "gemma4:e4b"
     assert "fallback" in availability.warning
 
 
@@ -287,10 +325,11 @@ def test_ollama_client_generate_posts_to_http_api(monkeypatch):
 
     assert captured["url"] == "http://localhost:11434/api/generate"
     assert captured["method"] == "POST"
-    assert captured["timeout"] == 30.0
+    assert captured["timeout"] == 60.0
     assert '"model": "gemma4:e4b"' in captured["payload"]
     assert '"stream": false' in captured["payload"]
     assert '"format": "json"' in captured["payload"]
+    assert '"num_predict": 512' in captured["payload"]
     assert response == '{"status":"no_suggestion"}'
 
 
@@ -388,6 +427,21 @@ class _TimeoutClient:
 
     def generate(self, config, model, prompt):
         raise TimeoutError("timed out")
+
+
+class _FallbackAfterTimeoutClient:
+    def __init__(self, fallback_response: str):
+        self.fallback_response = fallback_response
+        self.models: list[str] = []
+
+    def check_availability(self, config):
+        return LocalLLMAvailability(available=True, model=config.model)
+
+    def generate(self, config, model, prompt):
+        self.models.append(model)
+        if model == config.model:
+            raise TimeoutError("timed out")
+        return self.fallback_response
 
 
 class _HTTPResponse:

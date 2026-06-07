@@ -22,7 +22,7 @@ writer:
 local_llm:
   provider: "ollama"
   endpoint: "http://localhost:11434"
-  model: "gemma4:e4b"
-  fallback_model: "gemma4:e2b"
-  timeout_seconds: 30
+  model: "gemma4:12b"
+  fallback_model: "gemma4:e4b"
+  timeout_seconds: 60
   include_raw_description: false
