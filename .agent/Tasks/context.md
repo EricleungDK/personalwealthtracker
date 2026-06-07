@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 ## Project State
 
@@ -130,6 +130,15 @@ Last updated: 2026-06-06
 | 2026-05-27 | Initial local Gemma model configuration should target `gemma4:e4b` with `gemma4:e2b` as the fallback for the user's Apple Silicon M1 16 GB MacBook. | E4B should be feasible for low-volume monthly review assistance on 16 GB unified memory; E2B gives a lighter fallback if speed or memory is unacceptable. |
 | 2026-05-28 | Local LLM Mode is implemented as a review-only assistance layer. | `--local-llm-suggestions` invokes local Ollama/Gemma only for unmatched and low-confidence review rows, validates structured responses against YAML leaf categories, preserves authoritative deterministic/review/memory/proxy outputs, and reports diagnostics without raw prompt dumps. |
 | 2026-06-06 | Supersede the initial local Gemma model target with `gemma4:12b` as primary and `gemma4:e4b` as fallback. | Both models are installed locally through Ollama, and the larger Gemma 4 12B model is now the preferred review-assistance default while preserving a lighter fallback. |
+| 2026-06-07 | Target the reusable project direction as a public package for arbitrary finance workflows. | This is broader than the current personal Nordea-to-tracker workflow, so packaging work must first separate reusable engine capabilities from private profile/configuration and avoid implying unsupported generic bank, workbook, or LLM authority behavior. |
+| 2026-06-07 | Shape the public package as a local wealth-tracker agent with a template Excel workbook. | The public concept should provide guided local setup, template workbook onboarding, review artifacts, and safe copied-workbook updates while preserving the existing boundary that model assistance is review-only and not autonomous financial authority. |
+| 2026-06-07 | Limit v1 template workbook customization to known workbook dimensions. | The public agent may customize categories, section labels, period columns, currencies, and user profile paths, but arbitrary formula/layout editing is deferred until supported workbook schemas and template versions make it safe. |
+| 2026-06-07 | Unknown statement formats may use a local model-assisted import flow, but imported transactions remain untrusted until reviewed. | This preserves the ambition for broad finance-format support without claiming that an LLM can be a trusted parser or that model output can directly affect workbook planning or writes. |
+| 2026-06-07 | A user-confirmed import may create local importer profiles and future Educated Import Guesses. | After one confirmed import, the agent may suggest field mappings and transaction categories for similar future inputs, but high-confidence guesses are shown to the user for filtering/review rather than silently trusted. |
+| 2026-06-07 | Importer profiles are private local profile data by default. | Public packages may ship only synthetic/demo importer profiles; user-confirmed importer profiles live under ignored local data and may be exported manually only by explicit user action. |
+| 2026-06-07 | The first public release should install a Python CLI package, template Excel workbook, synthetic examples, sample profile/config, local setup directories, and optional local-model integration. | This gives users a reusable local wealth-tracker agent workflow without taking on desktop app, remote service, or fully autonomous finance-product scope in v1. |
+| 2026-06-07 | The public template workbook should be a clean synthetic workbook, not the user's current personal workbook. | The existing workbook can inspire schema and formulas, but the public template must contain no real values, private categories, personal sheet names, or hidden assumptions, and should include template version metadata. |
+| 2026-06-07 | Use the current repository as the incubation repo before splitting public and private layers. | Packaging work should start on a branch in this repo, then separate a public package/repository from private profile data only after the boundary between reusable agent, template workbook, and local personal configuration is clear. |
 
 ## Open Questions
 
@@ -142,6 +151,15 @@ Last updated: 2026-06-06
 - USD-to-DKK conversion policy needs exact configuration shape and reporting/audit fields before investment statement support is implemented.
 - Current transaction ID generation is only partially aligned with Monthly Review Decisions: Nordea CSV/PDF IDs include parser row index, which is stable for identical exports but may change if export ordering changes.
 - Low real-CSV transaction classification rate and no-review rate need measurement by method, category, and merchant identity before deciding whether to add local rules, memory bootstrap, or model-assisted suggestions.
+- Public-package scope needs product boundaries for arbitrary finance workflows, including what abstractions are stable enough to expose, what remains a personal profile, and whether the first public artifact is this repo, a branch, a package, or a separate template/new repository.
+- The public local wealth-tracker agent needs a precise definition of which actions are agent-guided setup, which are deterministic automation, which are local model suggestions, and which require explicit user review before workbook changes.
+- Template Excel Workbook versioning and schema compatibility need a public contract before the agent can safely support layout or formula changes.
+- Statement Import Assistant behavior needs a contract for unknown formats, including required review fields, validation checks, provenance, confidence, and when reviewed imported transactions become eligible for monthly planning.
+- Educated Import Guess review UX needs a contract for confidence thresholds, filterable review states, and what counts as user confirmation for future importer profile learning.
+- Importer Profile storage needs a public/private path contract aligned with Category Memory and local rule overlays.
+- Public CLI command design needs a workflow contract for setup, statement import, import review, monthly planning, copied-workbook commit, and local profile management.
+- Template Excel Workbook generation needs a synthetic workbook design with version metadata, generic formulas, and no private financial history.
+- Repository/package split plan needs a PRD and migration checklist before moving code into a public package or separate repo.
 
 ## Grilling Session Results
 
@@ -311,3 +329,13 @@ These backlog items are not active tasks yet.
 - 2026-05-28: Implemented local Gemma review suggestions `ISSUE-026` through `ISSUE-030`: added `--local-llm-suggestions`, local Ollama HTTP provider settings/client, minimized prompt construction, YAML leaf validation, existing-leaf/no-suggestion/new-leaf-candidate handling, low-confidence deterministic review-row assistance, precedence safeguards, Local LLM report/audit diagnostics, operator docs, and tests. Targeted affected suite passed with 95 tests.
 - 2026-06-06: Updated local LLM defaults and operator docs to use `gemma4:12b` as the primary Ollama model and `gemma4:e4b` as fallback after validating both models are installed locally. Project-level smoke testing exposed a fragile LLM transaction-ID echo and one 30-second provider timeout; the prompt no longer asks the model to echo transaction IDs, exact validation remains if a provider voluntarily returns one, the default provider timeout is now 60 seconds, generation is bounded, and primary per-row provider failures retry the configured fallback model once.
 - 2026-06-06: Fixed Local LLM fallback diagnostics so provider-attempt counts reflect actual `client.generate()` calls, including primary failures followed by fallback success. Regression was developed with TDD, full suite passed with 160 tests, and commit `8d0c99d` recorded the change.
+- 2026-06-07: Started a packaging grilling session and resolved the target audience/direction as a public package for arbitrary finance workflows rather than only a reusable personal setup or Nordea-specific tracker.
+- 2026-06-07: Resolved the public product shape as a local wealth-tracker agent with a template Excel workbook, keeping model assistance review-only rather than autonomous financial editing.
+- 2026-06-07: Resolved v1 template customization scope: categories, section labels, period columns, currencies, and profile paths are in scope; arbitrary formulas/layouts are not.
+- 2026-06-07: Resolved unknown statement handling direction: a local model-assisted Statement Import Assistant may normalize arbitrary formats into review artifacts, but those imported transactions are untrusted until reviewed.
+- 2026-06-07: Resolved that one confirmed import can create local importer profiles and future Educated Import Guesses for similar field mappings and categories, with high-confidence guesses visible/filterable before trust.
+- 2026-06-07: Resolved that importer profiles are private local profile data by default; public releases may include only synthetic/demo profiles unless users explicitly export their own.
+- 2026-06-07: Resolved first public release shape as a Python CLI package with a template Excel workbook, synthetic examples, sample profile/config, local setup directories, and optional Ollama/local-model integration.
+- 2026-06-07: Resolved that the public template workbook should be a clean synthetic workbook with version metadata, not a copy of the user's personal tracker.
+- 2026-06-07: Resolved repository strategy: keep this repo as the incubation space for packaging decisions, then split public package/repo and private profile data after the reusable boundary is defined.
+- 2026-06-07: Created local PRD `.agent/issues/2026-06-07-prd-local-wealth-tracker-agent-public-package.md` and placed it in the local kanban as ready for agent work.

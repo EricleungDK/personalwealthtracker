@@ -8,9 +8,37 @@ Shared language for PersonalWorthTracker domain decisions.
 A tool that proposes or writes monthly category totals into the existing tracker workbook from statement data.
 _Avoid_: Personal finance ledger, accounting system
 
+**Local Wealth-Tracker Agent**:
+A local-first assistant that guides setup and maintenance of a template-based wealth tracker using deterministic automation, review artifacts, and optional review-only local model suggestions.
+_Avoid_: Autonomous finance agent, remote AI finance app, generic accounting system
+
 **Tracker Workbook**:
 The existing spreadsheet that remains the source of truth for net worth and monthly category values.
 _Avoid_: Ledger database, canonical transaction store
+
+**Template Excel Workbook**:
+A supported starter workbook schema that users may customize through known categories, sections, period columns, currency settings, and profile paths.
+_Avoid_: Arbitrary spreadsheet, unsupported formula layout
+
+**Statement Import Assistant**:
+A local model-assisted importer that attempts to transform unknown financial statement formats into normalized transaction review artifacts.
+_Avoid_: Trusted parser, arbitrary bank support, direct workbook input
+
+**Trusted Statement Adapter**:
+A deterministic parser for a known statement format whose normalized transactions can enter monthly planning after validation.
+_Avoid_: LLM guess, unsupported statement format
+
+**Untrusted Imported Transaction**:
+A transaction extracted from an unknown or model-assisted statement import that requires user review before it can affect monthly planning or workbook updates.
+_Avoid_: Parsed transaction, auto-write candidate
+
+**Importer Profile**:
+A local source-specific mapping learned from a user-confirmed import that helps parse similar future statements.
+_Avoid_: Public bank parser, raw LLM memory, universal format support
+
+**Educated Import Guess**:
+A suggested field mapping or transaction categorization made from a confirmed importer profile, shown to the user with confidence before it is trusted.
+_Avoid_: Automatic import decision, hidden parser rule, workbook write permission
 
 **Tracker Currency**:
 The currency used by tracker workbook values, currently DKK.
