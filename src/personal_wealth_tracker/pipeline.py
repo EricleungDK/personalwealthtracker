@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
+from datetime import date
 
 from .categorizer import categorize_transactions
 from .category_memory import load_category_memory, load_reviewed_policy
 from .config import load_config, register_category_registry_additions
 from .local_llm import apply_local_llm_suggestions, disabled_diagnostics
-from .models import CategoryRegistryAddition, RunResult, Transaction
-from .nordea_csv import parse_nordea_csv
-from .nordea_pdf import parse_nordea_pdf
+from .models import CategoryRegistryAddition, RunResult
 from .reporting import write_outputs
 from .review_decisions import (
     apply_monthly_review_decisions,
     load_monthly_review_decisions,
     validate_monthly_review_decision_categories,
 )
+from .statement_adapters import import_trusted_statement
 from .utils import normalize_month
 from .workbook import (
     commit_updates,
@@ -64,12 +63,15 @@ def run_pipeline(
             f"{config.statement_currency!r} for MVP 1."
         )
 
-    statement_parser, transactions = _parse_statement(
+    statement_import = import_trusted_statement(
         statement_path,
-        statement_format,
+        statement_format=statement_format,
         expected_currency=config.statement_currency,
+        year=year,
+        month=month,
     )
-    _validate_target_period(transactions, year, month)
+    statement_parser = statement_import.parser_identity
+    transactions = statement_import.transactions
     categorized = categorize_transactions(
         transactions,
         config,
@@ -163,6 +165,7 @@ def run_pipeline(
         review_xlsx_path=review_xlsx_path,
         category_registry_additions=category_registry_additions,
         local_llm_diagnostics=local_llm_diagnostics,
+        statement_import_diagnostics=statement_import.diagnostics,
     )
 
 
@@ -183,33 +186,27 @@ def _category_registry_additions(review_decisions) -> tuple[CategoryRegistryAddi
     )
 
 
-def _parse_statement(
-    statement_path: Path, statement_format: str, expected_currency: str
-) -> tuple[str, list[Transaction]]:
-    statement_parser = _resolve_statement_parser(statement_path, statement_format)
-    if statement_parser == "nordea-csv":
-        return statement_parser, parse_nordea_csv(statement_path, expected_currency=expected_currency)
-    return statement_parser, parse_nordea_pdf(statement_path, expected_currency=expected_currency)
-
-
-def _resolve_statement_parser(statement_path: Path, statement_format: str) -> str:
-    if statement_format != "auto":
-        if statement_format in {"nordea-csv", "nordea-pdf"}:
-            return statement_format
-        raise ValueError(
-            "Unsupported statement format "
-            f"{statement_format!r}. Use auto, nordea-csv, or nordea-pdf."
-        )
-
-    suffix = statement_path.suffix.lower()
-    if suffix == ".csv":
-        return "nordea-csv"
-    if suffix == ".pdf":
-        return "nordea-pdf"
+def _validate_target_period(transactions, year: int, month: str) -> None:
+    month = normalize_month(month)
+    start, end = _target_period(year, month)
+    out_of_period = [
+        transaction for transaction in transactions if not (start <= transaction.date < end)
+    ]
+    if not out_of_period:
+        return
+    dates = [transaction.date for transaction in out_of_period]
     raise ValueError(
-        f"Could not infer statement format from {statement_path.name!r}. "
-        "Use --statement-format nordea-csv or --statement-format nordea-pdf."
+        f"Statement contains {len(out_of_period)} transaction(s) outside target period "
+        f"{month} {year}: {min(dates).isoformat()} to {max(dates).isoformat()}."
     )
+
+
+def _target_period(year: int, month: str) -> tuple[date, date]:
+    month_number = MONTH_NUMBERS[month]
+    start = date(year, month_number, 1)
+    if month_number == 12:
+        return start, date(year + 1, 1, 1)
+    return start, date(year, month_number + 1, 1)
 
 
 def _review_xlsx_output_path(
@@ -225,26 +222,3 @@ def _review_xlsx_output_path(
     if review_decisions_path.resolve() != default_path.resolve():
         return None
     return output_dir / f"review_required_{year}_{month.lower()}_after_decisions.xlsx"
-
-
-def _validate_target_period(transactions: list[Transaction], year: int, month: str) -> None:
-    start, end = _target_period(year, month)
-    out_of_period = [
-        transaction for transaction in transactions if not (start <= transaction.date < end)
-    ]
-    if not out_of_period:
-        return
-
-    dates = [transaction.date for transaction in out_of_period]
-    raise ValueError(
-        f"Statement contains {len(out_of_period)} transaction(s) outside target period "
-        f"{month} {year}: {min(dates).isoformat()} to {max(dates).isoformat()}."
-    )
-
-
-def _target_period(year: int, month: str) -> tuple[date, date]:
-    month_number = MONTH_NUMBERS[month]
-    start = date(year, month_number, 1)
-    if month_number == 12:
-        return start, date(year + 1, 1, 1)
-    return start, date(year, month_number + 1, 1)

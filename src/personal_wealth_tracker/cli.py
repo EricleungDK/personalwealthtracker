@@ -6,7 +6,15 @@ from pathlib import Path
 
 from .category_memory import import_reviewed_decisions
 from .cleanup import run_currency_label_cleanup
+from .importer_profiles import (
+    export_importer_profile,
+    learn_importer_profile,
+    reset_importer_profile,
+)
 from .pipeline import run_pipeline
+from .setup_workspace import initialize_local_workspace
+from .statement_import_assistant import run_statement_import_assistant
+from .template_workbook import create_template_workbook, customize_template_workbook
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,6 +110,197 @@ def build_cleanup_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_import_statement_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Create a review artifact for an unknown statement format."
+    )
+    parser.add_argument(
+        "--statement",
+        required=True,
+        type=Path,
+        help="Path to the unknown-format statement or export.",
+    )
+    parser.add_argument("--year", required=True, type=int, help="Target tracker year.")
+    parser.add_argument("--month", required=True, help="Target tracker month, e.g. Feb.")
+    parser.add_argument(
+        "--tracker-currency",
+        default="DKK",
+        help="Expected tracker currency for import validation.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("reports"),
+        help="Review artifact output directory.",
+    )
+    parser.add_argument(
+        "--local-model",
+        action="store_true",
+        help="Request optional local model assistance. Without a model client this falls back.",
+    )
+    parser.add_argument(
+        "--importer-profiles-dir",
+        type=Path,
+        default=Path("data/importer_profiles"),
+        help="Private local Importer Profile directory for Educated Import Guesses.",
+    )
+    parser.add_argument(
+        "--importer-profile",
+        help="Importer Profile name to use for Educated Import Guesses.",
+    )
+    return parser
+
+
+def build_importer_profile_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Manage private local Importer Profiles."
+    )
+    subparsers = parser.add_subparsers(dest="profile_command", required=True)
+
+    learn = subparsers.add_parser(
+        "learn",
+        help="Learn or update an Importer Profile from a confirmed import review CSV.",
+    )
+    learn.add_argument("--reviewed-import", required=True, type=Path)
+    learn.add_argument("--profile-name", required=True)
+    learn.add_argument(
+        "--profiles-dir",
+        type=Path,
+        default=Path("data/importer_profiles"),
+        help="Private local Importer Profile directory.",
+    )
+    learn.add_argument("--tracker-currency", default="DKK")
+
+    export = subparsers.add_parser(
+        "export",
+        help="Explicitly export one Importer Profile to a chosen path.",
+    )
+    export.add_argument("--profile-name", required=True)
+    export.add_argument("--output", required=True, type=Path)
+    export.add_argument(
+        "--profiles-dir",
+        type=Path,
+        default=Path("data/importer_profiles"),
+        help="Private local Importer Profile directory.",
+    )
+
+    reset = subparsers.add_parser(
+        "reset",
+        help="Delete one private local Importer Profile.",
+    )
+    reset.add_argument("--profile-name", required=True)
+    reset.add_argument(
+        "--profiles-dir",
+        type=Path,
+        default=Path("data/importer_profiles"),
+        help="Private local Importer Profile directory.",
+    )
+    return parser
+
+
+def build_template_workbook_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Create the public synthetic Template Workbook."
+    )
+    subparsers = parser.add_subparsers(dest="template_command", required=True)
+
+    create = subparsers.add_parser(
+        "create",
+        help="Generate a versioned synthetic Template Workbook.",
+    )
+    create.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="Path for the generated template workbook.",
+    )
+    create.add_argument(
+        "--tracker-currency",
+        default="DKK",
+        help="Tracker Currency to write into template metadata.",
+    )
+    create.add_argument(
+        "--start-year",
+        type=int,
+        default=2026,
+        help="Year for the initial Jan-Dec template period block.",
+    )
+    create.add_argument(
+        "--sheet-name",
+        default="Net worth",
+        help="Worksheet name for the template tracker sheet.",
+    )
+    customize = subparsers.add_parser(
+        "customize",
+        help="Customize supported v1 template dimensions.",
+    )
+    customize.add_argument(
+        "--template",
+        required=True,
+        type=Path,
+        help="Source template workbook.",
+    )
+    customize.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="Path for the customized template workbook.",
+    )
+    customize.add_argument(
+        "--tracker-currency",
+        help="Optional Tracker Currency to write into template metadata.",
+    )
+    customize.add_argument(
+        "--rename",
+        action="append",
+        default=[],
+        metavar="OLD=NEW",
+        help="Rename one existing category or section label. May be repeated.",
+    )
+    return parser
+
+
+def build_setup_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Initialize a local workspace from the public template."
+    )
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=Path("."),
+        help="Directory to initialize.",
+    )
+    parser.add_argument(
+        "--tracker-currency",
+        default="DKK",
+        help="Tracker Currency to write into sample config and template metadata.",
+    )
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        default=2026,
+        help="Year for the initial Jan-Dec template period block.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing setup-managed files.",
+    )
+    parser.add_argument(
+        "--reports-dir",
+        help="Profile path override for report outputs, relative to the workspace.",
+    )
+    parser.add_argument(
+        "--category-memory-dir",
+        help="Profile path override for private Category Memory, relative to the workspace.",
+    )
+    parser.add_argument(
+        "--importer-profiles-dir",
+        help="Profile path override for private Importer Profiles, relative to the workspace.",
+    )
+    return parser
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
@@ -135,6 +334,99 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Output workbook: {result.output_workbook_path}")
         return 0
 
+    if argv and argv[0] == "import-statement":
+        args = build_import_statement_parser().parse_args(argv[1:])
+        result = run_statement_import_assistant(
+            source_path=args.statement,
+            output_dir=args.output_dir,
+            year=args.year,
+            month=args.month,
+            tracker_currency=args.tracker_currency,
+            local_model=args.local_model,
+            profiles_dir=args.importer_profiles_dir,
+            profile_name=args.importer_profile,
+        )
+        print("Mode: unknown-statement-import-review")
+        print(f"Rows requiring review: {len(result.rows)}")
+        print(f"Diagnostics: {len(result.diagnostics)}")
+        print(f"Review artifact: {result.review_artifact_path}")
+        return 0
+
+    if argv and argv[0] == "importer-profile":
+        args = build_importer_profile_parser().parse_args(argv[1:])
+        if args.profile_command == "learn":
+            result = learn_importer_profile(
+                reviewed_import_path=args.reviewed_import,
+                profiles_dir=args.profiles_dir,
+                profile_name=args.profile_name,
+                tracker_currency=args.tracker_currency,
+            )
+            print(f"Imported confirmed rows: {result.imported_count}")
+            print(f"Skipped unconfirmed rows: {result.skipped_unconfirmed_count}")
+            print(f"Importer Profile: {result.profile_path}")
+            return 0
+        if args.profile_command == "export":
+            output_path = export_importer_profile(
+                profiles_dir=args.profiles_dir,
+                profile_name=args.profile_name,
+                output_path=args.output,
+            )
+            print(f"Exported Importer Profile: {output_path}")
+            return 0
+        if args.profile_command == "reset":
+            removed = reset_importer_profile(args.profiles_dir, args.profile_name)
+            print(f"Importer Profile removed: {'yes' if removed else 'no'}")
+            return 0
+
+    if argv and argv[0] == "template-workbook":
+        args = build_template_workbook_parser().parse_args(argv[1:])
+        if args.template_command == "create":
+            try:
+                template_path = create_template_workbook(
+                    args.output,
+                    tracker_currency=args.tracker_currency,
+                    start_year=args.start_year,
+                    sheet_name=args.sheet_name,
+                )
+            except RuntimeError as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
+            print(f"Template workbook: {template_path}")
+            return 0
+        if args.template_command == "customize":
+            try:
+                customized_path = customize_template_workbook(
+                    args.template,
+                    args.output,
+                    tracker_currency=args.tracker_currency,
+                    label_renames=_parse_label_renames(args.rename),
+                )
+            except (RuntimeError, ValueError) as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
+            print(f"Customized template workbook: {customized_path}")
+            return 0
+
+    if argv and argv[0] == "setup":
+        args = build_setup_parser().parse_args(argv[1:])
+        try:
+            result = initialize_local_workspace(
+                args.workspace,
+                tracker_currency=args.tracker_currency,
+                start_year=args.start_year,
+                profile_paths=_setup_profile_path_overrides(args),
+                force=args.force,
+            )
+        except (RuntimeError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"Workspace: {result.workspace_dir}")
+        print(f"Template workbook: {result.template_path}")
+        print(f"Synthetic statement: {result.example_statement_path}")
+        print(f"Files written: {len(result.written_files)}")
+        print(f"Existing files preserved: {len(result.skipped_existing_files)}")
+        return 0
+
     args = build_parser().parse_args(argv)
     try:
         result = run_pipeline(
@@ -162,6 +454,31 @@ def main(argv: list[str] | None = None) -> int:
     if result.output_workbook_path:
         print(f"Output workbook: {result.output_workbook_path}")
     return 0
+
+
+def _parse_label_renames(raw_renames: list[str]) -> dict[str, str]:
+    renames: dict[str, str] = {}
+    for raw_rename in raw_renames:
+        if "=" not in raw_rename:
+            raise ValueError(f"Template label rename {raw_rename!r} must use OLD=NEW.")
+        old_label, new_label = raw_rename.split("=", 1)
+        old_label = old_label.strip()
+        new_label = new_label.strip()
+        if not old_label or not new_label:
+            raise ValueError(f"Template label rename {raw_rename!r} must use OLD=NEW.")
+        renames[old_label] = new_label
+    return renames
+
+
+def _setup_profile_path_overrides(args: argparse.Namespace) -> dict[str, str]:
+    overrides = {}
+    if args.reports_dir:
+        overrides["reports_dir"] = args.reports_dir
+    if args.category_memory_dir:
+        overrides["category_memory_dir"] = args.category_memory_dir
+    if args.importer_profiles_dir:
+        overrides["importer_profiles_dir"] = args.importer_profiles_dir
+    return overrides
 
 
 if __name__ == "__main__":

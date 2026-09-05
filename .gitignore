@@ -29,10 +29,12 @@ Net Worth Tracker.xlsx
 data/raw_statements/
 data/watched_folder/
 data/category_memory/
+data/importer_profiles/
 data/processed/
 data/backups/
 reports/
 logs/
+profiles/*.local.yaml
 
 # Redacted fixtures may be committed intentionally.
 !tests/fixtures/
