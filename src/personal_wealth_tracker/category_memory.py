@@ -14,6 +14,11 @@ from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month, normalize_tex
 
 
 MEMORY_FILE_NAME = "category_memory.json"
+REVIEWED_POLICY_FILE_NAME = "reviewed_policy.local.md"
+REVIEWED_POLICY_PROMPT_CHAR_LIMIT = 4000
+_POLICY_START = "<!-- AUTO-GENERATED REVIEWED EXAMPLES START -->"
+_POLICY_END = "<!-- AUTO-GENERATED REVIEWED EXAMPLES END -->"
+_MANUAL_GUIDANCE_HEADER = "## Manual Guidance"
 
 
 @dataclass(frozen=True)
@@ -88,12 +93,7 @@ def import_reviewed_decisions(
             )
             imported_count += 1
 
-    memory_dir.mkdir(parents=True, exist_ok=True)
-    memory_path = memory_dir / MEMORY_FILE_NAME
-    memory_path.write_text(
-        json.dumps({"mappings": mappings}, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    memory_path = _write_memory_artifacts(memory_dir, mappings)
     return CategoryMemoryImportResult(
         imported_count=imported_count,
         skipped_unconfirmed_count=skipped_unconfirmed,
@@ -121,6 +121,13 @@ def load_category_memory(memory_dir: Path) -> CategoryMemory:
             for item in payload.get("mappings", [])
         )
     )
+
+
+def load_reviewed_policy(memory_dir: Path) -> str:
+    policy_path = memory_dir / REVIEWED_POLICY_FILE_NAME
+    if not policy_path.exists():
+        return ""
+    return policy_path.read_text(encoding="utf-8").strip()[:REVIEWED_POLICY_PROMPT_CHAR_LIMIT]
 
 
 def match_category_memory(
@@ -205,12 +212,7 @@ def _import_review_workbook_decisions(
     finally:
         workbook.close()
 
-    memory_dir.mkdir(parents=True, exist_ok=True)
-    memory_path = memory_dir / MEMORY_FILE_NAME
-    memory_path.write_text(
-        json.dumps({"mappings": mappings}, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    memory_path = _write_memory_artifacts(memory_dir, mappings)
     return CategoryMemoryImportResult(
         imported_count=imported_count,
         skipped_unconfirmed_count=0,
@@ -414,6 +416,78 @@ def _mapping_payload(mapping: CategoryMemoryMapping) -> dict[str, object]:
             "day_max": mapping.recurring_hint.day_max,
         }
     return payload
+
+
+def _write_memory_artifacts(memory_dir: Path, mappings: list[dict[str, object]]) -> Path:
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    memory_path = memory_dir / MEMORY_FILE_NAME
+    memory_path.write_text(
+        json.dumps({"mappings": mappings}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _write_reviewed_policy(memory_dir / REVIEWED_POLICY_FILE_NAME, mappings)
+    return memory_path
+
+
+def _write_reviewed_policy(path: Path, mappings: list[dict[str, object]]) -> None:
+    manual_guidance = _manual_guidance(path)
+    auto_lines = [_policy_mapping_line(mapping) for mapping in mappings]
+    path.write_text(
+        "\n".join(
+            [
+                "# Reviewed Policy",
+                "",
+                "This local file is generated from reviewed decisions learned into Category Memory.",
+                "Edit the Manual Guidance section for broader review preferences.",
+                "",
+                _POLICY_START,
+                *(auto_lines or ["- No reviewed examples learned yet."]),
+                _POLICY_END,
+                "",
+                manual_guidance,
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _policy_mapping_line(mapping: dict[str, object]) -> str:
+    merchant_identity = _policy_inline_code(str(mapping.get("merchant_identity", "")))
+    category = _policy_inline_code(str(mapping.get("category", "")))
+    return f"- Merchant identity: `{merchant_identity}` -> `{category}`"
+
+
+def _policy_inline_code(value: str) -> str:
+    return value.replace("`", "'")
+
+
+def _manual_guidance(path: Path) -> str:
+    if not path.exists():
+        return "\n".join(
+            [
+                _MANUAL_GUIDANCE_HEADER,
+                "",
+                "- Add editable review guidance here.",
+            ]
+        )
+    text = path.read_text(encoding="utf-8")
+    index = text.find(_MANUAL_GUIDANCE_HEADER)
+    if index == -1:
+        return "\n".join(
+            [
+                _MANUAL_GUIDANCE_HEADER,
+                "",
+                text.strip() or "- Add editable review guidance here.",
+            ]
+        )
+    return text[index:].strip() or "\n".join(
+        [
+            _MANUAL_GUIDANCE_HEADER,
+            "",
+            "- Add editable review guidance here.",
+        ]
+    )
 
 
 def _upsert_mapping(mappings: list[dict[str, object]], new_mapping: dict[str, object]) -> None:

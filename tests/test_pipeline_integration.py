@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from decimal import Decimal
 
@@ -937,6 +938,57 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
         workbook.close()
 
 
+def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    memory_dir = tmp_path / "data" / "category_memory"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "reviewed_policy.local.md").write_text(
+        "\n".join(
+            [
+                "# Reviewed Policy",
+                "",
+                "<!-- AUTO-GENERATED REVIEWED EXAMPLES START -->",
+                "- Merchant identity: `MOBILEPAY REJSEKORT` -> `Traveling`",
+                "<!-- AUTO-GENERATED REVIEWED EXAMPLES END -->",
+                "",
+                "## Manual Guidance",
+                "",
+                "- Prefer no_suggestion for unknown private transfers.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    client = _LocalLLMClient(
+        status="category",
+        suggested_category="Traveling",
+        confidence=0.68,
+        rationale="Merchant looks travel related.",
+    )
+
+    run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        category_memory_dir=memory_dir,
+        local_llm_suggestions=True,
+        local_llm_client=client,
+    )
+
+    prompt = json.loads(client.prompts[0])
+    assert "MOBILEPAY REJSEKORT" in prompt["reviewed_policy"]
+    assert "unknown private transfers" in prompt["reviewed_policy"]
+
+
 def test_pipeline_registers_new_leaf_category_from_review_decisions(
     tmp_path, monkeypatch
 ):
@@ -1269,13 +1321,13 @@ class _LocalLLMClient:
         self.suggested_category = suggested_category
         self.confidence = confidence
         self.rationale = rationale
+        self.prompts: list[str] = []
 
     def check_availability(self, config):
         return LocalLLMAvailability(available=True, model=config.model)
 
     def generate(self, config, model, prompt):
-        import json
-
+        self.prompts.append(prompt)
         transaction_id = json.loads(prompt)["transaction"]["transaction_id"]
         return json.dumps(
             {

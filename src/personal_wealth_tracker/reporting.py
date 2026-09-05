@@ -164,6 +164,10 @@ def _write_report(
                 f"- Existing-leaf suggestions: {local_llm_diagnostics.existing_leaf_suggestions}",
                 f"- No-suggestion responses: {local_llm_diagnostics.no_suggestion_count}",
                 f"- New-leaf candidates: {local_llm_diagnostics.new_leaf_candidate_count}",
+                (
+                    "- Low-confidence responses ignored: "
+                    f"{local_llm_diagnostics.low_confidence_response_count}"
+                ),
                 f"- Invalid responses: {local_llm_diagnostics.invalid_response_count}",
                 f"- Provider failures: {local_llm_diagnostics.provider_failure_count}",
                 "- Warnings:",
@@ -298,6 +302,9 @@ def _write_audit(
                 "existing_leaf_suggestions": local_llm_diagnostics.existing_leaf_suggestions,
                 "no_suggestion_count": local_llm_diagnostics.no_suggestion_count,
                 "new_leaf_candidate_count": local_llm_diagnostics.new_leaf_candidate_count,
+                "low_confidence_response_count": (
+                    local_llm_diagnostics.low_confidence_response_count
+                ),
                 "invalid_response_count": local_llm_diagnostics.invalid_response_count,
                 "provider_failure_count": local_llm_diagnostics.provider_failure_count,
             }
