@@ -57,6 +57,7 @@ def write_outputs(
         structure_changes,
         category_registry_additions,
         local_llm_diagnostics,
+        workbook_config,
     )
     _write_audit(
         audit_path,
@@ -108,6 +109,7 @@ def _write_report(
     structure_changes: list[WorkbookStructureChange],
     category_registry_additions: tuple[CategoryRegistryAddition, ...],
     local_llm_diagnostics: LocalLLMDiagnostics,
+    workbook_config: AppConfig | None,
 ) -> None:
     total = len(categorized)
     review_count = sum(1 for item in categorized if item.review_required)
@@ -128,6 +130,7 @@ def _write_report(
         f"- Reporting month: {month} {year}",
         f"- Mode: {mode}",
         f"- Statement parser: {statement_parser}",
+        *(_currency_assumption_lines(workbook_config)),
         f"- Transactions processed: {total}",
         f"- Transactions requiring review: {review_count}",
         f"- Proposed workbook writes: {write_count}",
@@ -164,6 +167,10 @@ def _write_report(
                 f"- Existing-leaf suggestions: {local_llm_diagnostics.existing_leaf_suggestions}",
                 f"- No-suggestion responses: {local_llm_diagnostics.no_suggestion_count}",
                 f"- New-leaf candidates: {local_llm_diagnostics.new_leaf_candidate_count}",
+                (
+                    "- Low-confidence responses ignored: "
+                    f"{local_llm_diagnostics.low_confidence_response_count}"
+                ),
                 f"- Invalid responses: {local_llm_diagnostics.invalid_response_count}",
                 f"- Provider failures: {local_llm_diagnostics.provider_failure_count}",
                 "- Warnings:",
@@ -254,6 +261,15 @@ def _write_report(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _currency_assumption_lines(workbook_config: AppConfig | None) -> list[str]:
+    if workbook_config is None:
+        return []
+    return [
+        f"- Tracker Currency: {workbook_config.tracker_currency}",
+        f"- Statement Currency: {workbook_config.statement_currency}",
+    ]
+
+
 def _format_rate(count: int, total: int) -> str:
     percentage = (count / total * 100) if total else 0.0
     return f"{count}/{total} ({percentage:.1f}%)"
@@ -298,6 +314,9 @@ def _write_audit(
                 "existing_leaf_suggestions": local_llm_diagnostics.existing_leaf_suggestions,
                 "no_suggestion_count": local_llm_diagnostics.no_suggestion_count,
                 "new_leaf_candidate_count": local_llm_diagnostics.new_leaf_candidate_count,
+                "low_confidence_response_count": (
+                    local_llm_diagnostics.low_confidence_response_count
+                ),
                 "invalid_response_count": local_llm_diagnostics.invalid_response_count,
                 "provider_failure_count": local_llm_diagnostics.provider_failure_count,
             }
@@ -627,8 +646,8 @@ def _write_review_workbook(
         manual_category_validation = DataValidation(
             type="list",
             formula1=f"'Category Options'!${option_column}$2:${option_column}${option_end_row}",
-            allow_blank=True,
         )
+        _allow_blank_validation(manual_category_validation)
         review_sheet.add_data_validation(manual_category_validation)
         manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
         manual_category_validation.add(f"{manual_category_column}2:{manual_category_column}1048576")
@@ -639,8 +658,8 @@ def _write_review_workbook(
         new_parent_category_validation = DataValidation(
             type="list",
             formula1=f"'Category Options'!${option_column}$2:${option_column}${option_end_row}",
-            allow_blank=True,
         )
+        _allow_blank_validation(new_parent_category_validation)
         review_sheet.add_data_validation(new_parent_category_validation)
         new_parent_category_column = get_column_letter(
             review_headers.index("new_parent_category") + 1
@@ -649,7 +668,8 @@ def _write_review_workbook(
             f"{new_parent_category_column}2:{new_parent_category_column}1048576"
         )
 
-    learn_validation = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
+    learn_validation = DataValidation(type="list", formula1='"yes,no"')
+    _allow_blank_validation(learn_validation)
     review_sheet.add_data_validation(learn_validation)
     learn_column = get_column_letter(review_headers.index("learn_to_memory") + 1)
     learn_validation.add(f"{learn_column}2:{learn_column}1048576")
@@ -665,6 +685,11 @@ def _write_review_workbook(
 
     workbook.save(path)
     workbook.close()
+
+
+def _allow_blank_validation(validation) -> None:
+    validation.allowBlank = True
+    validation.allow_blank = True
 
 
 def _format_amount(amount) -> str:

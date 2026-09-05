@@ -86,6 +86,7 @@ def build_local_llm_prompt(
     item: CategorizedTransaction,
     allowed_categories: tuple[str, ...],
     config: LocalLLMSettings,
+    reviewed_policy: str = "",
 ) -> str:
     transaction = item.transaction
     prompt = {
@@ -107,6 +108,15 @@ def build_local_llm_prompt(
             "direction": transaction.direction,
         },
     }
+    if item.suggested_category and item.categorization_method in {"rule", "recurring"}:
+        prompt["current_suggestion"] = {
+            "suggested_category": item.suggested_category,
+            "method": item.categorization_method,
+            "confidence": item.confidence,
+            "reason": item.reason,
+        }
+    if reviewed_policy:
+        prompt["reviewed_policy"] = reviewed_policy
     if config.include_raw_description:
         prompt["transaction"]["raw_description"] = transaction.description
     return json.dumps(prompt, ensure_ascii=False, sort_keys=True)
@@ -116,6 +126,7 @@ def apply_local_llm_suggestions(
     categorized: list[CategorizedTransaction],
     config: AppConfig,
     client: object | None = None,
+    reviewed_policy: str = "",
 ) -> tuple[list[CategorizedTransaction], LocalLLMDiagnostics]:
     client = client or OllamaLocalLLMClient()
     settings = config.local_llm
@@ -138,13 +149,19 @@ def apply_local_llm_suggestions(
     existing_leaf_suggestions = 0
     no_suggestion_count = 0
     new_leaf_candidate_count = 0
+    low_confidence_response_count = 0
     invalid_response_count = 0
     provider_failure_count = diagnostics.provider_failure_count
     allowed_categories = _allowed_categories(config)
     allowed_category_set = set(allowed_categories)
     for index in eligible_indexes:
         item = updated[index]
-        prompt = build_local_llm_prompt(item, allowed_categories, settings)
+        prompt = build_local_llm_prompt(
+            item,
+            allowed_categories,
+            settings,
+            reviewed_policy=reviewed_policy,
+        )
 
         def generate_model(model: str) -> str:
             nonlocal attempted_count
@@ -174,6 +191,15 @@ def apply_local_llm_suggestions(
             invalid_response_count += 1
             warnings.append(
                 f"Local LLM response for {item.transaction.transaction_id} was ignored: {exc}"
+            )
+            continue
+        if _is_low_confidence_suggestion(parsed, config.review_threshold):
+            low_confidence_response_count += 1
+            warnings.append(
+                "Local LLM response for "
+                f"{item.transaction.transaction_id} was ignored: confidence "
+                f"{parsed.confidence:.2f} is below the review threshold "
+                f"{config.review_threshold:.2f}."
             )
             continue
         if parsed.status == "category":
@@ -211,6 +237,7 @@ def apply_local_llm_suggestions(
         existing_leaf_suggestions=existing_leaf_suggestions,
         no_suggestion_count=no_suggestion_count,
         new_leaf_candidate_count=new_leaf_candidate_count,
+        low_confidence_response_count=low_confidence_response_count,
         invalid_response_count=invalid_response_count,
         provider_failure_count=provider_failure_count,
         warnings=tuple(warnings),
@@ -249,6 +276,10 @@ def _allowed_categories(config: AppConfig) -> tuple[str, ...]:
     if config.category_registry.leaf_categories:
         return config.category_registry.leaf_categories
     return config.categories
+
+
+def _is_low_confidence_suggestion(parsed: _ParsedSuggestion, threshold: float) -> bool:
+    return parsed.status in {"category", "new_leaf_candidate"} and parsed.confidence < threshold
 
 
 def _parse_response(
