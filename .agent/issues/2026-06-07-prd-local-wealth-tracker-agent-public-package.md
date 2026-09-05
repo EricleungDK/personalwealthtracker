@@ -2,9 +2,9 @@
 type: prd
 id: PRD-2026-06-07-LOCAL-WEALTH-TRACKER-AGENT-PUBLIC-PACKAGE
 title: Local Wealth-Tracker Agent Public Package
-status: ready
+status: done
 labels:
-  - ready-for-agent
+  - done
 created: 2026-06-07
 ---
 

@@ -52,9 +52,9 @@ The committed defaults target `gemma4:12b` through Ollama's local HTTP API, with
 
 Local model output is review-only. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations remain authoritative. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
 
-Prompt context is minimized by default: merchant identity, amount, date, direction, and YAML leaf category choices. raw Nordea descriptions are excluded unless `include_raw_description: true` is deliberately configured later for evaluation.
+Prompt context is minimized by default: merchant identity, amount, date, direction, YAML leaf category choices, and any existing low-confidence rule/recurring suggestion context. raw Nordea descriptions are excluded unless `include_raw_description: true` is deliberately configured later for evaluation.
 
-If Ollama is unavailable, the model is missing, a call times out, or a response is invalid, the run continues with ordinary manual review output. The report's `Local LLM Mode` section and audit log show eligible rows, provider attempts, existing-leaf suggestions, `no_suggestion`, new-leaf candidates, invalid responses, provider failures, and warnings.
+If Ollama is unavailable, the model is missing, a call times out, a response is invalid, or a category/new-leaf response is below the review threshold, the run continues with ordinary manual review output. The report's `Local LLM Mode` section and audit log show eligible rows, provider attempts, existing-leaf suggestions, `no_suggestion`, new-leaf candidates, low-confidence responses ignored, invalid responses, provider failures, and warnings.
 
 ## 3. Review The Outputs
 
@@ -150,6 +150,8 @@ The command still accepts reviewed CSV files for automation and older workflows.
 Learning and workbook commit are separate steps. `manual_category` and reviewed `new_leaf_category` choices fix the current month; `learn_to_memory` is an explicit opt-in for future runs. Rows with blank or non-yes `learn_to_memory` are not learned, and non-learnable category options are skipped.
 Reviewed XLSX learning validates the workbook metadata, supported transaction ID scheme, and YAML leaf category registry. Category Memory skips Parent/Section Row labels, derived rows, missing categories, fixed rows, and other non-leaf targets. A newly registered Leaf Category Row can be learned after the reviewed second run has added it to `config/categories.yaml`, even before the new row has been inserted into the tracker workbook.
 Learned Category Memory is used before hand-written historical mappings, recurring rules, and keyword rules in future monthly runs.
+
+The same learning step updates `data/category_memory/reviewed_policy.local.md`. The auto-generated section lists learned merchant/category examples, and the `## Manual Guidance` section is preserved for your edits. Local LLM Mode may include this policy as review guidance, but it is not model training, not workbook-write authority, and not Category Memory by itself.
 
 After learning, run the dry-run again with `--review-decisions` and review the new categorization before committing workbook changes.
 

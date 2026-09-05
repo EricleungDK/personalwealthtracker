@@ -2,13 +2,21 @@
 
 This page is the non-technical map of PersonalWorthTracker. It explains what lives where, how a monthly run moves through the project, and which files are scripts, components, or documentation.
 
-For the step-by-step monthly checklist, use [monthly_workflow.md](monthly_workflow.md).
+For the step-by-step monthly checklist, use [monthly_workflow.md](monthly_workflow.md). For the public setup, synthetic examples, adapter contracts, and v1 non-goals, use [docs/public_package_workflow.md](public_package_workflow.md), the Public Package Workflow.
 
 ## What The Project Does
 
 PersonalWorthTracker is a local command-line helper for updating a personal Excel wealth tracker. It reads a Nordea bank statement, classifies the transactions, checks the tracker workbook for safe target cells, and writes review outputs before anything is committed to a copied workbook.
 
 The original tracker workbook, real bank statements, generated reports, category memory, backups, and processed workbooks stay local and ignored by Git.
+
+The future public package boundary is tracked in [public_private_boundary.md](public_private_boundary.md): reusable code, docs, sample config, and synthetic fixtures can ship publicly; real statements, tracker workbooks, generated outputs, Category Memory, Importer Profiles, local rules, proxy split rules, and local profile files stay private.
+
+The versioned synthetic Template Workbook contract is documented in [docs/template_workbook.md](template_workbook.md). It defines the public `local-wealth-tracker-template` metadata, generic workbook structure, and v1 customization boundary.
+
+The guided setup entry point is `wealth-tracker setup`. It creates a local workspace with generic config, a private local profile file, ignored data/report directories, the synthetic Template Workbook, and a synthetic Nordea CSV example that can exercise a dry run without real financial data.
+
+Supported template customization uses `wealth-tracker template-workbook customize` for known v1 dimensions: category labels, section labels, Tracker Currency, setup profile paths, and period columns created by the workbook planner. Unsupported formula changes and arbitrary layout edits are rejected or reported as unsupported.
 
 ## Project Map
 
@@ -74,8 +82,11 @@ The important split is:
 flowchart TD
   CLI["cli.py<br/>reads command options"] --> Pipeline["pipeline.py<br/>coordinates the run"]
   Pipeline --> Config["config.py<br/>loads settings and rules"]
-  Pipeline --> Csv["nordea_csv.py<br/>CSV bank parser"]
-  Pipeline --> Pdf["nordea_pdf.py<br/>PDF bank parser"]
+  Pipeline --> Adapters["statement_adapters.py<br/>trusted statement adapter routing"]
+  Adapters --> Csv["nordea_csv.py<br/>CSV bank parser"]
+  Adapters --> Pdf["nordea_pdf.py<br/>PDF bank parser"]
+  CLI --> ImportAssistant["statement_import_assistant.py<br/>unknown-format review artifacts"]
+  CLI --> Setup["setup_workspace.py<br/>public template workspace setup"]
   Pipeline --> Memory["category_memory.py<br/>private learned categories"]
   Pipeline --> Review["review_decisions.py<br/>reads reviewed XLSX or CSV"]
   Pipeline --> Categorizer["categorizer.py<br/>matches transactions to categories"]
@@ -90,7 +101,10 @@ Plain-language component roles:
 
 - `cli.py` is the front door. It turns terminal options into a command.
 - `pipeline.py` is the coordinator. It decides which step runs next.
-- `nordea_csv.py` and `nordea_pdf.py` turn bank files into transaction records.
+- `statement_adapters.py` routes trusted known statement formats and records import diagnostics.
+- `statement_import_assistant.py` creates untrusted review artifacts for unknown statement formats.
+- `setup_workspace.py` creates a public-template local workspace with generic config, local profile paths, and synthetic examples.
+- `nordea_csv.py` and `nordea_pdf.py` turn known Nordea bank files into transaction records.
 - `categorizer.py` decides what each transaction probably is.
 - `review_decisions.py` applies your reviewed Excel decisions by exact transaction ID.
 - `category_memory.py` stores future learned category choices in ignored local data.
@@ -135,7 +149,10 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 
 ## Documentation Map
 
+- [public_package_workflow.md](public_package_workflow.md) - Public Package Workflow for setup, synthetic examples, statement imports, learning, and commit-to-copy usage.
 - [monthly_workflow.md](monthly_workflow.md) - monthly operator checklist.
+- [public_private_boundary.md](public_private_boundary.md) - public package versus private profile boundary.
+- [template_workbook.md](template_workbook.md) - versioned synthetic Template Workbook contract.
 - [README.md](../README.md) - setup commands, privacy rules, dry-run and commit examples.
 - [.agent/System/architecture.md](../.agent/System/architecture.md) - deeper technical architecture notes.
 - [.agent/System/domain_language.md](../.agent/System/domain_language.md) - project vocabulary used by agents.
@@ -159,6 +176,9 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Local LLM Mode: Explicit opt-in `--local-llm-suggestions` mode that can add review-only local Ollama/Gemma hints to unmatched or low-confidence rows.
 - LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `method`, `confidence`, and `reason` fields; it is not a confirmed decision.
 - LLM New Leaf Candidate: A model hint that a missing leaf row may be needed. It does not fill `new_parent_category` or `new_leaf_category` for you.
+- Statement Import Assistant: A review-only path for unknown statement formats. It writes untrusted import review artifacts and does not feed monthly planning until a later confirmed-import workflow exists.
+- Importer Profile: Private local JSON learned from confirmed unknown-import review rows. It can produce filterable Educated Import Guesses for similar future sources and is exported only by explicit command.
+- Educated Import Guess: A review-only suggested field mapping or category from a local Importer Profile, shown with `guess_state`, `guess_confidence`, `guess_reason`, and `guess_profile`.
 - Proxy Split Transfer: One intermediary bank transfer split into explicit tracker allocation lines while preserving the source transaction for audit.
 - Residual Review Line: The leftover amount from a larger proxy split transfer; it is reviewed for the current month and not learned into Category Memory.
 - Fixed row: A workbook row the automation must not overwrite.

@@ -1,6 +1,22 @@
 # Data Contracts
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
+
+## Template Workbook Metadata
+
+A public Template Workbook must include a hidden `Template Metadata` sheet with:
+
+- `template_id`: `local-wealth-tracker-template`.
+- `template_version`: the supported public template version, initially `1.0`.
+- `workbook_kind`: `synthetic_template`.
+- `tracker_currency`: the template's default Tracker Currency.
+- `template_schema`: the workbook schema identifier, initially `net-worth-v1`.
+
+Template validation must reject workbooks with missing metadata, unsupported template IDs, unsupported versions, unsupported workbook kinds, or unsupported template schemas before treating them as public package templates.
+
+The v1 synthetic template uses the `Net worth` sheet, category labels in column `B`, year headers in row `2`, month headers in row `3`, and a Jan-Dec month block. It contains generic section labels, generic leaf rows such as `Groceries (monthly)`, formulas for parent/derived rows, and no private workbook values or personal categories.
+
+Supported v1 customization is limited to known template dimensions: renaming existing category labels, renaming existing section labels, changing the Tracker Currency in visible cells and hidden metadata, setup profile path overrides for known private local paths, and period columns created by the workbook planner. Template customization must reject unsupported formula changes, arbitrary layout edits, missing metadata, unknown labels, duplicate labels, blank labels, and unsupported template versions instead of attempting spreadsheet repair.
 
 ## Transaction
 
@@ -17,6 +33,64 @@ Normalized statement row:
 - `original_amount` and `original_currency`: optional metadata when a foreign card transaction line exposes the original amount.
 
 Nordea CSV transactions may include raw source details such as `Name`, `Title`, `Sender`, `Recipient`, `Balance`, and `Reconciled` for audit. Account-number fields are retained only as source details and must not become categorization text or category-memory keys.
+
+## Trusted Statement Adapter
+
+A Trusted Statement Adapter wraps a deterministic known-format parser and returns a trusted import result for monthly planning. The adapter result records:
+
+- `adapter_name`: public adapter name such as `nordea-csv` or `nordea-pdf`.
+- `parser_identity`: parser identity written to reports and audit outputs.
+- `source_statement`: local source path.
+- `transactions`: normalized `Transaction` records.
+- `diagnostics`: import diagnostics with `severity`, `code`, and `message`.
+
+The normalized transaction fields required from trusted adapters are `transaction_id`, `date`, `amount`, `currency`, `description`, `direction`, and `source_file`. Additional fields such as balance, merchant, original amount/currency, and raw source details may be present when the deterministic parser can provide them.
+
+Adapter diagnostics use `unsupported_currency`, `out_of_period`, `duplicate_row`, or `adapter_failure` for known v1 cases. Unsupported currencies and out-of-period transactions are error diagnostics and block monthly planning. Duplicate normalized rows are warning diagnostics because repeated rows may be legitimate but should be visible to review and audit flows.
+
+## Statement Import Assistant
+
+The Statement Import Assistant is for unknown statement formats. Its output is an untrusted review artifact, not monthly planning evidence. The first v1 artifact is `untrusted_import_review_<year>_<month>.csv` with:
+
+- `review_required`: always `yes` for imported unknown-format rows.
+- `eligible_for_workbook_write`: always `no` until a later confirmed-import workflow promotes reviewed data.
+- `source_row`: source row or model-reported row number.
+- `date`: model-assisted or blank date candidate.
+- `amount`: model-assisted or blank amount candidate.
+- `currency`: model-assisted or fallback tracker currency candidate.
+- `description`: raw row or model-assisted description candidate.
+- `direction`: model-assisted `income` or `expense` candidate.
+- `provenance`: `deterministic_raw_row` or `model_assisted_untrusted`.
+- `confidence`: extraction confidence, not write confidence.
+- `suggested_category`: Educated Import Guess from a local Importer Profile, if one matched.
+- `guess_state`: `high_confidence`, `low_confidence`, or blank.
+- `guess_confidence`: confidence for the Importer Profile guess, not write confidence.
+- `guess_reason`: review-facing explanation for why the profile guessed this category.
+- `guess_profile`: local Importer Profile name that produced the guess.
+- `source_format_changed`: `yes` when source layout diagnostics detected a changed format.
+- `validation_warnings`: `|`-separated validation warnings.
+- `confirmed`: blank review column for the user to confirm a row.
+- `confirmed_category`: blank review column for the user to accept or correct a suggested category.
+
+Validation diagnostics include `missing_date`, `invalid_amount`, `unsupported_currency`, `duplicate_row`, `changed_layout`, `out_of_period`, `missing_direction`, `provider_unavailable`, and `provider_failure`. Missing or invalid fields and out-of-period rows remain visible in the review artifact. Local model assistance is optional; if unavailable or invalid, the assistant falls back to deterministic raw-row review output.
+
+No Statement Import Assistant output may directly create workbook write permission, Category Memory, or an Importer Profile. Later confirmed-import workflows may decide how reviewed rows become trusted evidence.
+
+## Importer Profiles
+
+Importer Profiles are private local JSON files under `data/importer_profiles/` by default. They are created only from confirmed unknown-import review rows, not raw model suggestions. The v1 profile stores:
+
+- `profile_version`: profile schema version.
+- `profile_name`: local profile name.
+- `source_identity`: reviewed artifact name, artifact schema, and a header fingerprint.
+- `field_mappings`: reviewed field names for date, amount, currency, description, and direction.
+- `validation_assumptions`: tracker currency, required fields, and validation warning types observed during reviewed imports.
+- `confirmed_import_count`: number of confirmed rows learned into the profile.
+- `category_decisions`: normalized description identities, confirmed categories, source row references, and decision counts.
+
+Importer Profiles must not store raw statement dumps. Profile export is explicit through the importer-profile export workflow; public packages may ship only synthetic/demo profiles.
+
+Educated Import Guesses from Importer Profiles are review hints. High-confidence guesses are filterable with `guess_state=high_confidence`; low-confidence guesses remain `guess_state=low_confidence`. Changed layouts, unsupported currencies, invalid fields, duplicates, and out-of-period rows keep validation warnings visible and cap profile guesses to low confidence.
 
 ## CategorizedTransaction
 
@@ -37,10 +111,10 @@ A local LLM provider response should be parsed into a small structured suggestio
 - `status`: one of `category`, `no_suggestion`, `new_leaf_candidate`, or `provider_unavailable`.
 - `suggested_category`: required only when `status` is `category`; must be an existing YAML Leaf Category Row.
 - `new_leaf_candidate`: optional display label hint when `status` is `new_leaf_candidate`; it must not update the Category Registry directly.
-- `confidence`: provider confidence or locally derived confidence in the `0.0` to `1.0` range.
+- `confidence`: provider confidence or locally derived confidence in the `0.0` to `1.0` range. `category` and `new_leaf_candidate` responses below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
 - `rationale`: short review-facing explanation suitable for the existing `reason` field.
 
-Invalid JSON, missing required fields, categories outside the Allowed Category Set, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
+Invalid JSON, missing required fields, categories outside the Allowed Category Set, low-confidence category/new-leaf responses, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
 
 ## TrackerUpdate
 
@@ -196,5 +270,7 @@ Learned category memory should be stored separately from hand-written local rule
 Each learned mapping should be created only from a confirmed review decision and should preserve enough audit metadata to inspect or reset it later.
 
 Matching keys should use a normalized merchant identity by default. Recurring learned mappings may include amount tolerance and day-window hints. Learned memory should avoid full raw descriptions when they contain changing references or sensitive account details.
+
+Reviewed policy guidance lives beside Category Memory as `data/category_memory/reviewed_policy.local.md`. It is generated from learned mappings and preserves an editable `## Manual Guidance` section. Local LLM prompts may use this policy as review guidance, but the policy is not a confirmed transaction decision, does not bypass Category Memory gating, and does not authorize workbook writes.
 
 A future reviewed decision import should be a separate input contract from raw review output. It should contain the transaction identifier or source fingerprint, the confirmed category, and enough metadata to derive the merchant identity and optional recurring match hints.

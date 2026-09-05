@@ -7,7 +7,7 @@ updated: 2026-06-07
 
 ## Ready For Agent
 
-- [PRD-2026-06-07-LOCAL-WEALTH-TRACKER-AGENT-PUBLIC-PACKAGE: Local Wealth-Tracker Agent Public Package](./2026-06-07-prd-local-wealth-tracker-agent-public-package.md)
+No issues currently ready for agent.
 
 ## Blocked
 
@@ -48,3 +48,13 @@ No issues currently in progress.
 - [ISSUE-028: Apply Local Gemma To Low-Confidence Review Rows](./2026-05-27-issue-028-apply-local-gemma-to-low-confidence-review-rows.md)
 - [ISSUE-029: Handle Local Gemma No-Suggestion And New-Leaf Candidates](./2026-05-27-issue-029-handle-local-gemma-no-suggestion-and-new-leaf-candidates.md)
 - [ISSUE-030: Add Local Gemma Evaluation Diagnostics And Docs](./2026-05-27-issue-030-add-local-gemma-evaluation-diagnostics-and-docs.md)
+- [ISSUE-031: Codify Public Package Boundary](./2026-06-07-issue-031-codify-public-package-boundary.md)
+- [ISSUE-032: Ship Versioned Synthetic Template Workbook](./2026-06-07-issue-032-ship-versioned-synthetic-template-workbook.md)
+- [ISSUE-033: Add Guided Local Setup Workflow](./2026-06-07-issue-033-add-guided-local-setup-workflow.md)
+- [ISSUE-034: Customize Supported Template Dimensions](./2026-06-07-issue-034-customize-supported-template-dimensions.md)
+- [ISSUE-035: Normalize Known Statements Through Adapters](./2026-06-07-issue-035-normalize-known-statements-through-adapters.md)
+- [ISSUE-036: Review Unknown Statement Imports](./2026-06-07-issue-036-review-unknown-statement-imports.md)
+- [ISSUE-037: Learn Local Importer Profiles](./2026-06-07-issue-037-learn-local-importer-profiles.md)
+- [ISSUE-038: Surface Educated Import Guesses](./2026-06-07-issue-038-surface-educated-import-guesses.md)
+- [ISSUE-039: Preserve Review-Only Financial Authority](./2026-06-07-issue-039-preserve-review-only-financial-authority.md)
+- [ISSUE-040: Publish Package Docs And Synthetic Examples](./2026-06-07-issue-040-publish-package-docs-and-synthetic-examples.md)
