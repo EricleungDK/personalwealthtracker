@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from .categorizer import categorize_transactions
-from .category_memory import load_category_memory
+from .category_memory import load_category_memory, load_reviewed_policy
 from .config import load_config, register_category_registry_additions
 from .local_llm import apply_local_llm_suggestions, disabled_diagnostics
 from .models import CategoryRegistryAddition, RunResult, Transaction
@@ -100,6 +100,7 @@ def run_pipeline(
             categorized,
             config,
             client=local_llm_client,
+            reviewed_policy=load_reviewed_policy(category_memory_dir),
         )
     workbook_plan = plan_workbook_changes(tracker_path, categorized, year, month, config)
     updates = workbook_plan.updates
