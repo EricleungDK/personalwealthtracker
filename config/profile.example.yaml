@@ -1,0 +1,25 @@
+# Copy this file to an ignored path such as profiles/default.local.yaml before
+# adding real workbook paths, statement folders, or learned profile data.
+
+profile:
+  name: "default"
+  tracker_currency: "DKK"
+
+profile_paths:
+  tracker_workbook: "Net Worth Tracker.xlsx"
+  raw_statements_dir: "data/raw_statements"
+  watched_folder_dir: "data/watched_folder"
+  reports_dir: "reports"
+  processed_workbooks_dir: "data/processed"
+  backups_dir: "data/backups"
+  logs_dir: "logs"
+  category_memory_dir: "data/category_memory"
+  importer_profiles_dir: "data/importer_profiles"
+  local_rules_file: "config/rules.local.yaml"
+  proxy_split_rules_file: "config/rules.local.yaml"
+
+privacy:
+  original_workbook_write_policy: "never_modify_directly"
+  commit_target_policy: "copied_workbook_only"
+  model_output_policy: "review_only"
+  importer_profile_storage: "private_local_default"

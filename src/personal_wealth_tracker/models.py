@@ -101,6 +101,13 @@ class LocalLLMDiagnostics:
 
 
 @dataclass(frozen=True)
+class StatementImportDiagnostic:
+    severity: str
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
 class WorkbookPlan:
     updates: list[TrackerUpdate]
     structure_changes: list[WorkbookStructureChange]
@@ -124,3 +131,4 @@ class RunResult:
     review_xlsx_path: Path | None = None
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)
+    statement_import_diagnostics: tuple[StatementImportDiagnostic, ...] = ()

@@ -69,7 +69,7 @@ def test_pipeline_rejects_tracker_statement_currency_mismatch(monkeypatch, tmp_p
 def test_pipeline_auto_routes_csv_statement_to_nordea_csv(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_csv",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
     )
 
@@ -89,7 +89,7 @@ def test_pipeline_auto_routes_csv_statement_to_nordea_csv(monkeypatch, tmp_path)
 def test_pipeline_auto_routes_pdf_statement_to_nordea_pdf(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_pdf",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_pdf",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 2))],
     )
 
@@ -109,7 +109,7 @@ def test_pipeline_auto_routes_pdf_statement_to_nordea_pdf(monkeypatch, tmp_path)
 def test_pipeline_explicit_statement_format_overrides_extension(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_csv",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 3))],
     )
 
@@ -130,7 +130,7 @@ def test_pipeline_explicit_statement_format_overrides_extension(monkeypatch, tmp
 def test_pipeline_explicit_pdf_statement_format_overrides_csv_extension(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_pdf",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_pdf",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 4))],
     )
 
@@ -183,7 +183,7 @@ def test_pipeline_rejects_out_of_period_before_categorization(monkeypatch, tmp_p
     )
     monkeypatch.setattr("personal_wealth_tracker.pipeline.load_config", lambda _path: config)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_pdf",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_pdf",
         lambda _path, expected_currency: [_transaction(date(2026, 5, 1))],
     )
 
@@ -206,7 +206,7 @@ def test_pipeline_rejects_out_of_period_before_categorization(monkeypatch, tmp_p
 def test_pipeline_preserves_target_period_validation_after_csv_parsing(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_csv",
         lambda _path, expected_currency: [_transaction(date(2026, 5, 1))],
     )
 
@@ -229,7 +229,7 @@ def test_pipeline_preserves_target_period_validation_after_csv_parsing(monkeypat
 def test_pipeline_does_not_call_local_llm_client_when_mode_is_disabled(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_csv",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
     )
 
@@ -255,7 +255,7 @@ def test_pipeline_keeps_review_output_when_local_llm_provider_is_unavailable(
 ):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
-        "personal_wealth_tracker.pipeline.parse_nordea_csv",
+        "personal_wealth_tracker.statement_adapters.parse_nordea_csv",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
     )
 
