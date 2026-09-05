@@ -254,3 +254,165 @@ def test_local_llm_mode_documentation_is_in_sync():
         assert phrase in data_contracts
 
     assert "raw Nordea descriptions are excluded" in security
+
+
+def test_public_private_package_boundary_documentation_is_in_sync():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    boundary = (REPO_ROOT / "docs" / "public_private_boundary.md").read_text(
+        encoding="utf-8"
+    )
+    security = (REPO_ROOT / ".agent" / "System" / "security_privacy.md").read_text(
+        encoding="utf-8"
+    )
+    profile_example = (REPO_ROOT / "config" / "profile.example.yaml").read_text(
+        encoding="utf-8"
+    )
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    boundary_phrases = [
+        "Public Package Responsibilities",
+        "Private Profile Responsibilities",
+        "Local Wealth-Tracker Agent",
+        "not an autonomous finance authority",
+        "sample public configuration",
+        "data/raw_statements/",
+        "data/category_memory/",
+        "data/importer_profiles/",
+        "data/processed/",
+        "data/backups/",
+        "reports/",
+        "logs/",
+        "config/*.local.yaml",
+        "profiles/*.local.yaml",
+        "Category Memory",
+        "Importer Profiles",
+        "proxy split rules",
+    ]
+    for phrase in boundary_phrases:
+        assert phrase in boundary
+
+    for phrase in [
+        "docs/public_private_boundary.md",
+        "public/private boundary",
+    ]:
+        assert phrase in readme
+
+    for phrase in [
+        "Public package artifacts",
+        "Private profile artifacts",
+        "Importer Profiles",
+        "not an autonomous finance authority",
+    ]:
+        assert phrase in security
+
+    for phrase in [
+        "profile_paths:",
+        "tracker_workbook:",
+        "raw_statements_dir:",
+        "reports_dir:",
+        "processed_workbooks_dir:",
+        "backups_dir:",
+        "category_memory_dir:",
+        "importer_profiles_dir:",
+        "local_rules_file:",
+        "proxy_split_rules_file:",
+    ]:
+        assert phrase in profile_example
+
+    ignored_private_paths = [
+        "data/raw_statements/",
+        "data/category_memory/",
+        "data/importer_profiles/",
+        "data/processed/",
+        "data/backups/",
+        "reports/",
+        "logs/",
+        "config/*.local.yaml",
+        "profiles/*.local.yaml",
+    ]
+    for path in ignored_private_paths:
+        assert path in gitignore
+
+
+def test_template_workbook_documentation_is_in_sync():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
+    template_doc = (REPO_ROOT / "docs" / "template_workbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    required_phrases = [
+        "Template Workbook",
+        "local-wealth-tracker-template",
+        "template_version",
+        "synthetic_template",
+        "Net worth",
+        "Template Metadata",
+        "Tracker Currency",
+        "Groceries (monthly)",
+        "Local Wealth-Tracker Agent",
+        "no real values",
+        "no private categories",
+        "no personal sheet names",
+        "template-workbook customize",
+        "Supported V1 Customization",
+        "Unsupported formula changes",
+        "Formula and layout customization are out of scope for v1",
+    ]
+    for phrase in required_phrases:
+        assert phrase in template_doc
+
+    for phrase in [
+        "docs/template_workbook.md",
+        "Template Workbook",
+        "template-workbook customize",
+    ]:
+        assert phrase in readme
+        assert phrase in overview
+
+
+def test_public_package_workflow_documentation_is_in_sync():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
+    guide = (REPO_ROOT / "docs" / "public_package_workflow.md").read_text(
+        encoding="utf-8"
+    )
+
+    required_phrases = [
+        "Public Package Workflow",
+        "uv sync --extra dev",
+        "wealth-tracker setup",
+        "templates/local-wealth-tracker-template.xlsx",
+        "examples/synthetic-nordea-transactions.csv",
+        "wealth-tracker template-workbook customize",
+        "wealth-tracker import-statement",
+        "wealth-tracker importer-profile learn",
+        "wealth-tracker learn-category-memory",
+        "--commit",
+        "Trusted Statement Adapter",
+        "Statement Import Assistant",
+        "Importer Profile",
+        "public/private boundary",
+        "extensible adapters plus model-assisted review flows",
+        "not guaranteed trusted parsing of every financial document",
+        "desktop app",
+        "SaaS",
+        "required remote LLMs",
+        "autonomous finance decisions",
+        "direct original-workbook edits",
+        "arbitrary formula/layout editing",
+        "live FX",
+        "bank APIs",
+        "scheduler",
+        "cloud sync",
+        "public shipping of private data",
+    ]
+    for phrase in required_phrases:
+        assert phrase in guide
+
+    for phrase in [
+        "docs/public_package_workflow.md",
+        "Public Package Workflow",
+    ]:
+        assert phrase in readme
+        assert phrase in overview
