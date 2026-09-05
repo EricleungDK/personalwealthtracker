@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-06-07
+Last updated: 2026-09-05
 
 ## Project State
 
@@ -139,6 +139,8 @@ Last updated: 2026-06-07
 | 2026-06-07 | The first public release should install a Python CLI package, template Excel workbook, synthetic examples, sample profile/config, local setup directories, and optional local-model integration. | This gives users a reusable local wealth-tracker agent workflow without taking on desktop app, remote service, or fully autonomous finance-product scope in v1. |
 | 2026-06-07 | The public template workbook should be a clean synthetic workbook, not the user's current personal workbook. | The existing workbook can inspire schema and formulas, but the public template must contain no real values, private categories, personal sheet names, or hidden assumptions, and should include template version metadata. |
 | 2026-06-07 | Use the current repository as the incubation repo before splitting public and private layers. | Packaging work should start on a branch in this repo, then separate a public package/repository from private profile data only after the boundary between reusable agent, template workbook, and local personal configuration is clear. |
+| 2026-06-12 | Local LLM prompts may include prior low-confidence rule/recurring suggestion context and must ignore low-confidence category/new-leaf responses. | This gives the local model useful non-raw context for review rows while preventing weak model guesses from filling review suggestion fields. |
+| 2026-06-13 | Confirmed learned review decisions should also maintain an editable reviewed policy file for Local LLM guidance. | Deterministic Category Memory remains the authority for exact matches, while `reviewed_policy.local.md` gives the model broader private guidance without training it or granting workbook-write authority. |
 
 ## Open Questions
 
@@ -208,6 +210,16 @@ These backlog items are not active tasks yet.
 
 ## Activity Log
 
+- 2026-06-07: Split the Local Wealth-Tracker Agent Public Package PRD into local issue tickets ISSUE-031 through ISSUE-040 and updated `.agent/issues/kanban.md`.
+- 2026-06-07: Implemented ISSUE-031 by documenting the public/private package boundary, adding `config/profile.example.yaml`, ignoring `data/importer_profiles/` and `profiles/*.local.yaml`, and validating the documentation guardrails plus `compileall`; ISSUE-032 and ISSUE-035 are now ready for agent work.
+- 2026-06-07: Implemented ISSUE-035 by adding a Trusted Statement Adapter contract, routing Nordea CSV/PDF imports through it, adding import diagnostics for duplicate rows, unsupported currencies, and out-of-period transactions, and validating adapter behavior with direct executable checks; ISSUE-036 is now ready for agent work.
+- 2026-06-07: Implemented ISSUE-036 by adding the Statement Import Assistant, untrusted unknown-format review CSV artifacts, optional mocked-model extraction, deterministic fallback, validation diagnostics, and an `import-statement` CLI path; ISSUE-037 is now ready for agent work.
+- 2026-06-07: Implemented ISSUE-037 by adding private local Importer Profile learning from confirmed import reviews, profile update/reset/export workflows, importer-profile CLI commands, and direct validation; ISSUE-038 is now ready for agent work.
+- 2026-06-07: Implemented ISSUE-038 by applying local Importer Profiles to future unknown imports as filterable Educated Import Guesses with high/low confidence states, source-format-change flags, profile provenance, review confirmation columns, and direct validation.
+- 2026-06-07: Completed ISSUE-032 by adding the versioned synthetic Template Workbook generator, template metadata validation, `template-workbook create` CLI path, tests, and docs. Verified with `PYTHONPATH=src python3 -m pytest tests/test_template_workbook.py`; ISSUE-033 and ISSUE-034 are now ready for agent work.
+- 2026-06-07: Completed ISSUE-033 by adding `wealth-tracker setup`, idempotent public-template workspace initialization, generic config/profile generation, private local path setup, a synthetic Template Workbook, and a synthetic Nordea CSV dry-run example. Verified with `PYTHONPATH=src python3 -m pytest tests/test_setup_workspace.py tests/test_template_workbook.py tests/test_cli.py tests/test_documentation.py`; ISSUE-034 remains ready for agent work.
+- 2026-06-07: Completed ISSUE-034 by adding supported template customization for known label/currency dimensions, setup profile path overrides, template formula/layout rejection, and report currency assumptions. Verified with `PYTHONPATH=/tmp/pwt-deps:src python3 -m pytest tests/test_template_customization.py tests/test_setup_workspace.py tests/test_template_workbook.py tests/test_cli.py tests/test_workbook.py tests/test_reporting.py tests/test_documentation.py` using `openpyxl 3.1.5`; ISSUE-039 is now ready for agent work.
+- 2026-06-07: Completed ISSUE-039 by adding an untrusted-import authority guard, restoring pipeline target-period safety compatibility, updating adapter-layer safety tests, and verifying review-only/model/importer/category-memory/copy-write workbook boundaries. Verified with `PYTHONPATH=/tmp/pwt-deps:src python3 -m pytest`; 197 tests passed and ISSUE-040 is now ready for agent work.
 - 2026-05-06: Created baseline project folders and starter files.
 - 2026-05-06: Added MVP 1 implementation plan based on Nordea PDF input and DKK workbook policy.
 - 2026-05-06: Implemented MVP 1 scaffold, installed Python 3.12 and uv, ran tests, and validated dry-run parsing of the local Nordea PDF.
@@ -329,6 +341,8 @@ These backlog items are not active tasks yet.
 - 2026-05-28: Implemented local Gemma review suggestions `ISSUE-026` through `ISSUE-030`: added `--local-llm-suggestions`, local Ollama HTTP provider settings/client, minimized prompt construction, YAML leaf validation, existing-leaf/no-suggestion/new-leaf-candidate handling, low-confidence deterministic review-row assistance, precedence safeguards, Local LLM report/audit diagnostics, operator docs, and tests. Targeted affected suite passed with 95 tests.
 - 2026-06-06: Updated local LLM defaults and operator docs to use `gemma4:12b` as the primary Ollama model and `gemma4:e4b` as fallback after validating both models are installed locally. Project-level smoke testing exposed a fragile LLM transaction-ID echo and one 30-second provider timeout; the prompt no longer asks the model to echo transaction IDs, exact validation remains if a provider voluntarily returns one, the default provider timeout is now 60 seconds, generation is bounded, and primary per-row provider failures retry the configured fallback model once.
 - 2026-06-06: Fixed Local LLM fallback diagnostics so provider-attempt counts reflect actual `client.generate()` calls, including primary failures followed by fallback success. Regression was developed with TDD, full suite passed with 160 tests, and commit `8d0c99d` recorded the change.
+- 2026-06-12: Improved Local LLM suggestion reliability by adding prior low-confidence deterministic suggestion context to prompts, ignoring category/new-leaf responses below the configured review threshold, reporting low-confidence ignored response counts in Markdown/JSONL diagnostics, and updating operator/system docs. Targeted affected suite passed with 59 tests before the full validation run.
+- 2026-06-13: Added private reviewed policy memory: `learn-category-memory` now updates `data/category_memory/reviewed_policy.local.md` from learned decisions while preserving manual guidance, and Local LLM prompts include that policy as bounded review guidance. The policy remains local-only and does not change workbook or Category Memory authority.
 - 2026-06-07: Started a packaging grilling session and resolved the target audience/direction as a public package for arbitrary finance workflows rather than only a reusable personal setup or Nordea-specific tracker.
 - 2026-06-07: Resolved the public product shape as a local wealth-tracker agent with a template Excel workbook, keeping model assistance review-only rather than autonomous financial editing.
 - 2026-06-07: Resolved v1 template customization scope: categories, section labels, period columns, currencies, and profile paths are in scope; arbitrary formulas/layouts are not.
@@ -339,3 +353,8 @@ These backlog items are not active tasks yet.
 - 2026-06-07: Resolved that the public template workbook should be a clean synthetic workbook with version metadata, not a copy of the user's personal tracker.
 - 2026-06-07: Resolved repository strategy: keep this repo as the incubation space for packaging decisions, then split public package/repo and private profile data after the reusable boundary is defined.
 - 2026-06-07: Created local PRD `.agent/issues/2026-06-07-prd-local-wealth-tracker-agent-public-package.md` and placed it in the local kanban as ready for agent work.
+- 2026-06-07: Split the local wealth-tracker agent public-package PRD into AFK issues `ISSUE-031` through `ISSUE-040` and worked the unblocked package boundary, template workbook, setup, customization, statement adapter, unknown import review, importer profile, educated guess, financial authority, and public documentation slices.
+- 2026-06-07: Implemented public-package workflow documentation in `docs/public_package_workflow.md`, linked it from `README.md` and `docs/project_overview.md`, and documented install/setup, synthetic examples, Trusted Statement Adapter, Statement Import Assistant, Importer Profile, review-only learning, commit-to-copy behavior, public/private boundaries, arbitrary workflow support limits, and v1 non-goals.
+- 2026-06-07: Verified the completed package PRD slice set with `PYTHONPATH=/tmp/pwt-deps:src python3 -m pytest`, which passed with 198 tests.
+
+- 2026-09-05: Prepared the accumulated Local LLM review and public-package changes for remote publication on `feature/public-package-review-workflows`, grouped into implementation and documentation commits. Full suite passed with 204 tests; diff whitespace checks passed. Real financial inputs and generated outputs remain ignored. Moved the stray root `NUL` WSL error artifact outside the repository.

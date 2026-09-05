@@ -21,11 +21,15 @@ Nordea CSV is the preferred bank cashflow input because it includes merchant-ric
 
 This project handles sensitive personal finance data. Real statements, tracker workbooks, generated reports, backups, logs, credentials, PDFs, CSVs, and XLSX files are ignored by `.gitignore`.
 
+The public/private boundary is documented in [docs/public_private_boundary.md](docs/public_private_boundary.md). Public package artifacts are reusable code, synthetic fixtures, sample config, and docs. Private profile artifacts are real statements, tracker workbooks, generated outputs, Category Memory, Importer Profiles, local rules, proxy split rules, and local profile paths.
+
 `bank-statement.pdf`, local Nordea CSV exports, and `Net Worth Tracker.xlsx` are local reference files and should not be committed. Parser tests should use only redacted or synthetic fixtures, named like `tests/fixtures/nordea_account_statement.redacted.pdf` or `tests/fixtures/nordea_transactions.redacted.csv`.
 
 Real CSV exports are ignored by Git and must not be committed. Keep them under an ignored local path such as `data/raw_statements/` or pass any other ignored local path to `--statement`.
 
 Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules.
+
+Local profile files belong under ignored paths such as `profiles/default.local.yaml`. Start from `config/profile.example.yaml` when documenting local tracker workbook paths, statement folders, report folders, Category Memory, Importer Profiles, and local rule overlays.
 
 The committed Nordea PDF fixture is synthetic and redacted. Regenerate it with:
 
@@ -41,11 +45,50 @@ This workspace is pinned to Python 3.12 through `.python-version`.
 uv sync --extra dev
 ```
 
+Initialize a local public-template workspace:
+
+```bash
+uv run wealth-tracker setup \
+  --workspace "local-wealth-workspace" \
+  --tracker-currency DKK \
+  --start-year 2026
+```
+
+Setup creates local `config/`, `profiles/`, `templates/`, `examples/`, `data/`, `reports/`, and `logs/` paths; generates `templates/local-wealth-tracker-template.xlsx`; writes generic sample config/profile files; and adds a synthetic Nordea CSV example. Existing setup-managed files are preserved unless `--force` is supplied.
+
 ## Documentation
 
 - [docs/project_overview.md](docs/project_overview.md) is the plain-language project map with Mermaid diagrams for structure, monthly flow, components, outputs, scripts, and terms.
+- [docs/public_package_workflow.md](docs/public_package_workflow.md) is the Public Package Workflow for setup, synthetic examples, trusted imports, unknown-format review, learning, and commit-to-copy runs.
 - [docs/monthly_workflow.md](docs/monthly_workflow.md) is the monthly operator checklist.
+- [docs/public_private_boundary.md](docs/public_private_boundary.md) defines the public/private boundary for future package work.
+- [docs/template_workbook.md](docs/template_workbook.md) documents the versioned synthetic Template Workbook contract.
 - `.agent/System/` contains deeper architecture and data-contract notes for coding agents.
+
+## Template Workbook
+
+Generate the public synthetic Template Workbook locally:
+
+```bash
+uv run wealth-tracker template-workbook create \
+  --output "templates/local-wealth-tracker-template.xlsx" \
+  --tracker-currency DKK \
+  --start-year 2026
+```
+
+The generated workbook contains a hidden `Template Metadata` sheet with `template_id`, `template_version`, `workbook_kind`, `tracker_currency`, and `template_schema`. It uses generic rows and formulas only; do not replace it with a private tracker workbook or committed real financial values.
+
+Customize supported v1 labels and currency only through the template command:
+
+```bash
+uv run wealth-tracker template-workbook customize \
+  --template "templates/local-wealth-tracker-template.xlsx" \
+  --output "templates/local-wealth-tracker-template-custom.xlsx" \
+  --tracker-currency EUR \
+  --rename "Groceries (monthly)=Groceries"
+```
+
+Unsupported formula changes, arbitrary layout edits, missing metadata, and unsupported template versions are rejected instead of repaired automatically.
 
 ## CSV-First Dry Run
 
@@ -91,7 +134,50 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 60-second provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook.
+The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 60-second provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category and new-leaf responses are ignored and reported so weak guesses stay in ordinary manual review.
+
+When `learn-category-memory` imports rows with `learn_to_memory=yes`, it also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
+
+## Unknown Statement Import Review
+
+Unknown statement formats can be turned into an untrusted review artifact without feeding monthly planning:
+
+```bash
+uv run wealth-tracker import-statement \
+  --statement "data/raw_statements/unknown-export.txt" \
+  --year 2026 \
+  --month Apr
+```
+
+This writes `untrusted_import_review_<year>_<month>.csv` under `reports/`. Every row is review-required and ineligible for workbook writes until a later confirmed-import workflow promotes reviewed data.
+
+After manually confirming rows in the review CSV, a private Importer Profile can be learned locally:
+
+```bash
+uv run wealth-tracker importer-profile learn \
+  --reviewed-import "reports/untrusted_import_review_2026_apr.csv" \
+  --profile-name synthetic-bank
+```
+
+Importer Profiles live under ignored `data/importer_profiles/` by default. Export one only by explicit command:
+
+```bash
+uv run wealth-tracker importer-profile export \
+  --profile-name synthetic-bank \
+  --output "exports/synthetic-bank.importer_profile.json"
+```
+
+Use a local Importer Profile during a later unknown import to surface Educated Import Guesses:
+
+```bash
+uv run wealth-tracker import-statement \
+  --statement "data/raw_statements/unknown-export.txt" \
+  --year 2026 \
+  --month Apr \
+  --importer-profile synthetic-bank
+```
+
+Guesses appear in the review CSV as `suggested_category`, `guess_state`, `guess_confidence`, `guess_reason`, and `guess_profile`. They remain review-only; use `confirmed` and `confirmed_category` to accept or correct rows later.
 
 ## PDF Fallback Dry Run
 

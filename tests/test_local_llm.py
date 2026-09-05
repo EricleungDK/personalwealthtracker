@@ -52,6 +52,47 @@ def test_prompt_does_not_require_model_to_echo_transaction_id():
     assert "transaction_id" not in payload["response_contract"]
 
 
+def test_prompt_includes_prior_low_confidence_deterministic_context():
+    item = _categorized(
+        "tx-low-confidence-rule",
+        merchant="UNKNOWN CLOUD",
+        suggested_category="Apple Cloud",
+        confidence=0.7,
+        method="rule",
+        reason="Keyword rule match.",
+    )
+
+    prompt = build_local_llm_prompt(
+        item,
+        allowed_categories=("Apple Cloud", "Traveling"),
+        config=_config().local_llm,
+    )
+
+    payload = json.loads(prompt)
+    assert payload["current_suggestion"] == {
+        "suggested_category": "Apple Cloud",
+        "method": "rule",
+        "confidence": 0.7,
+        "reason": "Keyword rule match.",
+    }
+
+
+def test_prompt_includes_reviewed_policy_context():
+    item = _categorized("tx-policy", merchant="MOBILEPAY REJSEKORT")
+
+    prompt = build_local_llm_prompt(
+        item,
+        allowed_categories=("Apple Cloud", "Traveling"),
+        config=_config().local_llm,
+        reviewed_policy="- Merchant identity: `MOBILEPAY REJSEKORT` -> `Traveling`",
+    )
+
+    payload = json.loads(prompt)
+    assert payload["reviewed_policy"] == (
+        "- Merchant identity: `MOBILEPAY REJSEKORT` -> `Traveling`"
+    )
+
+
 def test_valid_existing_leaf_suggestion_updates_unmatched_review_row():
     client = _FakeClient(
         '{"transaction_id":"tx1","status":"category","suggested_category":"Traveling",'
@@ -285,6 +326,25 @@ def test_primary_call_timeout_retries_fallback_model_for_same_row():
     assert diagnostics.existing_leaf_suggestions == 1
     assert diagnostics.provider_failure_count == 0
     assert "using fallback 'gemma4:e4b'" in diagnostics.warnings[0]
+
+
+def test_low_confidence_category_response_keeps_original_review_row_and_warns():
+    original = _categorized("tx1", merchant="AMBIGUOUS SHOP")
+    client = _FakeClient(
+        '{"transaction_id":"tx1","status":"category","suggested_category":"Traveling",'
+        '"confidence":0.40,"rationale":"Weak travel signal."}'
+    )
+
+    categorized, diagnostics = apply_local_llm_suggestions(
+        [original],
+        _config(),
+        client=client,
+    )
+
+    assert categorized == [original]
+    assert diagnostics.low_confidence_response_count == 1
+    assert diagnostics.existing_leaf_suggestions == 0
+    assert "below the review threshold 0.60" in diagnostics.warnings[0]
 
 
 def test_ollama_client_availability_uses_http_tags_and_fallback_model(monkeypatch):

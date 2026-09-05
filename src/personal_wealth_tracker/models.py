@@ -94,9 +94,17 @@ class LocalLLMDiagnostics:
     existing_leaf_suggestions: int = 0
     no_suggestion_count: int = 0
     new_leaf_candidate_count: int = 0
+    low_confidence_response_count: int = 0
     invalid_response_count: int = 0
     provider_failure_count: int = 0
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class StatementImportDiagnostic:
+    severity: str
+    code: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -123,3 +131,4 @@ class RunResult:
     review_xlsx_path: Path | None = None
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)
+    statement_import_diagnostics: tuple[StatementImportDiagnostic, ...] = ()
