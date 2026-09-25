@@ -52,6 +52,7 @@ class CategoryRegistry:
     new_leaf_parent_categories: tuple[str, ...] = ()
     children_by_parent: dict[str, tuple[str, ...]] = field(default_factory=dict)
     category_type_by_label: dict[str, str] = field(default_factory=dict)
+    leaf_glossary: dict[str, str] = field(default_factory=dict)
 
     def is_leaf_category(self, label: str) -> bool:
         return label in self.leaf_categories
@@ -381,6 +382,7 @@ def _flat_category_registry(items: Any) -> CategoryRegistry:
     return CategoryRegistry(
         leaf_categories=tuple(leaves),
         category_type_by_label=type_by_label,
+        leaf_glossary={label: "" for label in leaves},
     )
 
 
@@ -394,6 +396,7 @@ def _tree_category_registry(items: Any) -> CategoryRegistry:
     new_leaf_parents: list[str] = []
     children_by_parent: dict[str, tuple[str, ...]] = {}
     type_by_label: dict[str, str] = {}
+    glossary: dict[str, str] = {}
 
     for item in items:
         label = _category_label(item)
@@ -403,11 +406,12 @@ def _tree_category_registry(items: Any) -> CategoryRegistry:
         if node_type == "leaf":
             leaves.append(label)
             type_by_label[label] = "leaf"
+            glossary[label] = _category_description(item)
             continue
 
         parents.append(label)
         type_by_label[label] = node_type
-        child_labels = tuple(_tree_child_labels(item, seen, leaves, type_by_label))
+        child_labels = tuple(_tree_child_labels(item, seen, leaves, type_by_label, glossary))
         if child_labels:
             children_by_parent[label] = child_labels
         if node_type != "derived" and _allows_new_children(item):
@@ -419,6 +423,7 @@ def _tree_category_registry(items: Any) -> CategoryRegistry:
         new_leaf_parent_categories=tuple(new_leaf_parents),
         children_by_parent=children_by_parent,
         category_type_by_label=type_by_label,
+        leaf_glossary=glossary,
     )
 
 
@@ -427,6 +432,7 @@ def _tree_child_labels(
     seen: dict[str, str],
     leaves: list[str],
     type_by_label: dict[str, str],
+    glossary: dict[str, str],
 ) -> list[str]:
     if not isinstance(item, dict):
         return []
@@ -445,6 +451,7 @@ def _tree_child_labels(
         leaves.append(label)
         child_labels.append(label)
         type_by_label[label] = "leaf"
+        glossary[label] = _category_description(child)
     return child_labels
 
 
@@ -454,6 +461,12 @@ def _category_label(item: Any) -> str:
             raise ValueError("Category registry entries must include a label.")
         return str(item["label"])
     return str(item)
+
+
+def _category_description(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("description") or "").strip()
 
 
 def _category_node_type(item: Any) -> str:

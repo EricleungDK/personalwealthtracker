@@ -205,11 +205,13 @@ Older reviewed workbooks without `new_parent_category` and `new_leaf_category` r
 `config/categories.yaml` is the durable category registry. It supports:
 
 - parent entries with `allow_new_children` and `children`,
-- leaf string entries,
+- leaf string entries, or leaf mappings with `label` and `description`,
 - derived entries that are never direct transaction targets,
 - explicit aliases that resolve old or short labels to registry labels.
 
 Parent/Section Row labels group child rows and may allow reviewed new leaf requests. Leaf Category Row labels are the valid targets for `manual_category`, workbook value planning, and Category Memory learning. Derived rows such as workbook totals are allowed as context but not as write or memory targets.
+
+Leaf `description` text forms the leaf glossary (`CategoryRegistry.leaf_glossary`, leaf → description) that the Suggester sees. A leaf without a description maps to an empty string. Adding a leaf does not change the tracker workbook; a missing leaf row is only planned for insertion when a transaction targets it.
 
 The registry rejects duplicate labels using case-insensitive trimmed matching while preserving exact display labels in YAML and reports.
 

@@ -3,19 +3,28 @@ category_registry:
   type: parent
   allow_new_children: true
   children:
-  - Saving Account
-  - JEPI
-  - OXY
-  - CRYPTO
-  - tax return
+  - label: Saving Account
+    description: Transfers into or balance of the savings account.
+  - label: JEPI
+    description: JEPI ETF holding value or purchases.
+  - label: OXY
+    description: OXY stock holding value or purchases.
+  - label: CRYPTO
+    description: Cryptocurrency holdings or purchases.
+  - label: tax return
+    description: Tax refund paid out by the tax authority.
 - label: Cashflow
   type: derived
-- Expense claims
-- Nordea Credit Card
-- Mastercard refund
+- label: Expense claims
+  description: Work expenses paid personally and reimbursed by the employer.
+- label: Nordea Credit Card
+  description: Payment of the Nordea credit card bill.
+- label: Mastercard refund
+  description: Refund credited back from a Mastercard purchase.
 - label: Income (net)
   type: derived
-- Full-time job (net)
+- label: Full-time job (net)
+  description: Net salary paid by the employer.
 - label: Labour market contribution
   type: derived
 - label: Taxes
@@ -26,44 +35,76 @@ category_registry:
   type: parent
   allow_new_children: true
   children:
-  - Rent (monthly)
-  - Mom
-  - Dad
-  - Shopping (monthly)
-  - Food& Drinks (monthly)
-  - Lunch (monthly)
-  - Cleaning costs (monthly)
-  - Traveling
-  - electricity
-  - transportation
+  - label: Rent (monthly)
+    description: Monthly rent for the home.
+  - label: Mom
+    description: Money transferred to mom.
+  - label: Dad
+    description: Money transferred to dad.
+  - label: Shopping (monthly)
+    description: Clothing, household goods, electronics and other retail purchases.
+  - label: Food& Drinks (monthly)
+    description: Groceries and drinks bought in supermarkets, bakeries and kiosks.
+  - label: Lunch (monthly)
+    description: Workday lunch at the canteen or near the office.
+  - label: Cleaning costs (monthly)
+    description: Home cleaning service and cleaning supplies.
+  - label: Traveling
+    description: Flights, hotels, holiday rentals and spending abroad on trips.
+  - label: electricity
+    description: Electricity and utility bills for the home.
+  - label: transportation
+    description: Public transport tickets, travel cards, bike and scooter rentals, taxis and fuel.
+  - label: Restaurants
+    description: Eating out at restaurants, cafes, bars and takeaway; not groceries or workday lunch.
+  - label: Entertainment
+    description: Cinema, concerts, events, games and other leisure activities.
 - label: Services
   type: parent
   allow_new_children: true
   children:
-  - Disney+
-  - Louis Nielsen
-  - Apple Cloud
-  - Fitness center membership (monthly)
-  - Google Cloud
-  - Max (yearly)
-  - Metro (monthly)
-  - Akasse
-  - Mobile phone (monthly)
-  - Banking account fees (monthly)
-  - healthcare
+  - label: Disney+
+    description: Disney+ streaming subscription.
+  - label: Louis Nielsen
+    description: Optician purchases and eyewear subscription.
+  - label: Apple Cloud
+    description: Apple iCloud storage subscription.
+  - label: Fitness center membership (monthly)
+    description: Gym or fitness center membership fee.
+  - label: Google Cloud
+    description: Google cloud storage or services subscription.
+  - label: Max (yearly)
+    description: Max streaming subscription, billed yearly.
+  - label: Metro (monthly)
+    description: Monthly metro or commuter pass.
+  - label: Akasse
+    description: Unemployment insurance fund (a-kasse) membership fee.
+  - label: Mobile phone (monthly)
+    description: Mobile phone plan bill.
+  - label: Banking account fees (monthly)
+    description: Bank account and card fees.
+  - label: healthcare
+    description: Doctor, dentist, pharmacy and other health costs.
+  - label: Subscriptions
+    description: Recurring digital or membership subscriptions without their own leaf.
 - label: Insurance
   type: parent
   allow_new_children: true
   children:
-  - House insurance Tryg (yearly, in Jan)
-  - Liability insurance (yearly, in Apr)
+  - label: House insurance Tryg (yearly, in Jan)
+    description: Yearly home insurance premium paid in January.
+  - label: Liability insurance (yearly, in Apr)
+    description: Yearly liability insurance premium paid in April.
 - label: Investments
   type: parent
   allow_new_children: true
   children:
-  - Annuity K43
-  - Annuity M12
-  - Stock investment plan
+  - label: Annuity K43
+    description: Contribution to annuity pension account K43.
+  - label: Annuity M12
+    description: Contribution to annuity pension account M12.
+  - label: Stock investment plan
+    description: Monthly transfer into the stock investment plan.
 - label: Total net worth
   type: derived
 aliases:
