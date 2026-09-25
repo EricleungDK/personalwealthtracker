@@ -105,6 +105,35 @@ def import_trusted_statement(
     )
 
 
+def newest_statement(statements_dir: Path) -> Path:
+    """Most recently modified CSV export in `statements_dir`."""
+    candidates = (
+        [path for path in statements_dir.iterdir() if path.suffix.lower() == ".csv"]
+        if statements_dir.is_dir()
+        else []
+    )
+    if not candidates:
+        raise ValueError(f"No CSV statement found in {statements_dir}.")
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def infer_statement_period(statement_path: Path, expected_currency: str) -> tuple[int, str]:
+    """The single (year, month) all statement rows fall in."""
+    adapter = resolve_statement_adapter(statement_path, "auto")
+    transactions = adapter.parse(statement_path, expected_currency.upper())
+    periods = sorted(
+        {(transaction.date.year, transaction.date.month) for transaction in transactions}
+    )
+    if len(periods) != 1:
+        found = ", ".join(f"{year}-{month:02d}" for year, month in periods) or "none"
+        raise ValueError(
+            f"Statement {statement_path.name!r} must cover exactly one month; found: {found}."
+        )
+    year, month_number = periods[0]
+    month = next(name for name, number in MONTH_NUMBERS.items() if number == month_number)
+    return year, month
+
+
 def resolve_statement_adapter(statement_path: Path, statement_format: str) -> TrustedStatementAdapter:
     adapters = _trusted_statement_adapters()
     if statement_format != "auto":

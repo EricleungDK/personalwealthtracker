@@ -146,3 +146,4 @@ class RunResult:
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)
     statement_import_diagnostics: tuple[StatementImportDiagnostic, ...] = ()
+    source_statement: Path | None = None
