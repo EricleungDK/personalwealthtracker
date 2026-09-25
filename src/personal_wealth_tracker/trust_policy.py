@@ -18,6 +18,7 @@ class Evidence:
     confidence: float
     votes: tuple[Vote, ...] = ()
     provenance: str = TRUSTED_STATEMENT_ADAPTER
+    new_leaf: bool = False
 
     @property
     def agreement(self) -> int:
@@ -47,6 +48,8 @@ def decide_authority(
         return _auto("Proxy split source is excluded from workbook totals.")
     if evidence.category is None:
         return _review("No category suggested.")
+    if evidence.new_leaf:
+        return _review(f"{evidence.category} is a proposed new leaf.")
     if evidence.category in policy.never_auto_categories:
         return _review(f"{evidence.category} is a never-auto category.")
     if abs(row.amount) > policy.auto_max_amount:
@@ -78,6 +81,7 @@ def stamp_authority(item: CategorizedTransaction, config: AppConfig) -> Categori
             category=item.suggested_category,
             confidence=item.confidence,
             votes=item.votes,
+            new_leaf=item.new_leaf_parent is not None,
         ),
         RowFacts(amount=item.transaction.amount),
         config.trust_policy,

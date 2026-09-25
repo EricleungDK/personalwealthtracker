@@ -209,6 +209,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "allocated_amount",
             "residual_amount",
             "suggested_category",
+            "suggested_parent_category",
             "method",
             "reason",
             "workbook_action",
@@ -236,8 +237,9 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             None,
         ]
         assert review_sheet["N2"].value is None
-        assert review_sheet["O2"].value == "unmatched"
-        assert review_sheet["P2"].value == "No historical or keyword rule matched."
+        assert review_sheet["O2"].value is None
+        assert review_sheet["P2"].value == "unmatched"
+        assert review_sheet["Q2"].value == "No historical or keyword rule matched."
 
         audit_sheet = workbook["Audit"]
         assert [cell.value for cell in audit_sheet[1]] == [

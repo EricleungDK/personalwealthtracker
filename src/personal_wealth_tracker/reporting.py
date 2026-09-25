@@ -168,6 +168,7 @@ def _write_report(
                 f"- Eligible rows: {local_llm_diagnostics.eligible_count}",
                 f"- Provider calls attempted: {local_llm_diagnostics.attempted_count}",
                 f"- Existing-leaf suggestions: {local_llm_diagnostics.existing_leaf_suggestions}",
+                f"- New-leaf proposals: {local_llm_diagnostics.new_leaf_proposal_count}",
                 f"- No-suggestion responses: {local_llm_diagnostics.no_suggestion_count}",
                 (
                     "- Low-confidence responses ignored: "
@@ -324,6 +325,7 @@ def _write_audit(
                 "eligible_count": local_llm_diagnostics.eligible_count,
                 "attempted_count": local_llm_diagnostics.attempted_count,
                 "existing_leaf_suggestions": local_llm_diagnostics.existing_leaf_suggestions,
+                "new_leaf_proposal_count": local_llm_diagnostics.new_leaf_proposal_count,
                 "no_suggestion_count": local_llm_diagnostics.no_suggestion_count,
                 "low_confidence_response_count": (
                     local_llm_diagnostics.low_confidence_response_count
@@ -523,6 +525,7 @@ def _write_review_workbook(
         "allocated_amount",
         "residual_amount",
         "suggested_category",
+        "suggested_parent_category",
         "method",
         "reason",
         "workbook_action",
@@ -615,6 +618,7 @@ def _write_review_workbook(
                 _format_optional_amount(item.allocated_amount),
                 _format_optional_amount(item.residual_amount),
                 item.suggested_category or "",
+                item.new_leaf_parent,
                 item.categorization_method,
                 item.reason,
                 update.write_action if update else None,
@@ -723,12 +727,16 @@ def _format_votes(item: CategorizedTransaction) -> str:
 
 
 def _decision_choices(item: CategorizedTransaction) -> list[str]:
+    """manual_category choices; a proposed new leaf is accepted via the new-leaf cells."""
+    proposed = item.suggested_category if item.new_leaf_parent else None
     candidates = [
         item.suggested_category,
         *item.alternatives,
         *(vote.category for vote in item.votes),
     ]
-    choices = list(dict.fromkeys(category for category in candidates if category))
+    choices = list(
+        dict.fromkeys(category for category in candidates if category and category != proposed)
+    )
     return [*choices, REJECT_SUGGESTION] if choices else []
 
 

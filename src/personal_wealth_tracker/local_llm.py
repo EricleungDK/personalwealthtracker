@@ -16,15 +16,20 @@ from .suggester import (
     SuggesterContext,
     Suggestion,
     row_merchant_identity,
+    subscription_proposal,
 )
 from .trust_policy import stamp_authority
 
 NONE_CATEGORY = "NONE"
+NEW_SUBSCRIPTION = "NEW_SUBSCRIPTION"
 TAGS_TIMEOUT_SECONDS = 10.0
 SYSTEM_PROMPT = (
     "You categorise one personal bank transaction into one leaf category of a "
     "monthly wealth tracker. Answer NONE when no leaf clearly fits. Write the "
-    "reason first, then the category."
+    "reason first, then the category. Prefer an existing leaf, including an existing "
+    "service subscription leaf. Only when the row is a recurring subscription to a "
+    f"service that has no leaf of its own, answer {NEW_SUBSCRIPTION} and put the "
+    "service name, e.g. Claude, in new_subscription_service."
 )
 
 Transport = Callable[[str, dict | None, float], dict]
@@ -171,9 +176,10 @@ def _response_schema(leaves: tuple[str, ...]) -> dict:
         "type": "object",
         "properties": {
             "reason": {"type": "string"},
-            "category": {"type": "string", "enum": [*leaves, NONE_CATEGORY]},
+            "category": {"type": "string", "enum": [*leaves, NONE_CATEGORY, NEW_SUBSCRIPTION]},
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "alternatives": {"type": "array", "items": {"type": "string", "enum": list(leaves)}},
+            "new_subscription_service": {"type": "string", "maxLength": 40},
         },
         "required": ["reason", "category", "confidence", "alternatives"],
     }
@@ -215,7 +221,12 @@ def _parse_reply(
     if not reason:
         raise ValueError("response reason is required")
     category = str(reply.get("category", "")).strip()
-    if category != NONE_CATEGORY and category not in leaves:
+    new_leaf_parent = None
+    if category == NEW_SUBSCRIPTION:
+        category, new_leaf_parent = subscription_proposal(
+            str(reply.get("new_subscription_service") or ""), leaves
+        )
+    elif category != NONE_CATEGORY and category not in leaves:
         raise ValueError(f"category {category!r} is outside the allowed YAML leaf categories")
     if "confidence" not in reply:
         raise ValueError("response confidence is required")
@@ -234,6 +245,7 @@ def _parse_reply(
         alternatives=alternatives,
         evidence=reason,
         source=model,
+        new_leaf_parent=new_leaf_parent,
     )
 
 
@@ -267,7 +279,15 @@ def apply_suggestions(
     updated = list(categorized)
     warnings: list[str] = []
     counts = dict.fromkeys(
-        ("attempted", "category", "none", "low_confidence", INVALID_RESPONSE, PROVIDER_FAILURE),
+        (
+            "attempted",
+            "category",
+            "new_leaf",
+            "none",
+            "low_confidence",
+            INVALID_RESPONSE,
+            PROVIDER_FAILURE,
+        ),
         0,
     )
     answering_models: list[str] = []
@@ -314,12 +334,13 @@ def apply_suggestions(
             )
             continue
         else:
-            counts["category"] += 1
+            counts["new_leaf" if suggestion.new_leaf_parent else "category"] += 1
             updated[index] = replace(
                 item,
                 votes=votes,
                 alternatives=suggestion.alternatives,
                 suggested_category=suggestion.category,
+                new_leaf_parent=suggestion.new_leaf_parent,
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma",
                 reason=_suggestion_reason(suggestion, item),
@@ -349,6 +370,7 @@ def apply_suggestions(
         diagnostics,
         attempted_count=counts["attempted"],
         existing_leaf_suggestions=counts["category"],
+        new_leaf_proposal_count=counts["new_leaf"],
         no_suggestion_count=counts["none"],
         low_confidence_response_count=counts["low_confidence"],
         invalid_response_count=counts[INVALID_RESPONSE],
@@ -378,8 +400,13 @@ def _suggestion_reason(suggestion: Suggestion, item: CategorizedTransaction) -> 
     alternatives = (
         f" Alternatives: {', '.join(suggestion.alternatives)}." if suggestion.alternatives else ""
     )
+    suggested = (
+        f"proposed new leaf {suggestion.category} under {suggestion.new_leaf_parent}"
+        if suggestion.new_leaf_parent
+        else f"suggested {suggestion.category}"
+    )
     return (
-        f"Local model suggested {suggestion.category}: {suggestion.evidence}{alternatives} "
+        f"Local model {suggested}: {suggestion.evidence}{alternatives} "
         f"{_original_classification(item)}"
     )
 

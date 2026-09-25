@@ -51,6 +51,7 @@ The `Review Required` sheet lists only rows in review: `review`-authority transa
 - Blank `manual_category` accepts `suggested_category`. A blank row without a suggestion stays in review. Save the sheet even when every row stays blank; an unsaved sheet is not read.
 - `NONE` rejects the suggestion: the row is resolved but written to no category.
 - Any other value must be an existing Leaf Category Row, such as `Food& Drinks (monthly)` or `Apple Cloud`. Parent/Section Row labels such as `Living expenses`, `Services` and `Insurance` group the tracker and are not valid targets.
+- A proposed subscription leaf (`suggested_parent_category` `Services`, e.g. `Claude subscription`) is always in review. Blank accepts it as a new leaf under `Services` on the commit run (never on `--dry-run`); from the next month Category Memory files the merchant there. Pick an existing leaf such as `Disney+` in `manual_category` or fill `new_parent_category` `Services` and an edited name in `new_leaf_category` instead if it fits better.
 - For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The commit run registers it in `config/categories.yaml` (reported under `Category Registry Updates`) and may insert the row into the copied workbook when placement and parent formulas are safe.
 - `learn_to_memory`: leave blank to learn the decision on commit; `no` for a one-off.
 - Use `Category Options` to avoid derived, fixed, or formula-owned rows.

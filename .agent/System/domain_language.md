@@ -189,7 +189,7 @@ A category answer from a model hosted off the machine (e.g. TypeSafe Jev), sent 
 _Avoid_: Remote LLM Mode, cloud suggestion
 
 **LLM Category Suggestion**:
-A model-generated candidate category for a review-only transaction, limited to an existing leaf category or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory unless Consensus grants the row `auto`.
+A model-generated candidate category for a review-only transaction, limited to an existing leaf category, a **Subscription Leaf Proposal**, or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory unless Consensus grants the row `auto`.
 _Avoid_: Deterministic Category Match, Confirmed Review Decision, automatic category
 
 **Allowed Category Set**:
@@ -219,6 +219,10 @@ _Avoid_: Workbook-only category truth, hidden category list
 **New Leaf Category Request**:
 A manual review row that fills `new_parent_category` and `new_leaf_category` to add a missing leaf category after registry validation.
 _Avoid_: Overloaded manual_category, automatic alias creation
+
+**Subscription Leaf Proposal**:
+A Suggester answer naming a new leaf `<Service> subscription` under `Services` for a recurring subscription with no leaf of its own; always `review`, and accepting it on the Exception Sheet becomes a **New Leaf Category Request**. Subscriptions get one leaf per service, never a generic bucket.
+_Avoid_: Subscriptions leaf, new_leaf_candidate
 
 **Category Memory**:
 Private local categorization knowledge learned when a month commits, each entry with provenance `human` (confirmed decision) or `auto` (consensus result, trusted after two committed months).
