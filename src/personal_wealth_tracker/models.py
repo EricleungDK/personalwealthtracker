@@ -94,13 +94,6 @@ class CategoryRegistryAddition:
 
 
 @dataclass(frozen=True)
-class LocalLLMAvailability:
-    available: bool
-    model: str | None
-    warning: str | None = None
-
-
-@dataclass(frozen=True)
 class LocalLLMDiagnostics:
     enabled: bool = False
     provider: str = "ollama"
@@ -112,7 +105,6 @@ class LocalLLMDiagnostics:
     attempted_count: int = 0
     existing_leaf_suggestions: int = 0
     no_suggestion_count: int = 0
-    new_leaf_candidate_count: int = 0
     low_confidence_response_count: int = 0
     invalid_response_count: int = 0
     provider_failure_count: int = 0

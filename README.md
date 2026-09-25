@@ -27,7 +27,7 @@ The public/private boundary is documented in [docs/public_private_boundary.md](d
 
 Real CSV exports are ignored by Git and must not be committed. Keep them under an ignored local path such as `data/raw_statements/` or pass any other ignored local path to `--statement`.
 
-Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules.
+Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules. Guidance Aliases for merchants whose names vary (merchant pattern → leaf category) belong in ignored `config/guidance_aliases.local.yaml`; start from `config/guidance_aliases.local.example.yaml`.
 
 Local profile files belong under ignored paths such as `profiles/default.local.yaml`. Start from `config/profile.example.yaml` when documenting local tracker workbook paths, statement folders, report folders, Category Memory, Importer Profiles, and local rule overlays.
 
@@ -134,7 +134,7 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 60-second provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category and new-leaf responses are ignored and reported so weak guesses stay in ordinary manual review.
+The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 180-second cold-start provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category responses are ignored and reported so weak guesses stay in ordinary manual review.
 
 When `learn-category-memory` imports rows with `learn_to_memory=yes`, it also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
 

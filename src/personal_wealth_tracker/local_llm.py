@@ -1,274 +1,345 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from .category_memory import normalize_merchant_identity
 from .config import AppConfig, LocalLLMSettings
-from .models import CategorizedTransaction, LocalLLMAvailability, LocalLLMDiagnostics, Vote
+from .models import CategorizedTransaction, LocalLLMDiagnostics, Vote
+from .suggester import (
+    INVALID_RESPONSE,
+    PROVIDER_FAILURE,
+    Suggester,
+    SuggesterContext,
+    Suggestion,
+    row_merchant_identity,
+)
 from .trust_policy import stamp_authority
 
+NONE_CATEGORY = "NONE"
+TAGS_TIMEOUT_SECONDS = 10.0
+SYSTEM_PROMPT = (
+    "You categorise one personal bank transaction into one leaf category of a "
+    "monthly wealth tracker. Answer NONE when no leaf clearly fits. Write the "
+    "reason first, then the category."
+)
 
-class OllamaLocalLLMClient:
-    def check_availability(self, config: LocalLLMSettings) -> LocalLLMAvailability:
-        request = Request(f"{config.endpoint}/api/tags", method="GET")
+Transport = Callable[[str, dict | None, float], dict]
+_PROVIDER_ERRORS = (OSError, TimeoutError, URLError, json.JSONDecodeError)
+
+
+def http_json_transport(url: str, payload: dict | None, timeout: float) -> dict:
+    """POST `payload` as JSON (GET when None) and decode the JSON reply."""
+    request = Request(
+        url,
+        data=None if payload is None else json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="GET" if payload is None else "POST",
+    )
+    with urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+class OllamaSuggester:
+    def __init__(self, settings: LocalLLMSettings, transport: Transport = http_json_transport):
+        self.settings = settings
+        self.transport = transport
+
+    def suggest(
+        self, rows: Sequence[CategorizedTransaction], context: SuggesterContext
+    ) -> list[Suggestion]:
+        if not rows:
+            return []
+        model, unavailable = self._installed_model()
+        if model is None:
+            return [_failure(item, PROVIDER_FAILURE, unavailable, "ollama") for item in rows]
+        system_prompt = _system_prompt(context)
+        schema = _response_schema(tuple(context.leaf_glossary))
+        return [self._suggest_row(item, model, system_prompt, schema, context) for item in rows]
+
+    def _installed_model(self) -> tuple[str | None, str]:
+        settings = self.settings
         try:
-            with urlopen(request, timeout=config.timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except (OSError, TimeoutError, URLError, json.JSONDecodeError) as exc:
-            return LocalLLMAvailability(
-                available=False,
-                model=None,
-                warning=f"Ollama is unavailable at {config.endpoint}: {exc}",
-            )
-
+            payload = self.transport(f"{settings.endpoint}/api/tags", None, TAGS_TIMEOUT_SECONDS)
+        except _PROVIDER_ERRORS as exc:
+            return None, f"Ollama is unavailable at {settings.endpoint}: {exc}"
         names = {
             str(model.get("name", ""))
             for model in payload.get("models", [])
             if isinstance(model, dict)
         }
-        if config.model in names:
-            return LocalLLMAvailability(available=True, model=config.model)
-        if config.fallback_model in names:
-            return LocalLLMAvailability(
-                available=True,
-                model=config.fallback_model,
-                warning=(
-                    f"Configured local LLM model {config.model!r} was not found; "
-                    f"using fallback {config.fallback_model!r}."
-                ),
+        for model in (settings.model, settings.fallback_model):
+            if model and model in names:
+                return model, ""
+        return None, (
+            f"Ollama is available at {settings.endpoint}, but neither "
+            f"{settings.model!r} nor fallback {settings.fallback_model!r} is installed."
+        )
+
+    def _suggest_row(
+        self,
+        item: CategorizedTransaction,
+        model: str,
+        system_prompt: str,
+        schema: dict,
+        context: SuggesterContext,
+    ) -> Suggestion:
+        transaction_id = item.transaction.transaction_id
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": _row_prompt(item, context, self.settings.include_raw_description),
+            },
+        ]
+        try:
+            model, payload = self._chat_with_fallback(model, messages, schema)
+        except _PROVIDER_ERRORS as exc:
+            return _failure(
+                item,
+                PROVIDER_FAILURE,
+                f"Local LLM provider call for {transaction_id} failed: {exc}",
+                model,
             )
-        return LocalLLMAvailability(
-            available=False,
-            model=None,
-            warning=(
-                f"Ollama is available at {config.endpoint}, but neither "
-                f"{config.model!r} nor fallback {config.fallback_model!r} is installed."
-            ),
+        try:
+            return _parse_reply(item, payload, tuple(context.leaf_glossary), model)
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            return _failure(
+                item,
+                INVALID_RESPONSE,
+                f"Local LLM response for {transaction_id} was ignored: {exc}",
+                model,
+            )
+
+    def _chat_with_fallback(self, model: str, messages: list, schema: dict) -> tuple[str, dict]:
+        try:
+            return model, self._chat(model, messages, schema)
+        except _PROVIDER_ERRORS:
+            fallback = self.settings.fallback_model
+            if not fallback or model == fallback:
+                raise
+            return fallback, self._chat(fallback, messages, schema)
+
+    def _chat(self, model: str, messages: list, schema: dict) -> dict:
+        settings = self.settings
+        return self.transport(
+            f"{settings.endpoint}/api/chat",
+            {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "think": False,
+                "format": schema,
+                "keep_alive": settings.keep_alive,
+                "options": {"temperature": 0},
+            },
+            settings.timeout_seconds,
         )
 
-    def generate(self, config: LocalLLMSettings, model: str, prompt: str) -> str:
-        request = Request(
-            f"{config.endpoint}/api/generate",
-            data=json.dumps(
-                {
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0, "num_predict": 512},
-                }
-            ).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+
+def _system_prompt(context: SuggesterContext) -> str:
+    glossary = "\n".join(
+        f"- {leaf}: {description}" if description else f"- {leaf}"
+        for leaf, description in context.leaf_glossary.items()
+    )
+    sections = [SYSTEM_PROMPT, f"Leaf categories:\n{glossary}"]
+    if context.guidance_aliases:
+        aliases = "\n".join(
+            f"- {pattern} -> {leaf}" for pattern, leaf in context.guidance_aliases.items()
         )
-        with urlopen(request, timeout=config.timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        return str(payload.get("response", ""))
+        sections.append(f"Operator guidance:\n{aliases}")
+    if context.reviewed_policy:
+        sections.append(f"Reviewed policy:\n{context.reviewed_policy}")
+    return "\n\n".join(sections)
 
 
-@dataclass(frozen=True)
-class _ParsedSuggestion:
-    status: str
-    suggested_category: str | None
-    new_leaf_candidate: str | None
-    confidence: float
-    rationale: str
+def _response_schema(leaves: tuple[str, ...]) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "reason": {"type": "string"},
+            "category": {"type": "string", "enum": [*leaves, NONE_CATEGORY]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "alternatives": {"type": "array", "items": {"type": "string", "enum": list(leaves)}},
+        },
+        "required": ["reason", "category", "confidence", "alternatives"],
+    }
+
+
+def _row_prompt(
+    item: CategorizedTransaction, context: SuggesterContext, include_raw_description: bool
+) -> str:
+    transaction = item.transaction
+    merchant_identity = row_merchant_identity(item)
+    row: dict = {
+        "merchant_identity": merchant_identity,
+        "amount": str(transaction.amount),
+        "date": transaction.date.isoformat(),
+        "direction": transaction.direction,
+        "memory_neighbours": [
+            {"merchant_identity": identity, "category": category}
+            for identity, category in context.memory_neighbours(merchant_identity)
+        ],
+    }
+    if item.suggested_category and item.categorization_method in {"rule", "recurring"}:
+        row["current_suggestion"] = {
+            "category": item.suggested_category,
+            "method": item.categorization_method,
+            "confidence": item.confidence,
+        }
+    if include_raw_description:
+        row["raw_description"] = transaction.description
+    return json.dumps(row, ensure_ascii=False)
+
+
+def _parse_reply(
+    item: CategorizedTransaction, payload: dict, leaves: tuple[str, ...], model: str
+) -> Suggestion:
+    reply = json.loads(payload["message"]["content"])
+    if not isinstance(reply, dict):
+        raise ValueError("structured response must be a JSON object")
+    reason = str(reply.get("reason", "")).strip()
+    if not reason:
+        raise ValueError("response reason is required")
+    category = str(reply.get("category", "")).strip()
+    if category != NONE_CATEGORY and category not in leaves:
+        raise ValueError(f"category {category!r} is outside the allowed YAML leaf categories")
+    if "confidence" not in reply:
+        raise ValueError("response confidence is required")
+    confidence = float(reply["confidence"])
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("response confidence must be between 0.0 and 1.0")
+    alternatives = tuple(
+        alternative
+        for alternative in reply.get("alternatives") or ()
+        if alternative in leaves and alternative != category
+    )
+    return Suggestion(
+        transaction_id=item.transaction.transaction_id,
+        category=None if category == NONE_CATEGORY else category,
+        confidence=confidence,
+        alternatives=alternatives,
+        evidence=reason,
+        source=model,
+    )
+
+
+def _failure(item: CategorizedTransaction, failure: str, evidence: str, source: str) -> Suggestion:
+    return Suggestion(
+        transaction_id=item.transaction.transaction_id,
+        category=None,
+        confidence=0.0,
+        alternatives=(),
+        evidence=evidence,
+        source=source,
+        failure=failure,
+    )
 
 
 def disabled_diagnostics(config: LocalLLMSettings) -> LocalLLMDiagnostics:
     return _diagnostics(config, enabled=False)
 
 
-def build_local_llm_prompt(
-    item: CategorizedTransaction,
-    allowed_categories: tuple[str, ...],
-    config: LocalLLMSettings,
-    reviewed_policy: str = "",
-) -> str:
-    transaction = item.transaction
-    prompt = {
-        "task": "Suggest a review-only category for this personal tracker transaction.",
-        "response_contract": {
-            "status": "category | no_suggestion | new_leaf_candidate",
-            "suggested_category": "Required only for status=category.",
-            "confidence": "Number from 0.0 to 1.0.",
-            "rationale": "Short explanation for manual review.",
-        },
-        "allowed_categories": list(allowed_categories),
-        "transaction": {
-            "transaction_id": transaction.transaction_id,
-            "merchant_identity": normalize_merchant_identity(
-                transaction.merchant or transaction.description
-            ),
-            "amount": str(transaction.amount),
-            "date": transaction.date.isoformat(),
-            "direction": transaction.direction,
-        },
-    }
-    if item.suggested_category and item.categorization_method in {"rule", "recurring"}:
-        prompt["current_suggestion"] = {
-            "suggested_category": item.suggested_category,
-            "method": item.categorization_method,
-            "confidence": item.confidence,
-            "reason": item.reason,
-        }
-    if reviewed_policy:
-        prompt["reviewed_policy"] = reviewed_policy
-    if config.include_raw_description:
-        prompt["transaction"]["raw_description"] = transaction.description
-    return json.dumps(prompt, ensure_ascii=False, sort_keys=True)
-
-
-def apply_local_llm_suggestions(
+def apply_suggestions(
     categorized: list[CategorizedTransaction],
     config: AppConfig,
-    client: object | None = None,
-    reviewed_policy: str = "",
+    suggester: Suggester,
+    context: SuggesterContext,
 ) -> tuple[list[CategorizedTransaction], LocalLLMDiagnostics]:
-    client = client or OllamaLocalLLMClient()
     settings = config.local_llm
     eligible_indexes = _eligible_indexes(categorized, config.trust_policy.min_confidence)
-    availability = client.check_availability(settings)
-    diagnostics = _diagnostics(
-        settings,
-        enabled=True,
-        active_model=availability.model,
-        eligible_count=len(eligible_indexes),
-        provider_failure_count=0 if availability.available else 1,
-        warnings=tuple(message for message in (availability.warning,) if message),
-    )
-    if not availability.available:
-        return categorized, diagnostics
+    suggestions = suggester.suggest([categorized[index] for index in eligible_indexes], context)
+    by_transaction_id = {suggestion.transaction_id: suggestion for suggestion in suggestions}
 
     updated = list(categorized)
-    warnings = list(diagnostics.warnings)
-    attempted_count = 0
-    existing_leaf_suggestions = 0
-    no_suggestion_count = 0
-    new_leaf_candidate_count = 0
-    low_confidence_response_count = 0
-    invalid_response_count = 0
-    provider_failure_count = diagnostics.provider_failure_count
-    allowed_categories = _allowed_categories(config)
-    allowed_category_set = set(allowed_categories)
+    warnings: list[str] = []
+    counts = dict.fromkeys(
+        ("attempted", "category", "none", "low_confidence", INVALID_RESPONSE, PROVIDER_FAILURE),
+        0,
+    )
+    answering_models: list[str] = []
     for index in eligible_indexes:
         item = updated[index]
-        prompt = build_local_llm_prompt(
-            item,
-            allowed_categories,
-            settings,
-            reviewed_policy=reviewed_policy,
-        )
-
-        def generate_model(model: str) -> str:
-            nonlocal attempted_count
-            attempted_count += 1
-            return client.generate(settings, model, prompt)
-
-        try:
-            answering_model, raw_response = _generate_with_fallback(
-                generate_model,
-                settings,
-                availability.model or settings.model,
-                item.transaction.transaction_id,
-                warnings,
-            )
-            parsed = _parse_response(
-                raw_response,
-                item.transaction.transaction_id,
-                allowed_category_set,
-            )
-        except (OSError, TimeoutError, URLError) as exc:
-            provider_failure_count += 1
-            warnings.append(
-                f"Local LLM provider call for {item.transaction.transaction_id} failed: {exc}"
-            )
+        suggestion = by_transaction_id.get(item.transaction.transaction_id)
+        if suggestion is None:
             continue
-        except (json.JSONDecodeError, ValueError) as exc:
-            invalid_response_count += 1
-            warnings.append(
-                f"Local LLM response for {item.transaction.transaction_id} was ignored: {exc}"
-            )
+        if suggestion.failure:
+            counts[suggestion.failure] += 1
+            if suggestion.failure == INVALID_RESPONSE:
+                counts["attempted"] += 1
+            if suggestion.evidence not in warnings:
+                warnings.append(suggestion.evidence)
             continue
-        if _is_low_confidence_suggestion(parsed, config.review_threshold):
-            low_confidence_response_count += 1
+        counts["attempted"] += 1
+        if suggestion.source not in answering_models:
+            answering_models.append(suggestion.source)
+        vote = Vote(suggestion.category, suggestion.confidence, suggestion.source)
+        if suggestion.category is None:
+            counts["none"] += 1
+            updated[index] = replace(
+                item,
+                votes=(vote,),
+                confidence=suggestion.confidence,
+                categorization_method="local_llm_gemma_no_suggestion",
+                reason=(
+                    f"Local model answered NONE: {suggestion.evidence} "
+                    f"{_original_classification(item)}"
+                ),
+            )
+        elif suggestion.confidence < config.review_threshold:
+            counts["low_confidence"] += 1
             warnings.append(
                 "Local LLM response for "
                 f"{item.transaction.transaction_id} was ignored: confidence "
-                f"{parsed.confidence:.2f} is below the review threshold "
+                f"{suggestion.confidence:.2f} is below the review threshold "
                 f"{config.review_threshold:.2f}."
             )
             continue
-        vote = Vote(
-            category=parsed.suggested_category if parsed.status == "category" else None,
-            confidence=parsed.confidence,
-            source=answering_model,
-        )
-        if parsed.status == "category":
-            existing_leaf_suggestions += 1
+        else:
+            counts["category"] += 1
             updated[index] = replace(
                 item,
                 votes=(vote,),
-                suggested_category=parsed.suggested_category,
-                confidence=parsed.confidence,
+                suggested_category=suggestion.category,
+                confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma",
-                reason=_suggestion_reason(parsed, item),
-            )
-        elif parsed.status == "no_suggestion":
-            no_suggestion_count += 1
-            updated[index] = replace(
-                item,
-                votes=(vote,),
-                confidence=parsed.confidence,
-                categorization_method="local_llm_gemma_no_suggestion",
-                reason=_no_suggestion_reason(parsed, item),
-            )
-        elif parsed.status == "new_leaf_candidate":
-            new_leaf_candidate_count += 1
-            updated[index] = replace(
-                item,
-                votes=(vote,),
-                confidence=parsed.confidence,
-                categorization_method="local_llm_gemma_new_leaf_candidate",
-                reason=_new_leaf_candidate_reason(parsed, item),
+                reason=_suggestion_reason(suggestion, item),
             )
         updated[index] = stamp_authority(updated[index], config)
 
-    diagnostics = replace(
-        diagnostics,
-        attempted_count=attempted_count,
-        existing_leaf_suggestions=existing_leaf_suggestions,
-        no_suggestion_count=no_suggestion_count,
-        new_leaf_candidate_count=new_leaf_candidate_count,
-        low_confidence_response_count=low_confidence_response_count,
-        invalid_response_count=invalid_response_count,
-        provider_failure_count=provider_failure_count,
+    fallback = settings.fallback_model
+    if fallback and fallback != settings.model and fallback in answering_models:
+        warnings.insert(
+            0,
+            f"Configured local LLM model {settings.model!r} was unavailable; "
+            f"used fallback {fallback!r}.",
+        )
+    diagnostics = _diagnostics(
+        settings,
+        enabled=True,
+        active_model=answering_models[0] if answering_models else None,
+        eligible_count=len(eligible_indexes),
+        provider_failure_count=counts[PROVIDER_FAILURE],
         warnings=tuple(warnings),
     )
-    return updated, diagnostics
+    return updated, replace(
+        diagnostics,
+        attempted_count=counts["attempted"],
+        existing_leaf_suggestions=counts["category"],
+        no_suggestion_count=counts["none"],
+        low_confidence_response_count=counts["low_confidence"],
+        invalid_response_count=counts[INVALID_RESPONSE],
+    )
 
 
-def _generate_with_fallback(
-    generate: Callable[[str], str],
-    settings: LocalLLMSettings,
-    active_model: str,
-    transaction_id: str,
-    warnings: list[str],
-) -> tuple[str, str]:
-    try:
-        return active_model, generate(active_model)
-    except (OSError, TimeoutError, URLError) as exc:
-        if active_model == settings.fallback_model or not settings.fallback_model:
-            raise
-        warnings.append(
-            f"Local LLM primary model {active_model!r} failed for {transaction_id}: "
-            f"{exc}; using fallback {settings.fallback_model!r}."
-        )
-        return settings.fallback_model, generate(settings.fallback_model)
+def _original_classification(item: CategorizedTransaction) -> str:
+    return (
+        f"Original {item.categorization_method}: "
+        f"{item.suggested_category or 'Unmatched'}, "
+        f"confidence {item.confidence:.2f}, {item.reason}"
+    )
 
 
 def _eligible_indexes(
@@ -282,107 +353,13 @@ def _eligible_indexes(
     ]
 
 
-def _allowed_categories(config: AppConfig) -> tuple[str, ...]:
-    if config.category_registry.leaf_categories:
-        return config.category_registry.leaf_categories
-    return config.categories
-
-
-def _is_low_confidence_suggestion(parsed: _ParsedSuggestion, threshold: float) -> bool:
-    return parsed.status in {"category", "new_leaf_candidate"} and parsed.confidence < threshold
-
-
-def _parse_response(
-    raw_response: str,
-    transaction_id: str,
-    allowed_categories: set[str],
-) -> _ParsedSuggestion:
-    payload = json.loads(raw_response)
-    if not isinstance(payload, dict):
-        raise ValueError("structured response must be a JSON object")
-    response_transaction_id = str(payload.get("transaction_id", ""))
-    if response_transaction_id and response_transaction_id != transaction_id:
-        raise ValueError(
-            f"response transaction_id {response_transaction_id!r} does not match {transaction_id!r}"
-        )
-    status = str(payload.get("status", "")).strip()
-    confidence = _confidence(payload.get("confidence"))
-    rationale = str(payload.get("rationale", payload.get("reason", ""))).strip()
-    if not rationale:
-        raise ValueError("response rationale is required")
-    if status == "no_suggestion":
-        return _ParsedSuggestion(
-            status=status,
-            suggested_category=None,
-            new_leaf_candidate=None,
-            confidence=confidence,
-            rationale=rationale,
-        )
-    if status == "new_leaf_candidate":
-        candidate = str(payload.get("new_leaf_candidate", "")).strip()
-        if not candidate:
-            raise ValueError("new_leaf_candidate response requires a new_leaf_candidate hint")
-        return _ParsedSuggestion(
-            status=status,
-            suggested_category=None,
-            new_leaf_candidate=candidate,
-            confidence=confidence,
-            rationale=rationale,
-        )
-    if status != "category":
-        raise ValueError(f"unsupported local LLM status {status!r}")
-    suggested_category = str(
-        payload.get("suggested_category", payload.get("category", ""))
-    ).strip()
-    if suggested_category not in allowed_categories:
-        raise ValueError(
-            f"suggested category {suggested_category!r} is outside the allowed YAML leaf categories"
-        )
-    return _ParsedSuggestion(
-        status=status,
-        suggested_category=suggested_category,
-        new_leaf_candidate=None,
-        confidence=confidence,
-        rationale=rationale,
-    )
-
-
-def _confidence(value) -> float:
-    if value is None:
-        raise ValueError("response confidence is required")
-    confidence = float(value)
-    if not 0.0 <= confidence <= 1.0:
-        raise ValueError("response confidence must be between 0.0 and 1.0")
-    return confidence
-
-
-def _suggestion_reason(parsed: _ParsedSuggestion, item: CategorizedTransaction) -> str:
-    original = (
-        f"Original {item.categorization_method}: "
-        f"{item.suggested_category or 'Unmatched'}, "
-        f"confidence {item.confidence:.2f}, {item.reason}"
-    )
-    return f"Local Gemma suggested {parsed.suggested_category}: {parsed.rationale} {original}"
-
-
-def _no_suggestion_reason(parsed: _ParsedSuggestion, item: CategorizedTransaction) -> str:
-    original = (
-        f"Original {item.categorization_method}: "
-        f"{item.suggested_category or 'Unmatched'}, "
-        f"confidence {item.confidence:.2f}, {item.reason}"
-    )
-    return f"Local Gemma returned no_suggestion: {parsed.rationale} {original}"
-
-
-def _new_leaf_candidate_reason(parsed: _ParsedSuggestion, item: CategorizedTransaction) -> str:
-    original = (
-        f"Original {item.categorization_method}: "
-        f"{item.suggested_category or 'Unmatched'}, "
-        f"confidence {item.confidence:.2f}, {item.reason}"
+def _suggestion_reason(suggestion: Suggestion, item: CategorizedTransaction) -> str:
+    alternatives = (
+        f" Alternatives: {', '.join(suggestion.alternatives)}." if suggestion.alternatives else ""
     )
     return (
-        f"Local Gemma suggested new leaf candidate {parsed.new_leaf_candidate}: "
-        f"{parsed.rationale} {original}"
+        f"Local model suggested {suggestion.category}: {suggestion.evidence}{alternatives} "
+        f"{_original_classification(item)}"
     )
 
 
