@@ -659,12 +659,11 @@ def _write_review_workbook(
 
     manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
     option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
+    option_end_row = len(manual_category_options) + 1
+    leaf_list_formula = f"'Category Options'!${option_column}$2:${option_column}${option_end_row}"
     validations_by_formula: dict[str, DataValidation] = {}
     for row, item in enumerate(review_items, start=2):
-        formula = _inline_list_formula(_decision_choices(item))
-        if formula is None:
-            option_end_row = len(manual_category_options) + 1
-            formula = f"'Category Options'!${option_column}$2:${option_column}${option_end_row}"
+        formula = _inline_list_formula(_decision_choices(item)) or leaf_list_formula
         if formula not in validations_by_formula:
             validation = DataValidation(type="list", formula1=formula)
             _allow_blank_validation(validation)
@@ -714,10 +713,13 @@ def _format_votes(item: CategorizedTransaction) -> str:
 
 
 def _decision_choices(item: CategorizedTransaction) -> list[str]:
-    if not item.suggested_category:
-        return []
-    alternatives = [vote.category for vote in item.votes if vote.category]
-    return [*dict.fromkeys([item.suggested_category, *alternatives]), REJECT_SUGGESTION]
+    candidates = [
+        item.suggested_category,
+        *item.alternatives,
+        *(vote.category for vote in item.votes),
+    ]
+    choices = list(dict.fromkeys(category for category in candidates if category))
+    return [*choices, REJECT_SUGGESTION] if choices else []
 
 
 def _inline_list_formula(choices: list[str]) -> str | None:

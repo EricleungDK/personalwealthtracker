@@ -100,6 +100,7 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 - `categorization_method`: `category_memory`, `guidance_alias`, `historical`, `recurring`, `rule`, `monthly_review_decision`, model methods such as `local_llm_gemma`, or `unmatched`.
 - `reason`: human-readable explanation for report and audit.
 - `votes`: model votes (category or null, confidence, source model) behind a model suggestion.
+- `alternatives`: other leaves the Suggester offered for the row; feed the Exception Sheet dropdown.
 - `authority`: `auto` or `review`, decided once per row by the Trust Policy (`trust_policy.py`). `review` rows must not be auto-written. `review_required` is derived from it.
 - `authority_reason`: one-line Trust Policy reason, shown as `reason` in the `Audit` sheet.
 
@@ -177,7 +178,7 @@ The manual review workbook contains:
 
 Review decision columns:
 
-- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion get a dropdown of suggestion, vote alternatives, and `NONE`; others get the leaf list with `NONE`. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
+- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion or alternatives get a dropdown of suggestion, `alternatives`, voted categories, and `NONE`; others get the leaf list with `NONE`. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.

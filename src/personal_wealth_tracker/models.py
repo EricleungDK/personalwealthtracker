@@ -47,6 +47,7 @@ class CategorizedTransaction:
     authority: Authority = Authority.review
     authority_reason: str = ""
     votes: tuple[Vote, ...] = ()
+    alternatives: tuple[str, ...] = ()
     source_transaction_id: str | None = None
     split_rule: str | None = None
     split_role: str | None = None

@@ -15,7 +15,8 @@ blocked on its own (ADR 0001 left this in place).
 - The `Review Required` sheet is the Exception Sheet: only rows in review
   (`review` authority, or the source of a workbook update planned as
   `review`), with `suggested_category` shown and a `manual_category`
-  dropdown of the suggestion, vote alternatives and `NONE`.
+  dropdown of the suggestion, Suggester alternatives, voted categories
+  and `NONE`.
 - Blank `manual_category` accepts `suggested_category`. `NONE` rejects it:
   the row becomes a Monthly Review Decision with no category and is written
   nowhere. Any other value is an explicit category. `manual_category` itself
