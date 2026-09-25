@@ -121,6 +121,7 @@ class AppConfig:
     category_registry: CategoryRegistry = field(default_factory=CategoryRegistry)
     local_llm: LocalLLMSettings = field(default_factory=LocalLLMSettings)
     trust_policy: TrustPolicySettings = field(default_factory=TrustPolicySettings)
+    guidance_aliases: dict[str, str] = field(default_factory=dict)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -206,6 +207,10 @@ def load_config(config_dir: Path) -> AppConfig:
         recurring_rules=recurring_rules,
         proxy_split_rules=_proxy_split_rules(rules_doc, category_registry),
         local_llm=_local_llm_settings(local_llm),
+        guidance_aliases=_guidance_aliases(
+            _load_optional_yaml(config_dir / "guidance_aliases.local.yaml"),
+            category_registry,
+        ),
         trust_policy=TrustPolicySettings(
             auto_max_amount=Decimal(str(trust_policy.get("auto_max_amount", "1000"))),
             min_agreement=int(trust_policy.get("min_agreement", 2)),
@@ -234,6 +239,16 @@ def _local_llm_settings(doc: Any) -> LocalLLMSettings:
         keep_alive=str(doc.get("keep_alive", "30m")),
         include_raw_description=bool(doc.get("include_raw_description", False)),
     )
+
+
+def _guidance_aliases(doc: dict[str, Any], registry: CategoryRegistry) -> dict[str, str]:
+    aliases = {str(pattern): str(category) for pattern, category in doc.items()}
+    for pattern, category in aliases.items():
+        if not registry.is_leaf_category(category):
+            raise ValueError(
+                f"guidance alias {pattern!r} targets {category!r}, which is not a leaf category."
+            )
+    return aliases
 
 
 def _proxy_split_rules(

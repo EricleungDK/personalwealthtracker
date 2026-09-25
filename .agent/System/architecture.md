@@ -10,7 +10,7 @@ Last updated: 2026-05-27
 4. `nordea_csv.py` parses Nordea CSV exports into normalized bank transactions using merchant-rich fields for categorization and raw CSV fields for audit.
 5. `nordea_pdf.py` remains available as a fallback/legacy parser for Nordea PDFs with embedded text.
 6. The statement currency is validated against config before transactions are normalized.
-7. `categorizer.py` applies Category Memory first, then historical mappings, recurring amount/date rules, and keyword rules.
+7. `categorizer.py` applies Category Memory first, then Guidance Aliases (`config/guidance_aliases.local.yaml`), historical mappings, recurring amount/date rules, and keyword rules.
 8. The pipeline rejects statements containing transactions outside the requested target month.
 9. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
 10. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.

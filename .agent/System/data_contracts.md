@@ -97,7 +97,7 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 - `transaction`: normalized transaction.
 - `suggested_category`: existing tracker row category or null.
 - `confidence`: deterministic confidence score.
-- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, model methods such as `local_llm_gemma`, or `unmatched`.
+- `categorization_method`: `category_memory`, `guidance_alias`, `historical`, `recurring`, `rule`, `monthly_review_decision`, model methods such as `local_llm_gemma`, or `unmatched`.
 - `reason`: human-readable explanation for report and audit.
 - `votes`: model votes (category or null, confidence, source model) behind a model suggestion.
 - `authority`: `auto` or `review`, decided once per row by the Trust Policy (`trust_policy.py`). `review` rows must not be auto-written. `review_required` is derived from it.

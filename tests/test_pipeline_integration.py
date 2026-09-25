@@ -1013,6 +1013,32 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
     assert set(context.leaf_glossary) == {"Apple Cloud", "Traveling", "Full-time job (net)"}
 
 
+def test_pipeline_passes_guidance_aliases_to_suggester_context(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write(config_dir / "guidance_aliases.local.yaml", '"TRAIN EXAMPLE": "Traveling"\n')
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester({})
+
+    run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    _, context = suggester.calls[0]
+    assert context.guidance_aliases == {"TRAIN EXAMPLE": "Traveling"}
+
+
 def test_pipeline_registers_new_leaf_category_from_review_decisions(
     tmp_path, monkeypatch
 ):

@@ -142,6 +142,7 @@ Last updated: 2026-09-05
 | 2026-06-12 | Local LLM prompts may include prior low-confidence rule/recurring suggestion context and must ignore low-confidence category/new-leaf responses. | This gives the local model useful non-raw context for review rows while preventing weak model guesses from filling review suggestion fields. |
 | 2026-06-13 | Confirmed learned review decisions should also maintain an editable reviewed policy file for Local LLM guidance. | Deterministic Category Memory remains the authority for exact matches, while `reviewed_policy.local.md` gives the model broader private guidance without training it or granting workbook-write authority. |
 | 2026-09-25 | Per-row Authority from one Trust Policy replaces scattered review checks (issue #5, ADR 0001). | Categorizer thresholds, LLM always-review, and workbook cell scan now read `authority`; amount cap 1000 DKK and a never-auto list apply to every automatic tier. |
+| 2026-09-25 | Guidance Aliases in ignored `config/guidance_aliases.local.yaml` match directly after Category Memory (issue #10). | Hand-written merchant pattern → leaf for names that vary; unknown leaf fails config load; aliases also go into Suggester context. Example `config/guidance_aliases.local.example.yaml` is synthetic. |
 
 ## Open Questions
 

@@ -216,6 +216,10 @@ _Avoid_: Raw review report, automatic guess output
 A hand-written private categorization rule maintained by the user.
 _Avoid_: Learned mapping, generated memory
 
+**Guidance Alias**:
+A hand-written private merchant pattern mapped to a leaf category, matched directly after **Category Memory** and shown to the **Suggester**; kept in ignored `config/guidance_aliases.local.yaml`.
+_Avoid_: Alias (tracker label alias), learned mapping
+
 **Merchant Identity**:
 A normalized merchant-like name used for repeat categorization without changing reference numbers or sensitive account details.
 _Avoid_: Full transaction description, account number
