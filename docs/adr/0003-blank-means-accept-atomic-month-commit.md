@@ -27,12 +27,19 @@ blocked on its own (ADR 0001 left this in place).
   rows remain in review. Otherwise it writes the Exception Sheet, reports
   `Workbook not written: N row(s) in review.` and stops. Re-running with the
   filled sheet as `--review-decisions` commits.
+- `monthly` reads the Exception Sheet as decisions only after the operator
+  saved it (issue #13). Each time the tool writes the sheet it records its
+  SHA-256 and mtime in `review_required_<year>_<mon>.xlsx.written`; while
+  both still match, the sheet counts as unreviewed, is not read, and the
+  next action is `Exception sheet not reviewed yet: <path>`. Exit code stays
+  0. The explicit `--review-decisions` path always reads the given file.
 - Cell-level blocking is removed. There is no "Unreviewed" pseudo-leaf.
 - The `Audit` sheet lists every `auto` row with source, votes and reason.
 
 ## Consequences
 
-- A mostly-correct Exception Sheet needs no typing.
+- A mostly-correct Exception Sheet needs no typing, but must be saved:
+  re-running `monthly` without opening it never accepts unseen suggestions.
 - The Tracker Workbook never holds a partial month.
 - Never-auto rows (salary, rent) block the commit every month until decided;
   blank accepts them in one pass.

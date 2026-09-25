@@ -537,6 +537,11 @@ def _print_monthly_summary(result: RunResult, output_dir: Path) -> None:
     if result.output_workbook_path:
         print(f"Output workbook: {result.output_workbook_path}")
         print("Next action: none; month committed.")
+    elif review_rows and result.exception_sheet_unreviewed:
+        print(
+            f"Next action: Exception sheet not reviewed yet: {exception_sheet}; fill and save it "
+            "(blank accepts, NONE rejects), then re-run `wealth-tracker monthly`."
+        )
     elif review_rows:
         print(
             f"Next action: fill {exception_sheet} (blank accepts, NONE rejects), "
