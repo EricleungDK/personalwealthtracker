@@ -10,7 +10,7 @@ Last updated: 2026-05-27
 4. `nordea_csv.py` parses Nordea CSV exports into normalized bank transactions using merchant-rich fields for categorization and raw CSV fields for audit.
 5. `nordea_pdf.py` remains available as a fallback/legacy parser for Nordea PDFs with embedded text.
 6. The statement currency is validated against config before transactions are normalized.
-7. `categorizer.py` applies Category Memory first, then historical mappings, recurring amount/date rules, and keyword rules.
+7. `categorizer.py` applies Category Memory first, then Guidance Aliases (`config/guidance_aliases.local.yaml`), historical mappings, recurring amount/date rules, and keyword rules.
 8. The pipeline rejects statements containing transactions outside the requested target month.
 9. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
 10. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
@@ -84,5 +84,5 @@ Commit mode writes only planned updates whose action is `write`.
 - Local LLM classification can be added as an explicit opt-in review-assistance step for unmatched transactions and low-confidence deterministic suggestions that already require review.
 - Future Local LLM Mode should integrate with Ollama through its local HTTP API rather than shelling out to `ollama run`, so provider calls can be mocked, timed out, and validated as structured review-only suggestions.
 - Local LLM provider failures, timeouts, unavailable models, and invalid structured responses should not fail the monthly planning run. The run should keep the original deterministic or unmatched review state and report a warning.
-- The current local Gemma provider target is `gemma4:12b` as the default model, with `gemma4:e4b` as the fallback model. Provider calls use bounded generation and may retry the fallback model for a row when the primary model times out or fails.
+- The current local Gemma provider target is `gemma4:12b` as the default model, with `gemma4:e4b` as the fallback model. Category models sit behind the Suggester port; the Ollama adapter uses the chat API with a JSON schema of enum leaves plus `NONE`, temperature 0, keep-alive, and a 180-second cold-start timeout, and may retry the fallback model for a row when the primary model times out or fails.
 - Google Drive integration can wrap workbook download/upload while preserving the same writer safeguards.

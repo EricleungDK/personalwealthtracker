@@ -176,13 +176,13 @@ _Avoid_: Auto-write candidate
 An optional on-device model-assisted categorization mode that processes minimized transaction context locally and returns review-only suggestions.
 _Avoid_: Remote API mode, deterministic rule, auto-write authority
 
-**LLM Category Suggestion**:
-A model-generated candidate category for a review-only transaction, limited to an existing leaf category, `no_suggestion`, or a new leaf candidate, and requiring user confirmation before it can affect workbook writes or Category Memory.
-_Avoid_: Deterministic Category Match, Confirmed Review Decision, automatic category
+**Suggester**:
+The port every category model sits behind: `suggest(rows, context) -> suggestions`, with Ollama and Fake adapters.
+_Avoid_: LLM client, provider
 
-**LLM New Leaf Candidate**:
-A model-generated hint that the transaction may need a category not yet present in the allowed category set; it can only become a New Leaf Category Request through user review.
-_Avoid_: Automatic category creation, registry update, invented write target
+**LLM Category Suggestion**:
+A model-generated candidate category for a review-only transaction, limited to an existing leaf category or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory.
+_Avoid_: Deterministic Category Match, Confirmed Review Decision, automatic category
 
 **Allowed Category Set**:
 The current YAML-validated leaf categories supplied as the only valid category choices for an LLM category suggestion.
@@ -223,6 +223,10 @@ _Avoid_: Raw review report, automatic guess output
 **Local Rule**:
 A hand-written private categorization rule maintained by the user.
 _Avoid_: Learned mapping, generated memory
+
+**Guidance Alias**:
+A hand-written private merchant pattern mapped to a leaf category, matched directly after **Category Memory** and shown to the **Suggester**; kept in ignored `config/guidance_aliases.local.yaml`.
+_Avoid_: Alias (tracker label alias), learned mapping
 
 **Merchant Identity**:
 A normalized merchant-like name used for repeat categorization without changing reference numbers or sensitive account details.

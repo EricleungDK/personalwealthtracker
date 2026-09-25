@@ -4,13 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from personal_wealth_tracker.config import AppConfig
-from personal_wealth_tracker.models import (
-    Authority,
-    CategorizedTransaction,
-    LocalLLMAvailability,
-    Transaction,
-)
+from personal_wealth_tracker.category_memory import CategoryMemory
+from personal_wealth_tracker.config import AppConfig, LocalLLMSettings
+from personal_wealth_tracker.local_llm import OllamaSuggester
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction
 from personal_wealth_tracker.pipeline import _validate_target_period, run_pipeline
 
 
@@ -229,16 +226,16 @@ def test_pipeline_preserves_target_period_validation_after_csv_parsing(monkeypat
         )
 
 
-def test_pipeline_does_not_call_local_llm_client_when_mode_is_disabled(monkeypatch, tmp_path):
+def test_pipeline_does_not_call_suggester_when_mode_is_disabled(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
         "personal_wealth_tracker.statement_adapters.parse_nordea_csv",
         lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
     )
 
-    class FailingClient:
-        def check_availability(self, _config):
-            raise AssertionError("local LLM client should not be called without explicit opt-in")
+    class FailingSuggester:
+        def suggest(self, _rows, _context):
+            raise AssertionError("suggester should not be called without explicit opt-in")
 
     result = run_pipeline(
         tracker_path=Path("tracker.xlsx"),
@@ -247,7 +244,7 @@ def test_pipeline_does_not_call_local_llm_client_when_mode_is_disabled(monkeypat
         year=2026,
         month="Apr",
         output_dir=tmp_path,
-        local_llm_client=FailingClient(),
+        suggester=FailingSuggester(),
     )
 
     assert result.local_llm_diagnostics.enabled is False
@@ -262,13 +259,8 @@ def test_pipeline_keeps_review_output_when_local_llm_provider_is_unavailable(
         lambda _path, expected_currency: [_transaction(date(2026, 4, 1))],
     )
 
-    class UnavailableClient:
-        def check_availability(self, _config):
-            return LocalLLMAvailability(
-                available=False,
-                model=None,
-                warning="Ollama is unavailable at http://localhost:11434.",
-            )
+    def unreachable(_url, _payload, _timeout):
+        raise OSError("connection refused")
 
     result = run_pipeline(
         tracker_path=Path("tracker.xlsx"),
@@ -278,7 +270,7 @@ def test_pipeline_keeps_review_output_when_local_llm_provider_is_unavailable(
         month="Apr",
         output_dir=tmp_path,
         local_llm_suggestions=True,
-        local_llm_client=UnavailableClient(),
+        suggester=OllamaSuggester(LocalLLMSettings(), transport=unreachable),
     )
 
     assert result.categorized_transactions[0].categorization_method == "unmatched"
@@ -286,7 +278,7 @@ def test_pipeline_keeps_review_output_when_local_llm_provider_is_unavailable(
     assert result.local_llm_diagnostics.enabled is True
     assert result.local_llm_diagnostics.provider_failure_count == 1
     assert result.local_llm_diagnostics.warnings == (
-        "Ollama is unavailable at http://localhost:11434.",
+        "Ollama is unavailable at http://localhost:11434: connection refused",
     )
     report = result.report_path.read_text(encoding="utf-8")
     assert "## Local LLM Mode" in report
@@ -323,7 +315,10 @@ def _stub_pipeline_dependencies(monkeypatch):
         fixed_rows=frozenset(),
     )
     monkeypatch.setattr("personal_wealth_tracker.pipeline.load_config", lambda _path: config)
-    monkeypatch.setattr("personal_wealth_tracker.pipeline.load_category_memory", lambda _path: None)
+    monkeypatch.setattr(
+        "personal_wealth_tracker.pipeline.load_category_memory",
+        lambda _path: CategoryMemory(mappings=()),
+    )
     monkeypatch.setattr(
         "personal_wealth_tracker.pipeline.categorize_transactions",
         lambda transactions, *_args, **_kwargs: [

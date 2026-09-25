@@ -219,7 +219,7 @@ def test_local_llm_mode_documentation_is_in_sync():
         "review-only",
         "gemma4:12b",
         "gemma4:e4b",
-        "60-second provider timeout",
+        "180-second cold-start provider timeout",
         "raw Nordea descriptions are excluded",
     ]
     for phrase in shared_phrases:
@@ -241,13 +241,15 @@ def test_local_llm_mode_documentation_is_in_sync():
         "local_llm:",
         'model: "gemma4:12b"',
         'fallback_model: "gemma4:e4b"',
-        "timeout_seconds: 60",
+        "timeout_seconds: 180",
+        'keep_alive: "30m"',
         "include_raw_description: false",
     ]:
         assert phrase in settings
 
     for phrase in [
-        "`status`: one of `category`, `no_suggestion`, `new_leaf_candidate`",
+        "Suggester port",
+        "enum of leaves plus `NONE`",
         "Invalid JSON",
         "Provider failures",
     ]:

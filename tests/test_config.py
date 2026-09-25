@@ -1,5 +1,6 @@
 from pathlib import Path
 from decimal import Decimal
+import subprocess
 
 import pytest
 
@@ -92,7 +93,8 @@ def test_load_config_defaults_local_llm_provider_settings(tmp_path):
     assert config.local_llm.endpoint == "http://localhost:11434"
     assert config.local_llm.model == "gemma4:12b"
     assert config.local_llm.fallback_model == "gemma4:e4b"
-    assert config.local_llm.timeout_seconds == 60.0
+    assert config.local_llm.timeout_seconds == 180.0
+    assert config.local_llm.keep_alive == "30m"
     assert config.local_llm.include_raw_description is False
 
 
@@ -110,6 +112,7 @@ local_llm:
   model: "gemma4:e2b"
   fallback_model: "gemma4:e4b"
   timeout_seconds: 5
+  keep_alive: "5m"
   include_raw_description: true
 """,
     )
@@ -126,6 +129,7 @@ local_llm:
     assert config.local_llm.model == "gemma4:e2b"
     assert config.local_llm.fallback_model == "gemma4:e4b"
     assert config.local_llm.timeout_seconds == 5.0
+    assert config.local_llm.keep_alive == "5m"
     assert config.local_llm.include_raw_description is True
 
 
@@ -173,6 +177,58 @@ def test_project_settings_set_operator_trust_policy():
     config = load_config(Path("config"))
 
     assert config.trust_policy == TrustPolicySettings()
+
+
+def test_load_config_reads_ignored_guidance_alias_file(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Lunch\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+    _write(
+        tmp_path / "guidance_aliases.local.yaml",
+        "CANTEEN NORTH: Lunch\nCANTEEN SOUTH: Lunch\n",
+    )
+
+    config = load_config(tmp_path)
+
+    assert config.guidance_aliases == {"CANTEEN NORTH": "Lunch", "CANTEEN SOUTH": "Lunch"}
+
+
+def test_load_config_without_guidance_alias_file_has_no_aliases(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    assert load_config(tmp_path).guidance_aliases == {}
+
+
+def test_load_config_rejects_guidance_alias_to_unknown_leaf(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Lunch\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+    _write(tmp_path / "guidance_aliases.local.yaml", "CANTEEN NORTH: Canteen\n")
+
+    with pytest.raises(ValueError) as error:
+        load_config(tmp_path)
+
+    assert str(error.value) == (
+        "guidance alias 'CANTEEN NORTH' targets 'Canteen', which is not a leaf category."
+    )
+
+
+def test_guidance_alias_example_is_synthetic_and_real_file_is_ignored(tmp_path):
+    example = Path("config/guidance_aliases.local.example.yaml")
+    for name in ("settings.yaml", "categories.yaml", "rules.yaml"):
+        _write(tmp_path / name, Path("config", name).read_text(encoding="utf-8"))
+    _write(tmp_path / "guidance_aliases.local.yaml", example.read_text(encoding="utf-8"))
+
+    aliases = load_config(tmp_path).guidance_aliases
+
+    assert aliases
+    assert all("EXAMPLE" in pattern for pattern in aliases)
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "config/guidance_aliases.local.yaml"], check=False
+    )
+    assert ignored.returncode == 0
 
 
 def test_load_config_supports_private_proxy_split_rules(tmp_path):

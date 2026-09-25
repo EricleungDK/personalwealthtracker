@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from decimal import Decimal
 
@@ -6,8 +5,9 @@ from openpyxl import Workbook, load_workbook
 import pytest
 
 from personal_wealth_tracker.config import load_config
-from personal_wealth_tracker.models import LocalLLMAvailability
+from personal_wealth_tracker.models import Authority
 from personal_wealth_tracker.pipeline import run_pipeline
+from personal_wealth_tracker.suggester import FakeSuggester, ScriptedVote
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
@@ -531,12 +531,7 @@ def test_commit_with_review_rows_writes_exception_sheet_instead_of_workbook(
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    suggester = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.9,
-        rationale="Merchant looks travel related.",
-    )
+    suggester = FakeSuggester({"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9)})
 
     result = run_pipeline(
         tracker_path=tracker,
@@ -547,7 +542,7 @@ def test_commit_with_review_rows_writes_exception_sheet_instead_of_workbook(
         output_dir=tmp_path / "reports",
         commit=True,
         local_llm_suggestions=True,
-        local_llm_client=suggester,
+        suggester=suggester,
     )
 
     assert result.output_workbook_path is None
@@ -584,11 +579,11 @@ def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkey
         "2026/04/02;-15,00;945,00;DKK;SHOP TWO;Card purchase;1111;2222;Yes\n"
         "2026/04/03;-7,50;937,50;DKK;SHOP THREE;Card purchase;1111;2222;Yes\n",
     )
-    suggester = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.9,
-        rationale="Merchant looks travel related.",
+    suggester = FakeSuggester(
+        {
+            merchant: ScriptedVote("Traveling", 0.9)
+            for merchant in ("SHOP ONE", "SHOP TWO", "SHOP THREE")
+        }
     )
     pipeline_args = {
         "tracker_path": tracker,
@@ -599,7 +594,7 @@ def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkey
         "output_dir": output_dir,
         "commit": True,
         "local_llm_suggestions": True,
-        "local_llm_client": suggester,
+        "suggester": suggester,
     }
     first = run_pipeline(**pipeline_args)
     assert first.output_workbook_path is None
@@ -653,11 +648,8 @@ def test_audit_sheet_lists_auto_rows_with_source_votes_and_reason(tmp_path, monk
         "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1111;2222;Yes\n"
         "2026/04/02;-2500,00;-1542,50;DKK;BIG SHOP;Card purchase;1111;2222;Yes\n",
     )
-    suggester = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.9,
-        rationale="Merchant looks travel related.",
+    suggester = FakeSuggester(
+        {merchant: ScriptedVote("Traveling", 0.9) for merchant in ("UNKNOWN SHOP", "BIG SHOP")}
     )
 
     result = run_pipeline(
@@ -668,7 +660,7 @@ def test_audit_sheet_lists_auto_rows_with_source_votes_and_reason(tmp_path, monk
         month="Apr",
         output_dir=tmp_path / "reports",
         local_llm_suggestions=True,
-        local_llm_client=suggester,
+        suggester=suggester,
     )
 
     workbook = load_workbook(result.review_xlsx_path, data_only=True)
@@ -681,7 +673,7 @@ def test_audit_sheet_lists_auto_rows_with_source_votes_and_reason(tmp_path, monk
     assert "UNKNOWN SHOP" in audit_row["description"]
     assert audit_row["category"] == "Traveling"
     assert audit_row["source"] == "local_llm_gemma"
-    assert audit_row["votes"] == "Traveling (gemma4:12b, 0.90)"
+    assert audit_row["votes"] == "Traveling (fake, 0.90)"
     assert audit_row["reason"] == "1 model votes agree."
 
 
@@ -1088,11 +1080,8 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    client = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.68,
-        rationale="Merchant looks travel related.",
+    suggester = FakeSuggester(
+        {"UNKNOWN SHOP": ScriptedVote("Traveling", 0.68, "Merchant looks travel related.")}
     )
 
     result = run_pipeline(
@@ -1103,7 +1092,7 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
         month="Apr",
         output_dir=tmp_path / "reports",
         local_llm_suggestions=True,
-        local_llm_client=client,
+        suggester=suggester,
     )
 
     item = result.categorized_transactions[0]
@@ -1167,12 +1156,7 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    client = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.68,
-        rationale="Merchant looks travel related.",
-    )
+    suggester = FakeSuggester({})
 
     run_pipeline(
         tracker_path=tracker,
@@ -1183,12 +1167,39 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
         output_dir=tmp_path / "reports",
         category_memory_dir=memory_dir,
         local_llm_suggestions=True,
-        local_llm_client=client,
+        suggester=suggester,
     )
 
-    prompt = json.loads(client.prompts[0])
-    assert "MOBILEPAY REJSEKORT" in prompt["reviewed_policy"]
-    assert "unknown private transfers" in prompt["reviewed_policy"]
+    _, context = suggester.calls[0]
+    assert "MOBILEPAY REJSEKORT" in context.reviewed_policy
+    assert "unknown private transfers" in context.reviewed_policy
+    assert set(context.leaf_glossary) == {"Apple Cloud", "Traveling", "Full-time job (net)"}
+
+
+def test_pipeline_passes_guidance_aliases_to_suggester_context(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write(config_dir / "guidance_aliases.local.yaml", '"TRAIN EXAMPLE": "Traveling"\n')
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester({})
+
+    run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    _, context = suggester.calls[0]
+    assert context.guidance_aliases == {"TRAIN EXAMPLE": "Traveling"}
 
 
 def test_pipeline_registers_new_leaf_category_from_review_decisions(
@@ -1509,37 +1520,6 @@ def _write_revolut_statement(path: Path, amount: str) -> None:
         "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
         f"2026/04/04;{amount};50000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n",
     )
-
-
-class _LocalLLMClient:
-    def __init__(
-        self,
-        status: str,
-        suggested_category: str,
-        confidence: float,
-        rationale: str,
-    ):
-        self.status = status
-        self.suggested_category = suggested_category
-        self.confidence = confidence
-        self.rationale = rationale
-        self.prompts: list[str] = []
-
-    def check_availability(self, config):
-        return LocalLLMAvailability(available=True, model=config.model)
-
-    def generate(self, config, model, prompt):
-        self.prompts.append(prompt)
-        transaction_id = json.loads(prompt)["transaction"]["transaction_id"]
-        return json.dumps(
-            {
-                "transaction_id": transaction_id,
-                "status": self.status,
-                "suggested_category": self.suggested_category,
-                "confidence": self.confidence,
-                "rationale": self.rationale,
-            }
-        )
 
 
 def _create_tracker(path: Path) -> None:

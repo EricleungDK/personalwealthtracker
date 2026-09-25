@@ -10,7 +10,7 @@ Public package artifacts are safe to commit and distribute:
 
 - `src/personal_wealth_tracker/` reusable CLI and workflow code.
 - `config/settings.yaml`, `config/categories.yaml`, and `config/rules.yaml` sample public configuration.
-- `config/rules.local.example.yaml` and `config/profile.example.yaml` sample public configuration for local overlays and profile paths.
+- `config/rules.local.example.yaml`, `config/guidance_aliases.local.example.yaml`, and `config/profile.example.yaml` sample public configuration for local overlays and profile paths.
 - `docs/` user-facing workflow, project maps, and public/private boundary documentation.
 - `.agent/System/` durable architecture, data-contract, domain-language, and privacy notes for coding agents.
 - `tests/fixtures/` redacted or synthetic fixtures only.
@@ -45,6 +45,7 @@ Use these paths for the current incubation repo and future setup workflow:
 | Runtime settings | `config/settings.yaml` | `config/settings.local.yaml` |
 | Category registry | `config/categories.yaml` | future local overlay only when explicitly supported |
 | Rule examples | `config/rules.local.example.yaml` | `config/rules.local.yaml` |
+| Guidance Aliases | `config/guidance_aliases.local.example.yaml` | `config/guidance_aliases.local.yaml` |
 | Profile examples | `config/profile.example.yaml` | `profiles/<profile>.local.yaml` |
 | Real statements | none | `data/raw_statements/` |
 | Category Memory | none | `data/category_memory/` |
