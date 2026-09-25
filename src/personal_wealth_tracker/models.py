@@ -48,6 +48,7 @@ class CategorizedTransaction:
     authority_reason: str = ""
     votes: tuple[Vote, ...] = ()
     alternatives: tuple[str, ...] = ()
+    new_leaf_parent: str | None = None
     source_transaction_id: str | None = None
     split_rule: str | None = None
     split_role: str | None = None
@@ -106,6 +107,7 @@ class LocalLLMDiagnostics:
     eligible_count: int = 0
     attempted_count: int = 0
     existing_leaf_suggestions: int = 0
+    new_leaf_proposal_count: int = 0
     no_suggestion_count: int = 0
     low_confidence_response_count: int = 0
     invalid_response_count: int = 0

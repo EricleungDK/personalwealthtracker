@@ -741,6 +741,152 @@ def test_committed_human_decision_is_auto_next_month_via_memory(tmp_path, monkey
     assert row.authority is Authority.auto
 
 
+def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_only(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    suggester = ConsensusSuggester(
+        FakeSuggester({"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}),
+        FakeSuggester({"CLAUDE.AI": ScriptedVote(None, 0.8, new_subscription="claude")}),
+    )
+    month_args = {"commit": True, "local_llm_suggestions": True, "suggester": suggester}
+
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["CLAUDE.AI"], **month_args)
+
+    assert first.output_workbook_path is None
+    workbook = load_workbook(first.review_xlsx_path)
+    try:
+        sheet = workbook["Review Required"]
+        (row,) = _sheet_rows(sheet)
+        (dropdown,) = [
+            validation
+            for validation in sheet.data_validations.dataValidation
+            if "E2" in validation.sqref
+        ]
+    finally:
+        workbook.close()
+    assert row["suggested_category"] == "Claude subscription"
+    assert row["suggested_parent_category"] == "Services"
+    assert row["manual_category"] is None
+    assert "Claude subscription" not in dropdown.formula1
+    assert "- New-leaf proposals: 1" in first.report_path.read_text(encoding="utf-8")
+    assert '"new_leaf_proposal_count": 1' in first.audit_path.read_text(encoding="utf-8")
+
+    preview = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        register_new_leaves=False,
+    )
+    assert preview.category_registry_additions[0].leaf_category == "Claude subscription"
+    assert "Claude subscription" not in load_config(config_dir).category_registry.leaf_categories
+
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert committed.output_workbook_path is not None
+    assert load_config(config_dir).category_registry.children_by_parent["Services"] == (
+        "Disney+",
+        "Claude subscription",
+    )
+    copied = load_workbook(committed.output_workbook_path)
+    try:
+        assert copied["Net worth"]["B7"].value == "Claude subscription"
+        assert copied["Net worth"]["C7"].value == 40
+    finally:
+        copied.close()
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["CLAUDE.AI"])
+
+    assert next_month.categorized_transactions[0].suggested_category == "Claude subscription"
+    assert next_month.categorized_transactions[0].authority is Authority.auto
+
+
+def test_subscription_proposal_can_be_accepted_explicitly_with_edited_name(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    month_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": FakeSuggester(
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}
+        ),
+    }
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["CLAUDE.AI"], **month_args)
+    _fill_exception_sheet(first.review_xlsx_path, {"CLAUDE.AI": "Services"}, "new_parent_category")
+    _fill_exception_sheet(
+        first.review_xlsx_path, {"CLAUDE.AI": "Claude Pro subscription"}, "new_leaf_category"
+    )
+
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert committed.output_workbook_path is not None
+    assert load_config(config_dir).category_registry.children_by_parent["Services"] == (
+        "Disney+",
+        "Claude Pro subscription",
+    )
+
+
+def test_subscription_proposal_can_be_overridden_with_existing_leaf(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    month_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": FakeSuggester(
+            {"DISNEYPLUS": ScriptedVote(None, 0.9, new_subscription="Disney Plus")}
+        ),
+    }
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["DISNEYPLUS"], **month_args)
+    _fill_exception_sheet(first.review_xlsx_path, {"DISNEYPLUS": "Disney+"})
+
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["DISNEYPLUS"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert committed.categorized_transactions[0].suggested_category == "Disney+"
+    assert committed.category_registry_additions == ()
+    assert load_config(config_dir).category_registry.children_by_parent["Services"] == (
+        "Disney+",
+    )
+
+
 def test_exception_sheet_learn_to_memory_no_keeps_decision_out_of_memory(
     tmp_path, monkeypatch
 ):
@@ -2018,6 +2164,39 @@ def _create_multi_month_tracker(path: Path, months: tuple[str, ...]) -> None:
     sheet["B8"] = "Income (net)"
     workbook.save(path)
     workbook.close()
+
+
+def _create_services_tracker(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    for column, month in enumerate(("Apr", "May"), start=3):
+        sheet.cell(row=2, column=column, value=2026)
+        sheet.cell(row=3, column=column, value=month)
+    sheet["B5"] = "Services"
+    sheet["B6"] = "Disney+"
+    sheet["B7"] = "Insurance"
+    workbook.save(path)
+    workbook.close()
+
+
+def _create_services_config(config_dir: Path) -> None:
+    _create_category_registry_config(config_dir)
+    _write(
+        config_dir / "categories.yaml",
+        """
+category_registry:
+  - label: "Services"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Disney+"
+  - label: "Insurance"
+    type: "parent"
+    children: []
+aliases: {}
+""",
+    )
 
 
 def _run_month(

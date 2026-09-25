@@ -47,6 +47,12 @@ AGREEING_VOTES = (
             Authority.review,
             "1 of 2",
         ),
+        (
+            Evidence("local_llm", "Claude subscription", 0.9, AGREEING_VOTES, new_leaf=True),
+            "-50",
+            Authority.review,
+            "Claude subscription is a proposed new leaf.",
+        ),
         (Evidence("unmatched", None, 0.0), "-50", Authority.review, "No category"),
         (Evidence("monthly_review_decision", "Rent (monthly)", 1.0), "-9000", Authority.auto, "Monthly Review Decision"),
         (Evidence("proxy_split_source", None, 1.0), "-9000", Authority.auto, "excluded"),

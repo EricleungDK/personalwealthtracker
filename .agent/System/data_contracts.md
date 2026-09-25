@@ -104,7 +104,7 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 - `authority`: `auto` or `review`, decided once per row by the Trust Policy (`trust_policy.py`). `review` rows must not be auto-written. `review_required` is derived from it.
 - `authority_reason`: one-line Trust Policy reason, shown as `reason` in the `Audit` sheet.
 
-Trust Policy rules, in order: rows not from a Trusted Statement Adapter are `review`; Monthly Review Decisions are `auto`; proxy split sources are `auto` (excluded from totals); rows without a category, in `never_auto_categories`, or above `auto_max_amount` are `review`; model rows need `min_agreement` agreeing votes; deterministic rows need confidence at or above `confidence_thresholds.auto_write`. Thresholds live under `trust_policy` in `config/settings.yaml` (defaults: `auto_max_amount` 1000, `min_agreement` 2, `never_auto_categories` Rent, Mom, Dad, both insurances, the three investment leaves, salary). See `docs/adr/0001-per-row-authority.md`.
+Trust Policy rules, in order: rows not from a Trusted Statement Adapter are `review`; Monthly Review Decisions are `auto`; proxy split sources are `auto` (excluded from totals); rows without a category, with a Subscription Leaf Proposal, in `never_auto_categories`, or above `auto_max_amount` are `review`; model rows need `min_agreement` agreeing votes; deterministic rows need confidence at or above `confidence_thresholds.auto_write`. Thresholds live under `trust_policy` in `config/settings.yaml` (defaults: `auto_max_amount` 1000, `min_agreement` 2, `never_auto_categories` Rent, Mom, Dad, both insurances, the three investment leaves, salary). See `docs/adr/0001-per-row-authority.md`.
 
 Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, `reason`, and `votes`; the Trust Policy keeps it `review` until `min_agreement` votes agree (a single local model never does), and it is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
 
@@ -113,17 +113,18 @@ Future Local LLM Mode should reuse the existing suggestion fields rather than wi
 Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. Adapters: `OllamaSuggester` (`local_llm.py`), `FakeSuggester` (scripted votes for tests), and `ConsensusSuggester` (two Suggesters; `local_consensus(settings)` wires `model` and `second_model`). Each suggestion carries:
 
 - `transaction_id`: row the suggestion is for.
-- `category`: an existing YAML Leaf Category Row, or NONE (no suggestion).
+- `category`: an existing YAML Leaf Category Row, a Subscription Leaf Proposal `<Service> subscription`, or NONE (no suggestion).
+- `new_leaf_parent`: `Services` when `category` is a Subscription Leaf Proposal, else blank. A proposed service that already names a leaf (`Apple Cloud`, or `Claude` once `Claude subscription` exists) returns that leaf instead.
 - `confidence`: `0.0` to `1.0`. Category answers whose highest vote is below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
 - `alternatives`: other leaves the model considered; enum-constrained in the schema, non-leaf values dropped.
 - `evidence`: short review-facing reason, used in the `reason` field.
 - `source`: model that answered.
 - `failure`: blank, `invalid_response`, or `provider_failure`.
-- `votes`: Consensus only; one `Vote` per answering voter. Off-leaf answers count as NONE; the suggestion is the primary voter's leaf, else the second's, and other voters' leaves join `alternatives`.
+- `votes`: Consensus only; one `Vote` per answering voter. Off-leaf answers count as NONE; the suggestion is the primary voter's leaf, else the second's, else the primary's proposal, else the second's, and other voters' leaves join `alternatives`. An existing leaf always beats a proposal; proposals with the same name after case and whitespace folding vote for the same leaf, a different proposal votes NONE, but a proposal is `review` regardless of agreement.
 
 Each answered suggestion becomes its `votes` (or one `Vote` of category, confidence, source) on the row. Agreement counts distinct vote sources, so one model voting twice is one voter, and the Trust Policy re-stamps the row's authority. Failed and low-confidence suggestions leave the row unchanged.
 
-The Ollama adapter calls `/api/chat` with a system message holding the glossary, a JSON schema `format` whose `category` is an enum of leaves plus `NONE` and whose `reason` precedes `category`, `think: false`, temperature 0, `keep_alive`, and a 180-second cold-start timeout. If the configured model is not installed it uses the installed fallback model.
+The Ollama adapter calls `/api/chat` with a system message holding the glossary, a JSON schema `format` whose `category` is an enum of leaves plus `NONE` and `NEW_SUBSCRIPTION` (service named in `new_subscription_service`, validated as up to 40 word characters, spaces and `.+&'-`) and whose `reason` precedes `category`, `think: false`, temperature 0, `keep_alive`, and a 180-second cold-start timeout. If the configured model is not installed it uses the installed fallback model.
 
 Invalid JSON, missing required fields, categories outside the Allowed Category Set, low-confidence category responses, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
 
@@ -179,7 +180,7 @@ The manual review workbook contains:
 
 Review decision columns:
 
-- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion or alternatives get a dropdown of suggestion, `alternatives`, voted categories, and `NONE`; others get the leaf list with `NONE`. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
+- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion or alternatives get a dropdown of suggestion, `alternatives`, voted categories, and `NONE`; others get the leaf list with `NONE`. A Subscription Leaf Proposal is not offered there: `suggested_parent_category` shows `Services`, and a blank row accepts the proposal as a New Leaf Category Request (`new_parent_category` = `suggested_parent_category`, `new_leaf_category` = `suggested_category`). If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: commit learning learns every decided row unless `no`; the manual `learn-category-memory` import learns only `yes`/truthy rows.
@@ -200,6 +201,7 @@ The `Review Required` sheet should keep editable review decision columns close t
 - `allocated_amount`
 - `residual_amount`
 - `suggested_category`
+- `suggested_parent_category`
 - `method`
 - `reason`
 - `workbook_action`

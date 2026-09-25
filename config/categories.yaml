@@ -85,8 +85,6 @@ category_registry:
     description: "Bank account and card fees (gebyr, kortgebyr)."
   - label: healthcare
     description: "Doctor, dentist, pharmacy and other health costs, e.g. Apotek, tandlæge, læge, fysioterapi, clinic."
-  - label: Subscriptions
-    description: Recurring digital or membership subscriptions without their own leaf.
 - label: Insurance
   type: parent
   allow_new_children: true

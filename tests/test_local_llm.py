@@ -34,12 +34,19 @@ def test_ollama_request_uses_chat_schema_glossary_and_warm_deterministic_options
     assert payload["options"] == {"temperature": 0}
     schema = payload["format"]
     assert list(schema["properties"])[:2] == ["reason", "category"]
-    assert schema["properties"]["category"]["enum"] == ["Apple Cloud", "Traveling", "NONE"]
+    assert schema["properties"]["category"]["enum"] == [
+        "Apple Cloud",
+        "Traveling",
+        "NONE",
+        "NEW_SUBSCRIPTION",
+    ]
+    assert schema["properties"]["new_subscription_service"]["type"] == "string"
     assert set(schema["required"]) >= {"reason", "category", "confidence"}
     system, user = payload["messages"]
     assert system["role"] == "system"
     assert "Traveling: Trains, flights, hotels." in system["content"]
     assert "Apple Cloud: iCloud storage subscription." in system["content"]
+    assert "NEW_SUBSCRIPTION" in system["content"]
     assert user["role"] == "user"
     row = json.loads(user["content"])
     assert row["merchant_identity"] == "UNKNOWN TRAIN"
@@ -103,6 +110,28 @@ def test_ollama_parses_category_none_and_invalid_responses():
     assert "tx2" in bad_json.evidence
     assert off_leaf.failure == "invalid_response"
     assert "Living expenses" in off_leaf.evidence
+
+
+def test_ollama_parses_new_subscription_proposal_under_services():
+    transport = _Transport(
+        chat=[
+            _chat_reply("Monthly AI plan.", "NEW_SUBSCRIPTION", 0.8, ["Apple Cloud"], "Claude"),
+            _chat_reply("iCloud plan.", "NEW_SUBSCRIPTION", 0.8, (), "apple  cloud"),
+            _chat_reply("Some plan.", "NEW_SUBSCRIPTION", 0.8, (), "Dis/ney; drop"),
+            _chat_reply("Some plan.", "NEW_SUBSCRIPTION", 0.8),
+        ]
+    )
+    rows = [_categorized(f"tx{index}", merchant=f"SHOP {index}") for index in range(4)]
+
+    proposal, existing, bad_name, no_name = OllamaSuggester(
+        _settings(), transport=transport
+    ).suggest(rows, _context())
+
+    assert (proposal.category, proposal.new_leaf_parent) == ("Claude subscription", "Services")
+    assert proposal.alternatives == ("Apple Cloud",)
+    assert (existing.category, existing.new_leaf_parent) == ("Apple Cloud", None)
+    assert bad_name.failure == "invalid_response"
+    assert no_name.failure == "invalid_response"
 
 
 def test_ollama_uses_installed_fallback_when_configured_model_is_missing():
@@ -429,6 +458,114 @@ def test_consensus_without_two_matching_leaf_votes_goes_to_review(
     assert categorized[0].authority is Authority.review
 
 
+def test_new_subscription_proposal_is_review_with_prefilled_leaf_under_services():
+    config = replace(_config(), trust_policy=replace(_config().trust_policy, min_agreement=1))
+
+    categorized, diagnostics = apply_suggestions(
+        [_categorized("tx1", merchant="CLAUDE.AI SUBSCRIPTION")],
+        config,
+        FakeSuggester(
+            {"CLAUDE.AI SUBSCRIPTION": ScriptedVote(None, 0.9, new_subscription="Claude")}
+        ),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == "Claude subscription"
+    assert categorized[0].new_leaf_parent == "Services"
+    assert categorized[0].authority is Authority.review
+    assert categorized[0].authority_reason == "Claude subscription is a proposed new leaf."
+    assert "proposed new leaf Claude subscription under Services" in categorized[0].reason
+    assert diagnostics.new_leaf_proposal_count == 1
+    assert diagnostics.existing_leaf_suggestions == 0
+
+
+def test_proposal_for_already_registered_subscription_returns_that_leaf():
+    categorized, diagnostics = apply_suggestions(
+        [_categorized("tx1", merchant="CLAUDE.AI")],
+        _config(),
+        FakeSuggester({"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}),
+        SuggesterContext(leaf_glossary={**GLOSSARY, "Claude subscription": "Claude plan."}),
+    )
+
+    assert categorized[0].suggested_category == "Claude subscription"
+    assert categorized[0].new_leaf_parent is None
+    assert diagnostics.new_leaf_proposal_count == 0
+
+
+def test_consensus_agrees_on_same_normalised_proposal_but_stays_review():
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="CLAUDE.AI")],
+        _config(),
+        _consensus(
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")},
+            {"CLAUDE.AI": ScriptedVote(None, 0.8, new_subscription=" claude  Subscription")},
+        ),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == "Claude subscription"
+    assert categorized[0].new_leaf_parent == "Services"
+    assert categorized[0].votes == (
+        Vote(category="Claude subscription", confidence=0.9, source="gemma4:26b"),
+        Vote(category="Claude subscription", confidence=0.8, source="gemma4:12b"),
+    )
+    assert categorized[0].authority is Authority.review
+    assert categorized[0].authority_reason == "Claude subscription is a proposed new leaf."
+
+
+@pytest.mark.parametrize(
+    ("primary", "second"),
+    [
+        (ScriptedVote(None, 0.9, new_subscription="Apple iCloud"), ScriptedVote("Apple Cloud", 0.8)),
+        (ScriptedVote("Apple Cloud", 0.8), ScriptedVote(None, 0.9, new_subscription="Apple iCloud")),
+    ],
+)
+def test_consensus_prefers_existing_leaf_over_new_subscription_proposal(primary, second):
+    categorized, diagnostics = apply_suggestions(
+        [_categorized("tx1", merchant="APPLE.COM/BILL")],
+        _config(),
+        _consensus({"APPLE.COM/BILL": primary}, {"APPLE.COM/BILL": second}),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == "Apple Cloud"
+    assert categorized[0].new_leaf_parent is None
+    assert categorized[0].alternatives == ()
+    assert {vote.category for vote in categorized[0].votes} == {"Apple Cloud", None}
+    assert diagnostics.new_leaf_proposal_count == 0
+
+
+def test_consensus_counts_a_different_proposal_as_none():
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="CLAUDE.AI")],
+        _config(),
+        _consensus(
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")},
+            {"CLAUDE.AI": ScriptedVote(None, 0.8, new_subscription="Anthropic")},
+        ),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == "Claude subscription"
+    assert [vote.category for vote in categorized[0].votes] == ["Claude subscription", None]
+
+
+def test_consensus_offers_proposal_when_other_voter_answers_none():
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="CLAUDE.AI")],
+        _config(),
+        _consensus(
+            {"CLAUDE.AI": ScriptedVote(None, 0.4)},
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")},
+        ),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == "Claude subscription"
+    assert categorized[0].new_leaf_parent == "Services"
+    assert categorized[0].authority is Authority.review
+
+
 def test_consensus_keeps_primary_vote_when_second_voter_skips_the_row():
     class _Silent:
         def suggest(self, rows, context):
@@ -605,19 +742,16 @@ def _context(**overrides) -> SuggesterContext:
     return SuggesterContext(leaf_glossary=GLOSSARY, **overrides)
 
 
-def _chat_reply(reason, category, confidence, alternatives=()):
-    return {
-        "message": {
-            "content": json.dumps(
-                {
-                    "reason": reason,
-                    "category": category,
-                    "confidence": confidence,
-                    "alternatives": list(alternatives),
-                }
-            )
-        }
+def _chat_reply(reason, category, confidence, alternatives=(), new_subscription_service=None):
+    reply = {
+        "reason": reason,
+        "category": category,
+        "confidence": confidence,
+        "alternatives": list(alternatives),
     }
+    if new_subscription_service is not None:
+        reply["new_subscription_service"] = new_subscription_service
+    return {"message": {"content": json.dumps(reply)}}
 
 
 class _Transport:
