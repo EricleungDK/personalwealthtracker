@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -9,9 +10,11 @@ from personal_wealth_tracker.local_llm import (
     build_local_llm_prompt,
 )
 from personal_wealth_tracker.models import (
+    Authority,
     CategorizedTransaction,
     LocalLLMAvailability,
     Transaction,
+    Vote,
 )
 
 
@@ -110,7 +113,9 @@ def test_valid_existing_leaf_suggestion_updates_unmatched_review_row():
     assert result.suggested_category == "Traveling"
     assert result.categorization_method == "local_llm_gemma"
     assert result.confidence == 0.68
-    assert result.review_required is True
+    assert result.votes == (Vote(category="Traveling", confidence=0.68, source="gemma4:12b"),)
+    assert result.authority is Authority.review
+    assert result.authority_reason == "1 of 2 required model votes agree."
     assert "Merchant looks travel related." in result.reason
     assert diagnostics.eligible_count == 1
     assert diagnostics.attempted_count == 1
@@ -200,12 +205,65 @@ def test_local_llm_runs_on_low_confidence_rule_and_recurring_review_rows():
         "local_llm_gemma",
         "local_llm_gemma",
     ]
-    assert all(item.review_required for item in categorized)
+    assert all(item.authority is Authority.review for item in categorized)
     assert "Original rule: Apple Cloud, confidence 0.70" in categorized[0].reason
     assert "Original recurring: Traveling, confidence 0.80" in categorized[1].reason
     assert diagnostics.eligible_count == 2
     assert diagnostics.attempted_count == 2
     assert diagnostics.existing_leaf_suggestions == 2
+
+
+def test_local_llm_suggestion_reaches_auto_when_policy_agreement_is_met():
+    client = _FakeClient(
+        '{"status":"category","suggested_category":"Traveling",'
+        '"confidence":0.9,"rationale":"Merchant looks travel related."}'
+    )
+    config = replace(_config(), trust_policy=replace(_config().trust_policy, min_agreement=1))
+
+    categorized, _ = apply_local_llm_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        config,
+        client=client,
+    )
+
+    assert categorized[0].authority is Authority.auto
+    assert categorized[0].authority_reason == "1 model votes agree."
+
+
+def test_local_llm_vote_source_is_the_model_that_answered():
+    client = _FallbackAfterTimeoutClient(
+        '{"status":"category","suggested_category":"Traveling","confidence":0.9,'
+        '"rationale":"Travel hint."}'
+    )
+
+    categorized, _ = apply_local_llm_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        client=client,
+    )
+
+    assert categorized[0].votes == (
+        Vote(category="Traveling", confidence=0.9, source="gemma4:e4b"),
+    )
+
+
+def test_local_llm_skips_confident_deterministic_rows_held_for_review_by_policy():
+    client = _QueueClient([])
+    rows = [
+        _categorized(
+            "tx-rent",
+            suggested_category="Apple Cloud",
+            confidence=0.95,
+            method="rule",
+            authority=Authority.review,
+        )
+    ]
+
+    categorized, diagnostics = apply_local_llm_suggestions(rows, _config(), client=client)
+
+    assert categorized == rows
+    assert diagnostics.eligible_count == 0
+    assert client.prompts == []
 
 
 def test_local_llm_skips_authoritative_matches_and_proxy_split_lines():
@@ -214,26 +272,27 @@ def test_local_llm_skips_authoritative_matches_and_proxy_split_lines():
         _categorized(
             "tx-rule",
             suggested_category="Apple Cloud",
+            confidence=0.95,
             method="rule",
-            review_required=False,
+            authority=Authority.auto,
         ),
         _categorized(
             "tx-review",
             suggested_category="Traveling",
             method="monthly_review_decision",
-            review_required=False,
+            authority=Authority.auto,
         ),
         _categorized(
             "tx-memory",
             suggested_category="Apple Cloud",
             method="category_memory",
-            review_required=False,
+            authority=Authority.auto,
         ),
         _categorized(
             "tx-proxy",
             suggested_category="Traveling",
             method="proxy_split_allocation",
-            review_required=False,
+            authority=Authority.auto,
         ),
     ]
 
@@ -261,7 +320,8 @@ def test_no_suggestion_keeps_transaction_review_required_without_category():
     assert result.suggested_category is None
     assert result.categorization_method == "local_llm_gemma_no_suggestion"
     assert result.confidence == 0.2
-    assert result.review_required is True
+    assert result.authority is Authority.review
+    assert result.authority_reason == "No category suggested."
     assert "Insufficient merchant context." in result.reason
     assert diagnostics.no_suggestion_count == 1
 
@@ -283,7 +343,7 @@ def test_new_leaf_candidate_is_a_review_hint_not_a_category():
     assert result.suggested_category is None
     assert result.categorization_method == "local_llm_gemma_new_leaf_candidate"
     assert result.confidence == 0.61
-    assert result.review_required is True
+    assert result.authority is Authority.review
     assert "Pet Supplies" in result.reason
     assert "missing pet category" in result.reason
     assert "Pet Supplies" not in _config().category_registry.leaf_categories
@@ -401,7 +461,6 @@ def _config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -431,7 +490,7 @@ def _categorized(
     suggested_category: str | None = None,
     confidence: float = 0.0,
     method: str = "unmatched",
-    review_required: bool = True,
+    authority: Authority = Authority.review,
     reason: str = "No historical or keyword rule matched.",
 ) -> CategorizedTransaction:
     return CategorizedTransaction(
@@ -448,7 +507,7 @@ def _categorized(
         suggested_category=suggested_category,
         confidence=confidence,
         categorization_method=method,
-        review_required=review_required,
+        authority=authority,
         reason=reason,
     )
 
