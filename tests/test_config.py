@@ -245,6 +245,55 @@ def test_project_config_exposes_parent_leaf_category_registry():
     assert "Taxes" not in config.categories
 
 
+def test_project_config_describes_every_leaf_category():
+    config = load_config(Path("config"))
+
+    glossary = config.category_registry.leaf_glossary
+
+    assert set(glossary) == set(config.category_registry.leaf_categories)
+    assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
+
+
+def test_project_config_adds_restaurants_entertainment_and_subscriptions_leaves():
+    config = load_config(Path("config"))
+    registry = config.category_registry
+
+    for leaf in ("Restaurants", "Entertainment", "Subscriptions"):
+        assert registry.is_leaf_category(leaf)
+    assert "Restaurants" in registry.children_by_parent["Living expenses"]
+    assert "Food& Drinks (monthly)" in registry.children_by_parent["Living expenses"]
+
+
+def test_load_config_exposes_leaf_glossary_with_blank_missing_descriptions(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(
+        tmp_path / "categories.yaml",
+        """
+category_registry:
+  - label: Living expenses
+    type: parent
+    children:
+      - label: Rent
+        description: Monthly housing rent.
+      - Shopping
+  - label: Salary
+    description: Net pay from employer.
+  - label: Total net worth
+    type: derived
+aliases: {}
+""",
+    )
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.category_registry.leaf_glossary == {
+        "Rent": "Monthly housing rent.",
+        "Shopping": "",
+        "Salary": "Net pay from employer.",
+    }
+
+
 def test_load_config_supports_tree_shaped_category_registry(tmp_path):
     _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
     _write(
