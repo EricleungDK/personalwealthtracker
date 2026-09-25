@@ -8,7 +8,8 @@ from urllib.request import Request, urlopen
 
 from .category_memory import normalize_merchant_identity
 from .config import AppConfig, LocalLLMSettings
-from .models import CategorizedTransaction, LocalLLMAvailability, LocalLLMDiagnostics
+from .models import CategorizedTransaction, LocalLLMAvailability, LocalLLMDiagnostics, Vote
+from .trust_policy import stamp_authority
 
 
 class OllamaLocalLLMClient:
@@ -130,7 +131,7 @@ def apply_local_llm_suggestions(
 ) -> tuple[list[CategorizedTransaction], LocalLLMDiagnostics]:
     client = client or OllamaLocalLLMClient()
     settings = config.local_llm
-    eligible_indexes = _eligible_indexes(categorized)
+    eligible_indexes = _eligible_indexes(categorized, config.trust_policy.min_confidence)
     availability = client.check_availability(settings)
     diagnostics = _diagnostics(
         settings,
@@ -169,7 +170,7 @@ def apply_local_llm_suggestions(
             return client.generate(settings, model, prompt)
 
         try:
-            raw_response = _generate_with_fallback(
+            answering_model, raw_response = _generate_with_fallback(
                 generate_model,
                 settings,
                 availability.model or settings.model,
@@ -202,34 +203,40 @@ def apply_local_llm_suggestions(
                 f"{config.review_threshold:.2f}."
             )
             continue
+        vote = Vote(
+            category=parsed.suggested_category if parsed.status == "category" else None,
+            confidence=parsed.confidence,
+            source=answering_model,
+        )
         if parsed.status == "category":
             existing_leaf_suggestions += 1
             updated[index] = replace(
                 item,
+                votes=(vote,),
                 suggested_category=parsed.suggested_category,
                 confidence=parsed.confidence,
                 categorization_method="local_llm_gemma",
-                review_required=True,
                 reason=_suggestion_reason(parsed, item),
             )
         elif parsed.status == "no_suggestion":
             no_suggestion_count += 1
             updated[index] = replace(
                 item,
+                votes=(vote,),
                 confidence=parsed.confidence,
                 categorization_method="local_llm_gemma_no_suggestion",
-                review_required=True,
                 reason=_no_suggestion_reason(parsed, item),
             )
         elif parsed.status == "new_leaf_candidate":
             new_leaf_candidate_count += 1
             updated[index] = replace(
                 item,
+                votes=(vote,),
                 confidence=parsed.confidence,
                 categorization_method="local_llm_gemma_new_leaf_candidate",
-                review_required=True,
                 reason=_new_leaf_candidate_reason(parsed, item),
             )
+        updated[index] = stamp_authority(updated[index], config)
 
     diagnostics = replace(
         diagnostics,
@@ -251,9 +258,9 @@ def _generate_with_fallback(
     active_model: str,
     transaction_id: str,
     warnings: list[str],
-) -> str:
+) -> tuple[str, str]:
     try:
-        return generate(active_model)
+        return active_model, generate(active_model)
     except (OSError, TimeoutError, URLError) as exc:
         if active_model == settings.fallback_model or not settings.fallback_model:
             raise
@@ -261,14 +268,17 @@ def _generate_with_fallback(
             f"Local LLM primary model {active_model!r} failed for {transaction_id}: "
             f"{exc}; using fallback {settings.fallback_model!r}."
         )
-        return generate(settings.fallback_model)
+        return settings.fallback_model, generate(settings.fallback_model)
 
 
-def _eligible_indexes(categorized: list[CategorizedTransaction]) -> list[int]:
+def _eligible_indexes(
+    categorized: list[CategorizedTransaction], min_confidence: float
+) -> list[int]:
     return [
         index
         for index, item in enumerate(categorized)
-        if item.review_required and item.categorization_method in {"unmatched", "rule", "recurring"}
+        if item.categorization_method in {"unmatched", "rule", "recurring"}
+        and item.confidence < min_confidence
     ]
 
 

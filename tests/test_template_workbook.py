@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry
-from personal_wealth_tracker.models import CategorizedTransaction, Transaction
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction
 from personal_wealth_tracker.template_workbook import (
     SUPPORTED_TEMPLATE_VERSION,
     TEMPLATE_METADATA_SHEET,
@@ -210,7 +210,6 @@ def _template_config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -252,6 +251,6 @@ def _categorized(
         suggested_category=category,
         confidence=0.9,
         categorization_method="rule",
-        review_required=False,
+        authority=Authority.auto,
         reason="Synthetic template transaction",
     )

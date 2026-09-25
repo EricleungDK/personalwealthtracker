@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry
 from personal_wealth_tracker.cli import main
-from personal_wealth_tracker.models import CategorizedTransaction, Transaction
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction
 from personal_wealth_tracker.template_workbook import (
     TEMPLATE_METADATA_SHEET,
     create_template_workbook,
@@ -162,7 +162,6 @@ def _template_config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -192,7 +191,6 @@ def _customized_config() -> AppConfig:
         year_header_row=config.year_header_row,
         month_header_row=config.month_header_row,
         statement_currency="EUR",
-        auto_write_threshold=config.auto_write_threshold,
         review_threshold=config.review_threshold,
         reject_threshold=config.reject_threshold,
         overwrite_fixed_rows=config.overwrite_fixed_rows,
@@ -234,6 +232,6 @@ def _categorized(
         suggested_category=category,
         confidence=0.9,
         categorization_method="rule",
-        review_required=False,
+        authority=Authority.auto,
         reason="Synthetic template transaction",
     )
