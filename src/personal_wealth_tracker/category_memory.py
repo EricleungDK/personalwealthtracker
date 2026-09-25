@@ -9,7 +9,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .config import load_config
-from .models import Transaction
+from .models import CategorizedTransaction, Transaction
+from .review_decisions import MonthlyReviewDecision
 from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month, normalize_text
 
 
@@ -19,6 +20,9 @@ REVIEWED_POLICY_PROMPT_CHAR_LIMIT = 4000
 _POLICY_START = "<!-- AUTO-GENERATED REVIEWED EXAMPLES START -->"
 _POLICY_END = "<!-- AUTO-GENERATED REVIEWED EXAMPLES END -->"
 _MANUAL_GUIDANCE_HEADER = "## Manual Guidance"
+HUMAN_PROVENANCE = "human"
+AUTO_PROVENANCE = "auto"
+AUTO_TRUSTED_AFTER_MONTHS = 2
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,16 @@ class CategoryMemoryMapping:
     category: str
     source_transaction_ids: tuple[str, ...]
     recurring_hint: RecurringMatchHint | None = None
+    provenance: str = HUMAN_PROVENANCE
+    committed_months: tuple[str, ...] = ()
+
+    @property
+    def trusted(self) -> bool:
+        """`auto` entries categorise only once seen in enough committed months."""
+        return (
+            self.provenance == HUMAN_PROVENANCE
+            or len(self.committed_months) >= AUTO_TRUSTED_AFTER_MONTHS
+        )
 
 
 @dataclass(frozen=True)
@@ -88,6 +102,7 @@ def import_reviewed_decisions(
                     "merchant_identity": normalize_merchant_identity(description),
                     "category": category,
                     "source_transaction_ids": [transaction_id],
+                    "provenance": HUMAN_PROVENANCE,
                     **_recurring_hint_payload(row, row_number),
                 },
             )
@@ -99,6 +114,105 @@ def import_reviewed_decisions(
         skipped_unconfirmed_count=skipped_unconfirmed,
         skipped_non_learnable_count=skipped_non_learnable,
         memory_path=memory_path,
+    )
+
+
+def learn_committed_month(
+    memory_dir: Path,
+    categorized: list[CategorizedTransaction],
+    decisions: dict[str, MonthlyReviewDecision],
+    committed_month: str,
+    learnable_categories: frozenset[str],
+) -> None:
+    """Learn a committed month: Exception Sheet decisions as `human`, consensus as `auto`."""
+    mappings = [_mapping_payload(mapping) for mapping in load_category_memory(memory_dir).mappings]
+    learned = False
+    for item in categorized:
+        if item.split_rule:
+            continue
+        transaction_id = item.transaction.transaction_id
+        merchant_identity = normalize_merchant_identity(item.transaction.description)
+        decision = decisions.get(transaction_id)
+        if decision is not None and decision.rejected:
+            mappings = [
+                mapping
+                for mapping in mappings
+                if mapping["merchant_identity"] != merchant_identity or "recurring_hint" in mapping
+            ]
+        elif decision is not None:
+            if not decision.learn_to_memory or decision.category not in learnable_categories:
+                continue
+            mappings = [
+                mapping
+                for mapping in mappings
+                if mapping["merchant_identity"] != merchant_identity
+                or mapping["provenance"] != AUTO_PROVENANCE
+            ]
+            _upsert_mapping(
+                mappings,
+                {
+                    "merchant_identity": merchant_identity,
+                    "category": decision.category,
+                    "source_transaction_ids": [transaction_id],
+                    "provenance": HUMAN_PROVENANCE,
+                },
+            )
+        elif (
+            item.votes
+            and not item.review_required
+            and item.suggested_category in learnable_categories
+        ):
+            _observe_auto_mapping(
+                mappings,
+                merchant_identity,
+                item.suggested_category,
+                transaction_id,
+                committed_month,
+            )
+        else:
+            continue
+        learned = True
+    if learned:
+        _write_memory_artifacts(memory_dir, mappings)
+
+
+def _observe_auto_mapping(
+    mappings: list[dict[str, object]],
+    merchant_identity: str,
+    category: str,
+    transaction_id: str,
+    committed_month: str,
+) -> None:
+    """Count a committed month for a consensus result; a changed category starts over."""
+    merchant_mappings = [
+        mapping for mapping in mappings if mapping["merchant_identity"] == merchant_identity
+    ]
+    if any(mapping["provenance"] == HUMAN_PROVENANCE for mapping in merchant_mappings):
+        return
+    for index, existing in enumerate(mappings):
+        if existing["merchant_identity"] != merchant_identity:
+            continue
+        if existing["category"] == category:
+            mappings[index] = {
+                **existing,
+                "source_transaction_ids": list(
+                    dict.fromkeys([*existing["source_transaction_ids"], transaction_id])
+                ),
+                "committed_months": list(
+                    dict.fromkeys([*existing["committed_months"], committed_month])
+                ),
+            }
+            return
+        del mappings[index]
+        break
+    mappings.append(
+        {
+            "merchant_identity": merchant_identity,
+            "category": category,
+            "source_transaction_ids": [transaction_id],
+            "provenance": AUTO_PROVENANCE,
+            "committed_months": [committed_month],
+        }
     )
 
 
@@ -117,6 +231,10 @@ def load_category_memory(memory_dir: Path) -> CategoryMemory:
                     str(value) for value in item["source_transaction_ids"]
                 ),
                 recurring_hint=_load_recurring_hint(item.get("recurring_hint")),
+                provenance=str(item.get("provenance", HUMAN_PROVENANCE)),
+                committed_months=tuple(
+                    str(value) for value in item.get("committed_months", [])
+                ),
             )
             for item in payload.get("mappings", [])
         )
@@ -135,7 +253,7 @@ def match_category_memory(
 ) -> CategoryMemoryMapping | None:
     merchant_identity = normalize_merchant_identity(transaction.description)
     for mapping in memory.mappings:
-        if mapping.merchant_identity == merchant_identity:
+        if mapping.trusted and mapping.merchant_identity == merchant_identity:
             if mapping.recurring_hint and not _matches_recurring_hint(
                 transaction, mapping.recurring_hint
             ):
@@ -205,6 +323,7 @@ def _import_review_workbook_decisions(
                     "merchant_identity": normalize_merchant_identity(description),
                     "category": category,
                     "source_transaction_ids": [transaction_id],
+                    "provenance": HUMAN_PROVENANCE,
                     **_recurring_hint_payload(row, row_number),
                 },
             )
@@ -407,7 +526,10 @@ def _mapping_payload(mapping: CategoryMemoryMapping) -> dict[str, object]:
         "merchant_identity": mapping.merchant_identity,
         "category": mapping.category,
         "source_transaction_ids": list(mapping.source_transaction_ids),
+        "provenance": mapping.provenance,
     }
+    if mapping.provenance == AUTO_PROVENANCE:
+        payload["committed_months"] = list(mapping.committed_months)
     if mapping.recurring_hint:
         payload["recurring_hint"] = {
             "amount": str(mapping.recurring_hint.amount),
@@ -431,7 +553,11 @@ def _write_memory_artifacts(memory_dir: Path, mappings: list[dict[str, object]])
 
 def _write_reviewed_policy(path: Path, mappings: list[dict[str, object]]) -> None:
     manual_guidance = _manual_guidance(path)
-    auto_lines = [_policy_mapping_line(mapping) for mapping in mappings]
+    auto_lines = [
+        _policy_mapping_line(mapping)
+        for mapping in mappings
+        if mapping["provenance"] == HUMAN_PROVENANCE
+    ]
     path.write_text(
         "\n".join(
             [

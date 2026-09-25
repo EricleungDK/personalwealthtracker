@@ -59,11 +59,11 @@ flowchart LR
   DryRun --> Review["Manual review workbook<br/>choose manual_category, new_parent_category, new_leaf_category, and learn_to_memory"]
   Review --> Decisions["Monthly Review Decisions<br/>current-month overrides"]
   Review --> Registry["Category Registry<br/>validated new leaf registrations"]
-  Review --> Memory["Category Memory<br/>future learned merchant choices"]
   Registry --> Rules
   Decisions --> Planner
   Memory --> Rules
   Planner --> Commit["Commit mode<br/>writes only to a copied workbook"]
+  Commit --> Memory["Category Memory<br/>learned on commit: human now, auto after two months"]
 ```
 
 The important split is:
@@ -71,7 +71,7 @@ The important split is:
 - Dry run means plan and report only.
 - Monthly Review Decisions fix specific transactions for the selected month.
 - The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added.
-- Category Memory learns selected merchant choices for future months.
+- Category Memory learns committed decisions (`human`) and consensus results (`auto`, trusted after two committed months) for future months.
 - Proxy Split Transfer rules in ignored `rules.local.yaml` can split one intermediary transfer into fixed allocation lines plus an optional Residual Review Line.
 - Local LLM Mode: optional `--local-llm-suggestions` review assistance using local Ollama/Gemma; suggestions stay review-only and reuse existing review workbook suggestion fields.
 - Commit mode writes only safe values into a copied workbook under `data/processed/`.

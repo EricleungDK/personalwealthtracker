@@ -6,7 +6,7 @@ Project-specific guidance for coding agents working in `PersonalWorthTracker`.
 
 - This repository contains an implemented MVP Python CLI for local-first monthly tracker workbook updates.
 - Product requirements, architecture notes, data contracts, and domain language live under `.agent/System/`.
-- The current workflow is CSV-first Nordea statement processing with PDF fallback, dry-run review artifacts, reviewed-decision import, optional Category Memory learning, and commit-to-copy workbook updates.
+- The current workflow is CSV-first Nordea statement processing with PDF fallback, dry-run review artifacts, reviewed-decision import, Category Memory learning on commit, and commit-to-copy workbook updates.
 - Real financial inputs, generated outputs, local category memory, and local agent tooling must stay out of Git.
 
 ## Repository Discovery
