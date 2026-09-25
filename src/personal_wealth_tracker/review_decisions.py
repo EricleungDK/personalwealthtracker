@@ -193,7 +193,6 @@ def _apply_decision(
         suggested_category=decision.category,
         confidence=1.0,
         categorization_method="monthly_review_decision",
-        review_required=False,
         reason="Monthly review decision.",
         source_transaction_id=item.source_transaction_id,
         split_rule=item.split_rule,

@@ -10,7 +10,13 @@ from decimal import Decimal
 from pathlib import Path
 
 from .config import AppConfig
-from .models import CategorizedTransaction, TrackerUpdate, WorkbookPlan, WorkbookStructureChange
+from .models import (
+    Authority,
+    CategorizedTransaction,
+    TrackerUpdate,
+    WorkbookPlan,
+    WorkbookStructureChange,
+)
 
 
 DERIVED_WORKBOOK_ROWS = frozenset(
@@ -804,7 +810,7 @@ def _write_decision(
         return "review", "Target category row not found."
     if column is None:
         return "review", "Target month column not found."
-    if any(item.review_required for item in items):
+    if any(item.authority is Authority.review for item in items):
         return "review", "One or more source transactions require review."
     if category in DERIVED_WORKBOOK_ROWS:
         return "skip", "Derived workbook row is formula-owned and not writable."
