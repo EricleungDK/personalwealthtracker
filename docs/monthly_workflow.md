@@ -68,16 +68,16 @@ Check the report first:
 
 Then check `review_required_<year>_<month>.xlsx` for manual classification:
 
-- Use the `Review Required` sheet as the work queue.
-- Review rows can be transaction-level review items or categorized transactions whose workbook update is blocked; use `workbook_action`, `target_cell`, and `workbook_reason` to understand the block.
+- Use the `Review Required` sheet (the Exception Sheet) as the work queue. It lists only rows in review: `review`-authority transactions and sources of a blocked workbook update (`workbook_action` `review`; see `target_cell` and `workbook_reason`).
+- Each row shows its `suggested_category`; the `manual_category` dropdown offers the suggestion, model alternatives, and `NONE`.
 - Treat workbook grouping rows such as `Living expenses`, `Services`, and `Insurance` as Parent/Section Row labels. They organize the tracker and are not valid transaction category targets.
 - Treat rows under those sections, such as `Food& Drinks (monthly)` or `Apple Cloud`, as Leaf Category Row labels. These are the valid existing targets for current-month decisions, workbook updates, and Category Memory learning.
-- Use `manual_category` to record the current-month category decision when the correct Leaf Category Row already exists.
+- Leave `manual_category` blank to accept `suggested_category`, type `NONE` to reject it and leave the row uncategorised, or pick an existing Leaf Category Row to override it.
 - Use `new_parent_category` and `new_leaf_category` when the correct leaf category is missing. Select the allowed Parent/Section Row in `new_parent_category`, then type the exact new display label in `new_leaf_category`.
 - Do not fill both `manual_category` and `new_leaf_category` on the same review row.
 - Leave `learn_to_memory` blank unless a merchant decision should be considered for future Category Memory learning.
 - Use the `Category Options` sheet to distinguish parent, derived, and leaf rows and to avoid derived, fixed, formula-owned, or otherwise unsafe category choices.
-- Use the `All Transactions` sheet to debug low classification or no-review rates.
+- Use the `Audit` sheet to spot-check every `auto` row with its `source`, `votes`, and `reason`.
 
 The `review_required_<year>_<month>.csv` file remains available for simple inspection and automation:
 
@@ -120,8 +120,9 @@ uv run wealth-tracker \
 
 Review decisions are current-month overrides:
 
-- Filled `manual_category` values are applied by exact `transaction_id`.
-- Blank `manual_category` values are ignored.
+- Decisions are applied by exact `transaction_id`.
+- Blank `manual_category` accepts the row's `suggested_category`; rows with neither stay in review.
+- `NONE` rejects the suggestion; the row is resolved but written to no category.
 - Manual categories must be existing tracker workbook labels or Leaf Category Row labels from the YAML category registry.
 - Filled `new_parent_category` and `new_leaf_category` values request a missing Leaf Category Row under an allowed Parent/Section Row.
 - New leaf category requests are validated against `config/categories.yaml`, reject duplicate labels, and are reported in the `Category Registry Updates` report section.
@@ -172,6 +173,7 @@ uv run wealth-tracker \
 
 Commit mode:
 
+- writes nothing when any row is still in review (Atomic Month Commit); it leaves the exception sheet and reports `Workbook not written`,
 - creates a backup under `data/backups/`,
 - writes only to a copied workbook under `data/processed/`,
 - preserves the original workbook,

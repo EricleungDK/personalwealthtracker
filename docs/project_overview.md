@@ -131,7 +131,7 @@ Use the files this way:
 
 - Start with the Markdown report to understand the run quality and planned workbook changes.
 - Use `review_required_<period>.xlsx` when you need to manually classify transactions.
-- Use `All Transactions` inside the review workbook to debug a low classification rate or low no-review rate.
+- Use `Audit` inside the review workbook to spot-check `auto` rows (source, votes, reason).
 - Use `Category Options` inside the review workbook to see workbook fields and safety notes.
 - Use the audit log only when you need a detailed machine-readable trace.
 

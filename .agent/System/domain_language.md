@@ -32,6 +32,14 @@ _Avoid_: LLM guess, unsupported statement format
 The per-row decision, `auto` or `review`, of whether a categorized transaction may reach the Tracker Workbook without the operator. Workbook cells derive from row authority.
 _Avoid_: Cell blocking
 
+**Exception Sheet**:
+The `Review Required` sheet listing only rows in review, suggestion prefilled. Blank accepts the suggestion; `NONE` rejects it.
+_Avoid_: Whole-month review workbook
+
+**Atomic Month Commit**:
+Commit mode writes the copied Tracker Workbook only when zero rows remain in review, so it never holds a partial month.
+_Avoid_: Unreviewed bucket, partial commit
+
 **Trust Policy**:
 The single pure module that decides Authority from evidence (tier, model votes, agreement), row facts (amount), and settings (`auto_max_amount`, `min_agreement`, `never_auto_categories`).
 _Avoid_: Confidence threshold check, scattered review rules

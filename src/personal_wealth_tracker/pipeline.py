@@ -21,6 +21,7 @@ from .workbook import (
     commit_updates,
     create_backup,
     plan_workbook_changes,
+    rows_in_review,
     workbook_category_options,
 )
 
@@ -109,9 +110,10 @@ def run_pipeline(
     updates = workbook_plan.updates
     structure_changes = workbook_plan.structure_changes
     mode = "commit" if commit else "dry-run"
+    review_count = len(rows_in_review(categorized, updates))
 
     output_workbook_path = None
-    if commit:
+    if commit and not review_count:
         create_backup(tracker_path, Path("data/backups"))
         output_workbook_path = commit_updates(
             tracker_path,
@@ -164,6 +166,7 @@ def run_pipeline(
         review_csv_path=review_csv_path,
         output_workbook_path=output_workbook_path,
         review_xlsx_path=review_xlsx_path,
+        review_count=review_count,
         category_registry_additions=category_registry_additions,
         local_llm_diagnostics=local_llm_diagnostics,
         statement_import_diagnostics=statement_import.diagnostics,
