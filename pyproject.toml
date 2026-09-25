@@ -14,6 +14,9 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
 ]
+hosted = [
+    "typesafe-sdk>=0.7.1",
+]
 
 [project.scripts]
 wealth-tracker = "personal_wealth_tracker.cli:main"
