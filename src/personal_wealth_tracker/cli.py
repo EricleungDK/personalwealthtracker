@@ -56,7 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--commit",
         action="store_true",
-        help="Write eligible values to a copied workbook. Dry-run is the default.",
+        help=(
+            "Write the month to a copied workbook when no rows remain in review. "
+            "Dry-run is the default."
+        ),
     )
     return parser
 
@@ -451,6 +454,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Transactions processed: {len(result.transactions)}")
     print(f"Report: {result.report_path}")
     print(f"Audit log: {result.audit_path}")
+    print(f"Rows in review: {result.review_count}")
+    if result.review_xlsx_path:
+        print(f"Exception sheet: {result.review_xlsx_path}")
     if result.output_workbook_path:
         print(f"Output workbook: {result.output_workbook_path}")
     return 0

@@ -137,16 +137,15 @@ def test_pipeline_applies_exact_proxy_split_rule_without_double_counting_source(
 
     workbook = load_workbook(result.review_xlsx_path, data_only=True)
     try:
-        audit_sheet = workbook["All Transactions"]
+        audit_sheet = workbook["Audit"]
         headers = {cell.value: index for index, cell in enumerate(audit_sheet[1], start=1)}
         methods = [
-            audit_sheet.cell(row=row, column=headers["method"]).value
+            audit_sheet.cell(row=row, column=headers["source"]).value
             for row in range(2, audit_sheet.max_row + 1)
         ]
     finally:
         workbook.close()
-    assert methods.count("proxy_split_source") == 1
-    assert methods.count("proxy_split_allocation") == 2
+    assert methods == ["proxy_split_source"]
 
 
 def test_pipeline_emits_residual_proxy_split_review_line_for_larger_transfer(
@@ -448,7 +447,7 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir)
+    _create_config(config_dir, trust_policy=RAISED_TRUST_POLICY)
 
     result = run_pipeline(
         tracker_path=tracker,
@@ -469,31 +468,23 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
         assert original_sheet["C6"].value is None
         assert original_sheet["C7"].value is None
         assert copied_sheet["C5"].value == 25
-        assert copied_sheet["C6"].value is None
+        assert copied_sheet["C6"].value == 10000
         assert copied_sheet["C7"].value == 86.1
     finally:
         original.close()
         copied.close()
 
-    salary = next(
-        item
-        for item in result.categorized_transactions
-        if item.suggested_category == "Full-time job (net)"
-    )
-    assert salary.authority is Authority.review
-    assert salary.authority_reason == "Full-time job (net) is a never-auto category."
     assert result.mode == "commit"
-    assert result.output_workbook_path is not None
-    assert result.output_workbook_path.exists()
+    assert result.review_count == 0
     assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
 
 
-def test_pipeline_commit_reads_trust_policy_thresholds_from_settings(tmp_path, monkeypatch):
+def test_commit_never_writes_partial_month(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir, trust_policy=RAISED_TRUST_POLICY)
+    _create_config(config_dir)
 
     result = run_pipeline(
         tracker_path=tracker,
@@ -505,11 +496,221 @@ def test_pipeline_commit_reads_trust_policy_thresholds_from_settings(tmp_path, m
         commit=True,
     )
 
+    salary = next(
+        item
+        for item in result.categorized_transactions
+        if item.suggested_category == "Full-time job (net)"
+    )
+    assert salary.review_required is True
+    assert {update.category: update.write_action for update in result.updates} == {
+        "Apple Cloud": "write",
+        "Full-time job (net)": "write",
+        "Traveling": "write",
+    }
+    assert result.review_count == 1
+    assert result.output_workbook_path is None
+    assert not (tmp_path / "data" / "processed").exists()
+    original = load_workbook(tracker)
+    try:
+        assert [original["Net worth"][cell].value for cell in ("C5", "C6", "C7")] == [
+            None,
+            None,
+            None,
+        ]
+    finally:
+        original.close()
+
+
+def test_commit_with_review_rows_writes_exception_sheet_instead_of_workbook(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester({"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9)})
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    assert result.output_workbook_path is None
+    assert not (tmp_path / "data" / "processed").exists()
+    assert not (tmp_path / "data" / "backups").exists()
+    assert result.review_count == 1
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        rows = _sheet_rows(workbook["Review Required"])
+    finally:
+        workbook.close()
+    assert [row["transaction_id"] for row in rows] == [
+        result.transactions[0].transaction_id
+    ]
+    assert rows[0]["suggested_category"] == "Traveling"
+    assert rows[0]["manual_category"] is None
+    assert "Workbook not written: 1 row(s) in review." in result.report_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_exception_sheet_dropdown_offers_suggester_alternatives(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester(
+        {"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9, alternatives=("Apple Cloud",))}
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    assert result.categorized_transactions[0].alternatives == ("Apple Cloud",)
+    workbook = load_workbook(result.review_xlsx_path)
+    try:
+        (dropdown,) = [
+            validation
+            for validation in workbook["Review Required"].data_validations.dataValidation
+            if "E2" in validation.sqref
+        ]
+    finally:
+        workbook.close()
+    assert dropdown.formula1 == '"Traveling,Apple Cloud,NONE"'
+
+
+def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    output_dir = tmp_path / "reports"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/01;-40,00;960,00;DKK;SHOP ONE;Card purchase;1111;2222;Yes\n"
+        "2026/04/02;-15,00;945,00;DKK;SHOP TWO;Card purchase;1111;2222;Yes\n"
+        "2026/04/03;-7,50;937,50;DKK;SHOP THREE;Card purchase;1111;2222;Yes\n",
+    )
+    suggester = FakeSuggester(
+        {
+            merchant: ScriptedVote("Traveling", 0.9)
+            for merchant in ("SHOP ONE", "SHOP TWO", "SHOP THREE")
+        }
+    )
+    pipeline_args = {
+        "tracker_path": tracker,
+        "statement_path": statement,
+        "config_dir": config_dir,
+        "year": 2026,
+        "month": "Apr",
+        "output_dir": output_dir,
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": suggester,
+    }
+    first = run_pipeline(**pipeline_args)
+    assert first.output_workbook_path is None
+    decisions = {"SHOP ONE": None, "SHOP TWO": "NONE", "SHOP THREE": "Apple Cloud"}
+    workbook = load_workbook(first.review_xlsx_path)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            description = sheet.cell(row=row, column=headers["description"]).value
+            sheet.cell(row=row, column=headers["manual_category"]).value = next(
+                decision for merchant, decision in decisions.items() if merchant in description
+            )
+        workbook.save(first.review_xlsx_path)
+    finally:
+        workbook.close()
+
+    result = run_pipeline(**pipeline_args, review_decisions_path=first.review_xlsx_path)
+
+    assert result.review_count == 0
+    rejected = next(
+        item for item in result.categorized_transactions if "SHOP TWO" in item.transaction.description
+    )
+    assert rejected.suggested_category is None
+    assert rejected.review_required is False
+    original = load_workbook(tracker)
     copied = load_workbook(result.output_workbook_path)
     try:
-        assert copied["Net worth"]["C6"].value == 10000
+        assert original["Net worth"]["C5"].value is None
+        assert original["Net worth"]["C7"].value is None
+        assert copied["Net worth"]["C5"].value == 7.5
+        assert copied["Net worth"]["C7"].value == 40
     finally:
+        original.close()
         copied.close()
+    assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
+
+
+def test_audit_sheet_lists_auto_rows_with_source_votes_and_reason(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    with (config_dir / "settings.yaml").open("a", encoding="utf-8") as handle:
+        handle.write("trust_policy:\n  min_agreement: 1\n")
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1111;2222;Yes\n"
+        "2026/04/02;-2500,00;-1542,50;DKK;BIG SHOP;Card purchase;1111;2222;Yes\n",
+    )
+    suggester = FakeSuggester(
+        {merchant: ScriptedVote("Traveling", 0.9) for merchant in ("UNKNOWN SHOP", "BIG SHOP")}
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        audit_rows = _sheet_rows(workbook["Audit"])
+    finally:
+        workbook.close()
+    assert len(audit_rows) == 1
+    audit_row = audit_rows[0]
+    assert "UNKNOWN SHOP" in audit_row["description"]
+    assert audit_row["category"] == "Traveling"
+    assert audit_row["source"] == "local_llm_gemma"
+    assert audit_row["votes"] == "Traveling (fake, 0.90)"
+    assert audit_row["reason"] == "1 model votes agree."
 
 
 def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkeypatch):
@@ -517,7 +718,7 @@ def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkey
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir)
+    _create_config(config_dir, trust_policy=RAISED_TRUST_POLICY)
     _set_workbook_label(tracker, "A1", "Tracker currency: EUR")
 
     result = run_pipeline(
@@ -934,9 +1135,7 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     assert item.suggested_category == "Traveling"
     assert item.categorization_method == "local_llm_gemma"
     assert item.review_required is True
-    assert result.updates[0].category == "Traveling"
-    assert result.updates[0].write_action == "review"
-    assert result.updates[0].reason == "One or more source transactions require review."
+    assert result.review_count == 1
 
     report = result.report_path.read_text(encoding="utf-8")
     assert "## Local LLM Mode" in report
@@ -1492,6 +1691,14 @@ def _write_unknown_shop_statement(path: Path) -> None:
         "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
         "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1111;2222;Yes\n",
     )
+
+
+def _sheet_rows(sheet) -> list[dict[str, object]]:
+    headers = [cell.value for cell in sheet[1]]
+    return [
+        dict(zip(headers, (cell.value for cell in row)))
+        for row in sheet.iter_rows(min_row=2)
+    ]
 
 
 def _write(path: Path, content: str) -> None:
