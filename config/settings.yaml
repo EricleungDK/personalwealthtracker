@@ -24,5 +24,6 @@ local_llm:
   endpoint: "http://localhost:11434"
   model: "gemma4:12b"
   fallback_model: "gemma4:e4b"
-  timeout_seconds: 60
+  timeout_seconds: 180
+  keep_alive: "30m"
   include_raw_description: false

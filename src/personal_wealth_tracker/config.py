@@ -70,7 +70,8 @@ class LocalLLMSettings:
     endpoint: str = "http://localhost:11434"
     model: str = "gemma4:12b"
     fallback_model: str = "gemma4:e4b"
-    timeout_seconds: float = 60.0
+    timeout_seconds: float = 180.0
+    keep_alive: str = "30m"
     include_raw_description: bool = False
 
 
@@ -195,7 +196,8 @@ def _local_llm_settings(doc: Any) -> LocalLLMSettings:
         endpoint=str(doc.get("endpoint", "http://localhost:11434")).rstrip("/"),
         model=str(doc.get("model", "gemma4:12b")),
         fallback_model=str(doc.get("fallback_model", "gemma4:e4b")),
-        timeout_seconds=float(doc.get("timeout_seconds", 60.0)),
+        timeout_seconds=float(doc.get("timeout_seconds", 180.0)),
+        keep_alive=str(doc.get("keep_alive", "30m")),
         include_raw_description=bool(doc.get("include_raw_description", False)),
     )
 

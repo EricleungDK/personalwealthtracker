@@ -6,7 +6,7 @@ from datetime import date
 from .categorizer import categorize_transactions
 from .category_memory import load_category_memory, load_reviewed_policy
 from .config import load_config, register_category_registry_additions
-from .local_llm import apply_local_llm_suggestions, disabled_diagnostics
+from .local_llm import OllamaSuggester, apply_suggestions, disabled_diagnostics
 from .models import CategoryRegistryAddition, RunResult
 from .reporting import write_outputs
 from .review_decisions import (
@@ -15,6 +15,7 @@ from .review_decisions import (
     validate_monthly_review_decision_categories,
 )
 from .statement_adapters import import_trusted_statement
+from .suggester import Suggester, build_suggester_context
 from .utils import normalize_month
 from .workbook import (
     commit_updates,
@@ -52,7 +53,7 @@ def run_pipeline(
     statement_format: str = "auto",
     review_decisions_path: Path | None = None,
     local_llm_suggestions: bool = False,
-    local_llm_client: object | None = None,
+    suggester: Suggester | None = None,
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -72,10 +73,11 @@ def run_pipeline(
     )
     statement_parser = statement_import.parser_identity
     transactions = statement_import.transactions
+    category_memory = load_category_memory(category_memory_dir)
     categorized = categorize_transactions(
         transactions,
         config,
-        category_memory=load_category_memory(category_memory_dir),
+        category_memory=category_memory,
     )
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     if review_decisions_path is not None:
@@ -98,11 +100,15 @@ def run_pipeline(
         )
     local_llm_diagnostics = disabled_diagnostics(config.local_llm)
     if local_llm_suggestions:
-        categorized, local_llm_diagnostics = apply_local_llm_suggestions(
+        categorized, local_llm_diagnostics = apply_suggestions(
             categorized,
             config,
-            client=local_llm_client,
-            reviewed_policy=load_reviewed_policy(category_memory_dir),
+            suggester or OllamaSuggester(config.local_llm),
+            build_suggester_context(
+                config,
+                category_memory,
+                reviewed_policy=load_reviewed_policy(category_memory_dir),
+            ),
         )
     workbook_plan = plan_workbook_changes(tracker_path, categorized, year, month, config)
     updates = workbook_plan.updates

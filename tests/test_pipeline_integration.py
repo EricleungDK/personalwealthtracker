@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from decimal import Decimal
 
@@ -6,8 +5,8 @@ from openpyxl import Workbook, load_workbook
 import pytest
 
 from personal_wealth_tracker.config import load_config
-from personal_wealth_tracker.models import LocalLLMAvailability
 from personal_wealth_tracker.pipeline import run_pipeline
+from personal_wealth_tracker.suggester import FakeSuggester
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
@@ -884,11 +883,8 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    client = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.68,
-        rationale="Merchant looks travel related.",
+    suggester = FakeSuggester(
+        {"UNKNOWN SHOP": ("Traveling", 0.68, "Merchant looks travel related.")}
     )
 
     result = run_pipeline(
@@ -899,7 +895,7 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
         month="Apr",
         output_dir=tmp_path / "reports",
         local_llm_suggestions=True,
-        local_llm_client=client,
+        suggester=suggester,
     )
 
     item = result.categorized_transactions[0]
@@ -965,12 +961,7 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    client = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.68,
-        rationale="Merchant looks travel related.",
-    )
+    suggester = FakeSuggester({})
 
     run_pipeline(
         tracker_path=tracker,
@@ -981,12 +972,13 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
         output_dir=tmp_path / "reports",
         category_memory_dir=memory_dir,
         local_llm_suggestions=True,
-        local_llm_client=client,
+        suggester=suggester,
     )
 
-    prompt = json.loads(client.prompts[0])
-    assert "MOBILEPAY REJSEKORT" in prompt["reviewed_policy"]
-    assert "unknown private transfers" in prompt["reviewed_policy"]
+    _, context = suggester.calls[0]
+    assert "MOBILEPAY REJSEKORT" in context.reviewed_policy
+    assert "unknown private transfers" in context.reviewed_policy
+    assert set(context.leaf_glossary) == {"Apple Cloud", "Traveling", "Full-time job (net)"}
 
 
 def test_pipeline_registers_new_leaf_category_from_review_decisions(
@@ -1307,37 +1299,6 @@ def _write_revolut_statement(path: Path, amount: str) -> None:
         "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
         f"2026/04/04;{amount};50000,00;DKK;REVOLUT;Transfer;1111;2222;Yes\n",
     )
-
-
-class _LocalLLMClient:
-    def __init__(
-        self,
-        status: str,
-        suggested_category: str,
-        confidence: float,
-        rationale: str,
-    ):
-        self.status = status
-        self.suggested_category = suggested_category
-        self.confidence = confidence
-        self.rationale = rationale
-        self.prompts: list[str] = []
-
-    def check_availability(self, config):
-        return LocalLLMAvailability(available=True, model=config.model)
-
-    def generate(self, config, model, prompt):
-        self.prompts.append(prompt)
-        transaction_id = json.loads(prompt)["transaction"]["transaction_id"]
-        return json.dumps(
-            {
-                "transaction_id": transaction_id,
-                "status": self.status,
-                "suggested_category": self.suggested_category,
-                "confidence": self.confidence,
-                "rationale": self.rationale,
-            }
-        )
 
 
 def _create_tracker(path: Path) -> None:
