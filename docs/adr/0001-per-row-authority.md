@@ -34,5 +34,4 @@ LLM step and the workbook planner read `authority` instead of deciding.
 - Trust rules change in one module, tested as a table.
 - Rows such as salary, rent and large credit-card payoffs now need a
   review decision every month unless the settings are changed.
-- The workbook still blocks a cell whose source rows include a `review`
-  row; the atomic month commit slice of issue #2 removes that later.
+- Cell blocking was removed by the Atomic Month Commit (ADR 0003).

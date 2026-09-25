@@ -296,6 +296,7 @@ def apply_suggestions(
             updated[index] = replace(
                 item,
                 votes=votes,
+                alternatives=suggestion.alternatives,
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma_no_suggestion",
                 reason=(
@@ -317,6 +318,7 @@ def apply_suggestions(
             updated[index] = replace(
                 item,
                 votes=votes,
+                alternatives=suggestion.alternatives,
                 suggested_category=suggestion.category,
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma",

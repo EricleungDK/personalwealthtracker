@@ -15,8 +15,9 @@ from .models import (
     TrackerUpdate,
     WorkbookStructureChange,
 )
+from .review_decisions import REJECT_SUGGESTION
 from .utils import TRANSACTION_ID_SCHEME_VERSION
-from .workbook import WorkbookCategoryOption, workbook_category_options
+from .workbook import WorkbookCategoryOption, rows_in_review, workbook_category_options
 
 
 def write_outputs(
@@ -136,6 +137,7 @@ def _write_report(
         f"- Proposed workbook writes: {write_count}",
         f"- Skipped workbook updates: {skip_count}",
         "- Workbook cleanup tasks: not run during monthly update.",
+        *(_commit_block_lines(mode, categorized, updates)),
         "",
         "## Categorization Quality",
         "",
@@ -259,6 +261,15 @@ def _write_report(
         lines.append("- No transaction-level review items.")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _commit_block_lines(
+    mode: str, categorized: list[CategorizedTransaction], updates: list[TrackerUpdate]
+) -> list[str]:
+    review_count = len(rows_in_review(categorized, updates))
+    if mode != "commit" or not review_count:
+        return []
+    return [f"- Workbook not written: {review_count} row(s) in review."]
 
 
 def _currency_assumption_lines(workbook_config: AppConfig | None) -> list[str]:
@@ -493,7 +504,7 @@ def _write_review_workbook(
     workbook = Workbook()
     review_sheet = workbook.active
     review_sheet.title = "Review Required"
-    audit_sheet = workbook.create_sheet("All Transactions")
+    audit_sheet = workbook.create_sheet("Audit")
     options_sheet = workbook.create_sheet("Category Options")
     metadata_sheet = workbook.create_sheet("Run Metadata")
 
@@ -529,17 +540,17 @@ def _write_review_workbook(
         "currency",
         "direction",
         "merchant_identity",
-        "suggested_category",
+        "category",
         "confidence",
-        "method",
-        "authority",
+        "source",
+        "votes",
         "reason",
+        "evidence",
         "split_role",
         "split_rule",
         "source_transaction_id",
         "allocated_amount",
         "residual_amount",
-        "authority_reason",
     ]
     options_headers = [
         "row_number",
@@ -556,6 +567,8 @@ def _write_review_workbook(
     options_sheet.append(options_headers)
 
     for item in categorized:
+        if item.review_required:
+            continue
         transaction = item.transaction
         audit_sheet.append(
             [
@@ -569,47 +582,51 @@ def _write_review_workbook(
                 item.suggested_category or "",
                 f"{item.confidence:.2f}",
                 item.categorization_method,
-                item.authority.value,
+                _format_votes(item),
+                item.authority_reason,
                 item.reason,
                 item.split_role,
                 item.split_rule,
                 item.source_transaction_id,
                 _format_optional_amount(item.allocated_amount),
                 _format_optional_amount(item.residual_amount),
-                item.authority_reason,
             ]
         )
+
+    review_items = rows_in_review(categorized, updates)
+    for item in review_items:
+        transaction = item.transaction
         update = update_by_transaction.get(transaction.transaction_id)
-        if item.review_required or (update is not None and update.write_action != "write"):
-            review_sheet.append(
-                [
-                    transaction.transaction_id,
-                    transaction.date.isoformat(),
-                    transaction.description,
-                    _format_amount(transaction.amount),
-                    None,
-                    None,
-                    None,
-                    None,
-                    item.split_role,
-                    item.split_rule,
-                    item.source_transaction_id,
-                    _format_optional_amount(item.allocated_amount),
-                    _format_optional_amount(item.residual_amount),
-                    item.suggested_category or "",
-                    item.categorization_method,
-                    item.reason,
-                    update.write_action if update else None,
-                    update.target_cell if update else None,
-                    update.reason if update else None,
-                    _merchant_identity(transaction),
-                    f"{item.confidence:.2f}",
-                    transaction.direction,
-                ]
-            )
+        review_sheet.append(
+            [
+                transaction.transaction_id,
+                transaction.date.isoformat(),
+                transaction.description,
+                _format_amount(transaction.amount),
+                None,
+                None,
+                None,
+                None,
+                item.split_role,
+                item.split_rule,
+                item.source_transaction_id,
+                _format_optional_amount(item.allocated_amount),
+                _format_optional_amount(item.residual_amount),
+                item.suggested_category or "",
+                item.categorization_method,
+                item.reason,
+                update.write_action if update else None,
+                update.target_cell if update else None,
+                update.reason if update else None,
+                _merchant_identity(transaction),
+                f"{item.confidence:.2f}",
+                transaction.direction,
+            ]
+        )
 
     manual_category_options = [
-        option.category for option in category_options if option.category_type == "leaf"
+        REJECT_SUGGESTION,
+        *(option.category for option in category_options if option.category_type == "leaf"),
     ]
     new_parent_category_options = [
         option.category for option in category_options if option.allows_new_children
@@ -642,17 +659,19 @@ def _write_review_workbook(
             ]
         )
 
-    if manual_category_options:
-        option_end_row = len(manual_category_options) + 1
-        option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
-        manual_category_validation = DataValidation(
-            type="list",
-            formula1=f"'Category Options'!${option_column}$2:${option_column}${option_end_row}",
-        )
-        _allow_blank_validation(manual_category_validation)
-        review_sheet.add_data_validation(manual_category_validation)
-        manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
-        manual_category_validation.add(f"{manual_category_column}2:{manual_category_column}1048576")
+    manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
+    option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
+    option_end_row = len(manual_category_options) + 1
+    leaf_list_formula = f"'Category Options'!${option_column}$2:${option_column}${option_end_row}"
+    validations_by_formula: dict[str, DataValidation] = {}
+    for row, item in enumerate(review_items, start=2):
+        formula = _inline_list_formula(_decision_choices(item)) or leaf_list_formula
+        if formula not in validations_by_formula:
+            validation = DataValidation(type="list", formula1=formula)
+            _allow_blank_validation(validation)
+            review_sheet.add_data_validation(validation)
+            validations_by_formula[formula] = validation
+        validations_by_formula[formula].add(f"{manual_category_column}{row}")
 
     if new_parent_category_options:
         option_end_row = len(new_parent_category_options) + 1
@@ -687,6 +706,31 @@ def _write_review_workbook(
 
     workbook.save(path)
     workbook.close()
+
+
+def _format_votes(item: CategorizedTransaction) -> str:
+    return "; ".join(
+        f"{vote.category or 'NONE'} ({vote.source}, {vote.confidence:.2f})" for vote in item.votes
+    )
+
+
+def _decision_choices(item: CategorizedTransaction) -> list[str]:
+    candidates = [
+        item.suggested_category,
+        *item.alternatives,
+        *(vote.category for vote in item.votes),
+    ]
+    choices = list(dict.fromkeys(category for category in candidates if category))
+    return [*choices, REJECT_SUGGESTION] if choices else []
+
+
+def _inline_list_formula(choices: list[str]) -> str | None:
+    # Excel inline lists are comma-separated and capped at 255 characters.
+    joined = ",".join(choices)
+    unsafe = any("," in choice or '"' in choice for choice in choices)
+    if not choices or unsafe or len(joined) > 255:
+        return None
+    return f'"{joined}"'
 
 
 def _allow_blank_validation(validation) -> None:
