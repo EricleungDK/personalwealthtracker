@@ -173,7 +173,7 @@ A transaction that may be reported with a suggestion but must not be written aut
 _Avoid_: Auto-write candidate
 
 **Local LLM Mode**:
-An optional on-device model-assisted categorization mode that processes minimized transaction context locally and returns suggestions that stay review-only unless Consensus and the Trust Policy grant `auto`.
+On-device model-assisted categorization (always on in `monthly`, opt-in in the per-month command) that processes minimized transaction context locally and returns suggestions that stay review-only unless Consensus and the Trust Policy grant `auto`.
 _Avoid_: Remote API mode, deterministic rule
 
 **Suggester**:
@@ -183,6 +183,10 @@ _Avoid_: LLM client, provider
 **Consensus**:
 The Suggester adapter that asks two local models per row and records each answer as a vote; the Trust Policy grants `auto` only when enough distinct models agree.
 _Avoid_: Ensemble, majority vote, confidence threshold
+
+**Hosted Judgment**:
+A category answer from a model hosted off the machine (e.g. TypeSafe Jev), sent only through `outbound_redaction`.
+_Avoid_: Remote LLM Mode, cloud suggestion
 
 **LLM Category Suggestion**:
 A model-generated candidate category for a review-only transaction, limited to an existing leaf category or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory unless Consensus grants the row `auto`.
@@ -363,6 +367,11 @@ _Avoid_: Credit card settlement, liability payment
 - The **Category Registry** is the durable source for deciding whether a category is parent, leaf, derived, or allowed to receive a **New Leaf Category Request**.
 - A **New Leaf Category Request** must provide an allowed **Parent/Section Row** and a unique **Leaf Category Row** label.
 - A reviewed second run may update the **Category Registry** with a valid **New Leaf Category Request** before planning workbook structure changes.
+- The **Trust Policy** decides one **Authority** per row; workbook cells derive from row **Authority** (ADR 0001).
+- Every category model is a **Suggester**; **Consensus** is the **Suggester** whose agreeing votes can earn `auto` under the **Trust Policy** (ADR 0002).
+- The **Exception Sheet** lists every `review` row; the **Atomic Month Commit** writes nothing until it is empty (ADR 0003).
+- A **Guidance Alias** matches after `human` **Category Memory** and before trusted `auto` **Category Memory** (ADR 0004).
+- **Hosted Judgment** is deferred and not enabled; it would be a **Suggester** adapter and needs its own ADR and opt-in before use (ADR 0005).
 - A **Confirmed Review Decision** can create or update **Category Memory**.
 - Rule: Category Memory can learn only Leaf Category Row targets that exist in the Category Registry.
 - Consensus results are learned as `auto` **Category Memory** that categorises only after two consistent committed months; before that it is a **Suggester** hint.
