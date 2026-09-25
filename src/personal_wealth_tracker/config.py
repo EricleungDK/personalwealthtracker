@@ -74,6 +74,29 @@ class LocalLLMSettings:
     include_raw_description: bool = False
 
 
+DEFAULT_NEVER_AUTO_CATEGORIES = frozenset(
+    {
+        "Rent (monthly)",
+        "Mom",
+        "Dad",
+        "House insurance Tryg (yearly, in Jan)",
+        "Liability insurance (yearly, in Apr)",
+        "Annuity K43",
+        "Annuity M12",
+        "Stock investment plan",
+        "Full-time job (net)",
+    }
+)
+
+
+@dataclass(frozen=True)
+class TrustPolicySettings:
+    auto_max_amount: Decimal = Decimal(1000)
+    min_agreement: int = 2
+    min_confidence: float = 0.85
+    never_auto_categories: frozenset[str] = DEFAULT_NEVER_AUTO_CATEGORIES
+
+
 @dataclass(frozen=True)
 class AppConfig:
     sheet_name: str
@@ -82,7 +105,6 @@ class AppConfig:
     year_header_row: int
     month_header_row: int
     statement_currency: str
-    auto_write_threshold: float
     review_threshold: float
     reject_threshold: float
     overwrite_fixed_rows: bool
@@ -97,6 +119,7 @@ class AppConfig:
     proxy_split_rules: tuple[ProxySplitRule, ...] = ()
     category_registry: CategoryRegistry = field(default_factory=CategoryRegistry)
     local_llm: LocalLLMSettings = field(default_factory=LocalLLMSettings)
+    trust_policy: TrustPolicySettings = field(default_factory=TrustPolicySettings)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -131,6 +154,7 @@ def load_config(config_dir: Path) -> AppConfig:
     thresholds = settings.get("confidence_thresholds", {})
     writer = settings.get("writer", {})
     local_llm = settings.get("local_llm", {})
+    trust_policy = settings.get("trust_policy") or {}
     category_registry = _category_registry(categories)
 
     rules = tuple(
@@ -163,7 +187,6 @@ def load_config(config_dir: Path) -> AppConfig:
         year_header_row=int(tracker.get("year_header_row", 2)),
         month_header_row=int(tracker.get("month_header_row", 3)),
         statement_currency=str(statement.get("currency", "DKK")),
-        auto_write_threshold=float(thresholds.get("auto_write", 0.85)),
         review_threshold=float(thresholds.get("review_required", 0.60)),
         reject_threshold=float(thresholds.get("reject_below", 0.60)),
         overwrite_fixed_rows=bool(writer.get("overwrite_fixed_rows", False)),
@@ -182,6 +205,17 @@ def load_config(config_dir: Path) -> AppConfig:
         recurring_rules=recurring_rules,
         proxy_split_rules=_proxy_split_rules(rules_doc, category_registry),
         local_llm=_local_llm_settings(local_llm),
+        trust_policy=TrustPolicySettings(
+            auto_max_amount=Decimal(str(trust_policy.get("auto_max_amount", "1000"))),
+            min_agreement=int(trust_policy.get("min_agreement", 2)),
+            min_confidence=float(thresholds.get("auto_write", 0.85)),
+            never_auto_categories=frozenset(
+                str(category)
+                for category in trust_policy.get(
+                    "never_auto_categories", DEFAULT_NEVER_AUTO_CATEGORIES
+                )
+            ),
+        ),
     )
 
 

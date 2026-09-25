@@ -141,6 +141,7 @@ Last updated: 2026-09-05
 | 2026-06-07 | Use the current repository as the incubation repo before splitting public and private layers. | Packaging work should start on a branch in this repo, then separate a public package/repository from private profile data only after the boundary between reusable agent, template workbook, and local personal configuration is clear. |
 | 2026-06-12 | Local LLM prompts may include prior low-confidence rule/recurring suggestion context and must ignore low-confidence category/new-leaf responses. | This gives the local model useful non-raw context for review rows while preventing weak model guesses from filling review suggestion fields. |
 | 2026-06-13 | Confirmed learned review decisions should also maintain an editable reviewed policy file for Local LLM guidance. | Deterministic Category Memory remains the authority for exact matches, while `reviewed_policy.local.md` gives the model broader private guidance without training it or granting workbook-write authority. |
+| 2026-09-25 | Per-row Authority from one Trust Policy replaces scattered review checks (issue #5, ADR 0001). | Categorizer thresholds, LLM always-review, and workbook cell scan now read `authority`; amount cap 1000 DKK and a never-auto list apply to every automatic tier. |
 
 ## Open Questions
 
@@ -359,3 +360,4 @@ These backlog items are not active tasks yet.
 
 - 2026-09-05: Prepared the accumulated Local LLM review and public-package changes for remote publication on `feature/public-package-review-workflows`, grouped into implementation and documentation commits. Full suite passed with 204 tests; diff whitespace checks passed. Real financial inputs and generated outputs remain ignored. Moved the stray root `NUL` WSL error artifact outside the repository.
 - 2026-09-25: Implemented GitHub #4 taxonomy slice: `config/categories.yaml` leaves now carry `description:`, new leaves Restaurants and Entertainment (Living expenses) and Subscriptions (Services), and `CategoryRegistry.leaf_glossary` exposes leaf → description (blank when missing) for the Suggester. Workbook layout unchanged; full suite passed with 238 tests.
+- 2026-09-25: Implemented issue #5: `trust_policy.py` decides `auto`/`review` per row; `trust_policy` settings added; All Transactions audit sheet shows `authority` and `authority_reason`.

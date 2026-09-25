@@ -6,7 +6,7 @@ from openpyxl import Workbook, load_workbook
 import pytest
 
 from personal_wealth_tracker.config import load_config
-from personal_wealth_tracker.models import LocalLLMAvailability
+from personal_wealth_tracker.models import Authority, LocalLLMAvailability
 from personal_wealth_tracker.pipeline import run_pipeline
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
@@ -469,16 +469,47 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
         assert original_sheet["C6"].value is None
         assert original_sheet["C7"].value is None
         assert copied_sheet["C5"].value == 25
-        assert copied_sheet["C6"].value == 10000
+        assert copied_sheet["C6"].value is None
         assert copied_sheet["C7"].value == 86.1
     finally:
         original.close()
         copied.close()
 
+    salary = next(
+        item
+        for item in result.categorized_transactions
+        if item.suggested_category == "Full-time job (net)"
+    )
+    assert salary.authority is Authority.review
+    assert salary.authority_reason == "Full-time job (net) is a never-auto category."
     assert result.mode == "commit"
     assert result.output_workbook_path is not None
     assert result.output_workbook_path.exists()
     assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
+
+
+def test_pipeline_commit_reads_trust_policy_thresholds_from_settings(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir, trust_policy=RAISED_TRUST_POLICY)
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        commit=True,
+    )
+
+    copied = load_workbook(result.output_workbook_path)
+    try:
+        assert copied["Net worth"]["C6"].value == 10000
+    finally:
+        copied.close()
 
 
 def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkeypatch):
@@ -517,7 +548,7 @@ def test_pipeline_review_csv_includes_skipped_derived_workbook_rows(tmp_path, mo
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir, salary_category="Income (net)")
+    _create_config(config_dir, salary_category="Income (net)", trust_policy=RAISED_TRUST_POLICY)
 
     result = run_pipeline(
         tracker_path=tracker,
@@ -1354,7 +1385,18 @@ def _create_tracker(path: Path) -> None:
     workbook.close()
 
 
-def _create_config(config_dir: Path, salary_category: str = "Full-time job (net)") -> None:
+RAISED_TRUST_POLICY = """
+trust_policy:
+  auto_max_amount: 20000
+  never_auto_categories: []
+"""
+
+
+def _create_config(
+    config_dir: Path,
+    salary_category: str = "Full-time job (net)",
+    trust_policy: str = "",
+) -> None:
     config_dir.mkdir(parents=True)
     _write(
         config_dir / "settings.yaml",
@@ -1374,7 +1416,8 @@ confidence_thresholds:
 writer:
   overwrite_fixed_rows: false
   highlight_auto_filled_cells: false
-""",
+"""
+        + trust_policy,
     )
     _write(
         config_dir / "categories.yaml",
