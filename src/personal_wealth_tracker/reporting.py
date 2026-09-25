@@ -541,6 +541,7 @@ def _write_review_workbook(
         "direction",
         "merchant_identity",
         "category",
+        "corrected_category",
         "confidence",
         "source",
         "votes",
@@ -580,6 +581,7 @@ def _write_review_workbook(
                 transaction.direction,
                 _merchant_identity(transaction),
                 item.suggested_category or "",
+                None,
                 f"{item.confidence:.2f}",
                 item.categorization_method,
                 _format_votes(item),
@@ -672,6 +674,12 @@ def _write_review_workbook(
             review_sheet.add_data_validation(validation)
             validations_by_formula[formula] = validation
         validations_by_formula[formula].add(f"{manual_category_column}{row}")
+
+    correction_validation = DataValidation(type="list", formula1=leaf_list_formula)
+    _allow_blank_validation(correction_validation)
+    audit_sheet.add_data_validation(correction_validation)
+    correction_column = get_column_letter(audit_headers.index("corrected_category") + 1)
+    correction_validation.add(f"{correction_column}2:{correction_column}1048576")
 
     if new_parent_category_options:
         option_end_row = len(new_parent_category_options) + 1

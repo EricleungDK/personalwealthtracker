@@ -249,6 +249,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "direction",
             "merchant_identity",
             "category",
+            "corrected_category",
             "confidence",
             "source",
             "votes",
@@ -262,7 +263,13 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         ]
         assert audit_sheet.max_row == 2
         assert audit_sheet["A2"].value == "tx-food"
-        assert audit_sheet["J2"].value == "rule"
+        assert audit_sheet["K2"].value == "rule"
+        assert any(
+            validation.formula1 == "'Category Options'!$G$2:$G$5"
+            and validation.allow_blank
+            and "I2" in validation.sqref
+            for validation in audit_sheet.data_validations.dataValidation
+        )
 
         options_sheet = workbook["Category Options"]
         assert [cell.value for cell in options_sheet[1]] == [

@@ -7,7 +7,7 @@ import pytest
 from personal_wealth_tracker.config import load_config
 from personal_wealth_tracker.models import Authority
 from personal_wealth_tracker.pipeline import run_pipeline
-from personal_wealth_tracker.suggester import FakeSuggester, ScriptedVote
+from personal_wealth_tracker.suggester import ConsensusSuggester, FakeSuggester, ScriptedVote
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
@@ -711,6 +711,235 @@ def test_audit_sheet_lists_auto_rows_with_source_votes_and_reason(tmp_path, monk
     assert audit_row["source"] == "local_llm_gemma"
     assert audit_row["votes"] == "Traveling (fake, 0.90)"
     assert audit_row["reason"] == "1 model votes agree."
+
+
+def test_committed_human_decision_is_auto_next_month_via_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["COFFEE HUT"], commit=True)
+    assert first.output_workbook_path is None
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "Traveling"})
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["COFFEE HUT"],
+        commit=True,
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert committed.output_workbook_path is not None
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["COFFEE HUT"])
+
+    row = next_month.categorized_transactions[0]
+    assert row.suggested_category == "Traveling"
+    assert row.categorization_method == "category_memory"
+    assert row.authority is Authority.auto
+
+
+def test_exception_sheet_learn_to_memory_no_keeps_decision_out_of_memory(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["COFFEE HUT"], commit=True)
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "Traveling"})
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "no"}, "learn_to_memory")
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["COFFEE HUT"],
+        commit=True,
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert committed.output_workbook_path is not None
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["COFFEE HUT"])
+
+    assert next_month.categorized_transactions[0].categorization_method == "unmatched"
+
+
+def test_dry_run_writes_no_category_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr",))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["COFFEE HUT"])
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "Traveling"})
+
+    result = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["COFFEE HUT"],
+        review_decisions_path=first.review_xlsx_path,
+    )
+
+    assert result.review_count == 0
+    assert not (tmp_path / "data" / "category_memory").exists()
+
+
+def test_consensus_result_is_hint_after_one_month_and_memory_after_two(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May", "Jun"))
+    _create_category_registry_config(config_dir)
+
+    def consensus():
+        votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+        return ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b"))
+
+    april = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["NOODLE BAR"],
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=consensus(),
+    )
+    assert april.output_workbook_path is not None
+    policy = tmp_path / "data" / "category_memory" / "reviewed_policy.local.md"
+    assert "NOODLE BAR" not in policy.read_text(encoding="utf-8")
+    hint_probe = FakeSuggester({})
+
+    may_dry_run = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "May",
+        ["NOODLE BAR"],
+        local_llm_suggestions=True,
+        suggester=hint_probe,
+    )
+
+    assert may_dry_run.categorized_transactions[0].categorization_method != "category_memory"
+    _, context = hint_probe.calls[0]
+    assert context.memory_neighbours("NOODLE BAR") == (("NOODLE BAR", "Traveling"),)
+
+    _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "May",
+        ["NOODLE BAR"],
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=consensus(),
+    )
+    june = _run_month(tmp_path, tracker, config_dir, "Jun", ["NOODLE BAR"])
+
+    row = june.categorized_transactions[0]
+    assert row.suggested_category == "Traveling"
+    assert row.categorization_method == "category_memory"
+
+
+def test_recommitting_same_month_does_not_trust_auto_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+    for _ in range(2):
+        _run_month(
+            tmp_path,
+            tracker,
+            config_dir,
+            "Apr",
+            ["NOODLE BAR"],
+            commit=True,
+            local_llm_suggestions=True,
+            suggester=ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b")),
+        )
+
+    may = _run_month(tmp_path, tracker, config_dir, "May", ["NOODLE BAR"])
+
+    assert may.categorized_transactions[0].categorization_method == "unmatched"
+
+
+def test_audit_correction_reverses_learned_memory_and_records_corrected_category(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+    april_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b")),
+    }
+    april = _run_month(tmp_path, tracker, config_dir, "Apr", ["NOODLE BAR"], **april_args)
+    _fill_audit_corrections(april.review_xlsx_path, {"NOODLE BAR": "Apple Cloud"})
+
+    corrected = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["NOODLE BAR"],
+        review_decisions_path=april.review_xlsx_path,
+        **april_args,
+    )
+
+    copied = load_workbook(corrected.output_workbook_path)
+    try:
+        assert copied["Net worth"]["C5"].value == 40
+        assert copied["Net worth"]["C7"].value is None
+    finally:
+        copied.close()
+    may = _run_month(tmp_path, tracker, config_dir, "May", ["NOODLE BAR"])
+    row = may.categorized_transactions[0]
+    assert row.suggested_category == "Apple Cloud"
+    assert row.categorization_method == "category_memory"
+
+
+def test_audit_correction_to_none_forgets_learned_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+
+    def commit_month(month: str, **options):
+        return _run_month(
+            tmp_path,
+            tracker,
+            config_dir,
+            month,
+            ["NOODLE BAR"],
+            commit=True,
+            local_llm_suggestions=True,
+            suggester=ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b")),
+            **options,
+        )
+
+    april = commit_month("Apr")
+    _fill_audit_corrections(april.review_xlsx_path, {"NOODLE BAR": "NONE"})
+    commit_month("Apr", review_decisions_path=april.review_xlsx_path)
+    commit_month("May")
+
+    probe = _run_month(tmp_path, tracker, config_dir, "May", ["NOODLE BAR"])
+    assert probe.categorized_transactions[0].categorization_method != "category_memory"
 
 
 def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkeypatch):
@@ -1771,3 +2000,82 @@ def _write_review_decisions(
         metadata_sheet.append([key, value])
     workbook.save(path)
     workbook.close()
+
+
+MONTH_NUMBER = {"Apr": 4, "May": 5, "Jun": 6}
+
+
+def _create_multi_month_tracker(path: Path, months: tuple[str, ...]) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    for column, month in enumerate(months, start=3):
+        sheet.cell(row=2, column=column, value=2026)
+        sheet.cell(row=3, column=column, value=month)
+    sheet["B5"] = "Apple Cloud"
+    sheet["B6"] = "Full-time job (net)"
+    sheet["B7"] = "Traveling"
+    sheet["B8"] = "Income (net)"
+    workbook.save(path)
+    workbook.close()
+
+
+def _run_month(
+    tmp_path: Path,
+    tracker: Path,
+    config_dir: Path,
+    month: str,
+    merchants: list[str],
+    **options,
+):
+    statement = tmp_path / f"statement_{month}.csv"
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        + "".join(
+            f"2026/{MONTH_NUMBER[month]:02d}/{day:02d};-40,00;900,00;DKK;{merchant};"
+            "Card purchase;1111;2222;Yes\n"
+            for day, merchant in enumerate(merchants, start=1)
+        ),
+    )
+    return run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month=month,
+        output_dir=tmp_path / "reports",
+        **options,
+    )
+
+
+def _fill_exception_sheet(
+    path: Path, decisions: dict[str, str | None], column: str = "manual_category"
+) -> None:
+    workbook = load_workbook(path)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            description = sheet.cell(row=row, column=headers["description"]).value
+            for merchant, decision in decisions.items():
+                if merchant in description:
+                    sheet.cell(row=row, column=headers[column]).value = decision
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+
+def _fill_audit_corrections(path: Path, corrections: dict[str, str]) -> None:
+    workbook = load_workbook(path)
+    try:
+        sheet = workbook["Audit"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            description = sheet.cell(row=row, column=headers["description"]).value
+            for merchant, correction in corrections.items():
+                if merchant in description:
+                    sheet.cell(row=row, column=headers["corrected_category"]).value = correction
+        workbook.save(path)
+    finally:
+        workbook.close()
