@@ -139,6 +139,28 @@ def test_category_memory_overrides_guidance_alias():
     assert result.categorization_method == "category_memory"
 
 
+def test_guidance_alias_overrides_trusted_auto_category_memory():
+    memory = CategoryMemory(
+        mappings=(
+            CategoryMemoryMapping(
+                merchant_identity="CANTEEN NORTH",
+                category="Food& Drinks (monthly)",
+                source_transaction_ids=("auto-canteen-1", "auto-canteen-2"),
+                provenance="auto",
+                committed_months=("2026-Apr", "2026-May"),
+            ),
+        )
+    )
+    config = replace(_config(), guidance_aliases={"canteen": "Lunch (monthly)"})
+
+    result = categorize_transactions(
+        [_transaction("CANTEEN NORTH", "-45.00")], config, category_memory=memory
+    )[0]
+
+    assert result.suggested_category == "Lunch (monthly)"
+    assert result.categorization_method == "guidance_alias"
+
+
 def test_keyword_rule_matches():
     result = categorize_transactions([_transaction("NETTO KOEBENHAVN", "-100.00")], _config())[0]
 

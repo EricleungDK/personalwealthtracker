@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import CategorizedTransaction
-from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month
+from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month, normalize_text
 
 REJECT_SUGGESTION = "NONE"
 
@@ -16,6 +16,7 @@ class MonthlyReviewDecision:
     manual_category: str = ""
     new_parent_category: str = ""
     new_leaf_category: str = ""
+    learn_to_memory: bool = True
 
     @property
     def rejected(self) -> bool:
@@ -42,7 +43,15 @@ def load_monthly_review_decisions(
 
         metadata = _metadata(workbook["Run Metadata"])
         _validate_metadata(metadata, year, month)
-        return _decisions(workbook["Review Required"])
+        decisions = _decisions(workbook["Review Required"])
+        if "Audit" in workbook.sheetnames:
+            for transaction_id, decision in _audit_corrections(workbook["Audit"]).items():
+                if transaction_id in decisions:
+                    raise ValueError(
+                        f"Review decision transaction_id {transaction_id!r} appears more than once."
+                    )
+                decisions[transaction_id] = decision
+        return decisions
     finally:
         workbook.close()
 
@@ -143,6 +152,7 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
     new_parent_category_column = headers.get("new_parent_category")
     new_leaf_category_column = headers.get("new_leaf_category")
     suggested_category_column = headers.get("suggested_category")
+    learn_to_memory_column = headers.get("learn_to_memory")
 
     decisions: dict[str, MonthlyReviewDecision] = {}
     for row in range(2, sheet.max_row + 1):
@@ -173,8 +183,35 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
             manual_category=manual_category,
             new_parent_category=new_parent_category,
             new_leaf_category=new_leaf_category,
+            learn_to_memory=normalize_text(
+                _optional_stripped_cell(sheet, row, learn_to_memory_column)
+            )
+            not in {"NO", "N", "FALSE", "0"},
         )
     return decisions
+
+
+def _audit_corrections(sheet) -> dict[str, MonthlyReviewDecision]:
+    """Filled `corrected_category` cells override committed auto rows; blank keeps them."""
+    headers = {
+        str(cell.value): index
+        for index, cell in enumerate(sheet[1], start=1)
+        if cell.value not in (None, "")
+    }
+    corrected_category_column = headers.get("corrected_category")
+    transaction_id_column = _required_column(headers, "transaction_id")
+    corrections: dict[str, MonthlyReviewDecision] = {}
+    for row in range(2, sheet.max_row + 1):
+        category = _optional_stripped_cell(sheet, row, corrected_category_column)
+        if not category:
+            continue
+        transaction_id = str(sheet.cell(row=row, column=transaction_id_column).value or "").strip()
+        if not transaction_id:
+            raise ValueError(f"Audit correction row {row} is missing transaction_id.")
+        corrections[transaction_id] = MonthlyReviewDecision(
+            transaction_id=transaction_id, manual_category=category
+        )
+    return corrections
 
 
 def _optional_stripped_cell(sheet, row: int, column: int | None) -> str:
