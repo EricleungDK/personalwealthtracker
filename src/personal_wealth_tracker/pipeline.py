@@ -14,7 +14,7 @@ from .review_decisions import (
     load_monthly_review_decisions,
     validate_monthly_review_decision_categories,
 )
-from .statement_adapters import import_trusted_statement
+from .statement_adapters import import_trusted_statement, infer_statement_period, newest_statement
 from .suggester import Suggester, build_suggester_context
 from .trust_policy import apply_trust_policy
 from .utils import normalize_month
@@ -176,7 +176,40 @@ def run_pipeline(
         category_registry_additions=category_registry_additions,
         local_llm_diagnostics=local_llm_diagnostics,
         statement_import_diagnostics=statement_import.diagnostics,
+        source_statement=statement_path,
     )
+
+
+def run_monthly(
+    tracker_path: Path,
+    statements_dir: Path,
+    config_dir: Path,
+    output_dir: Path,
+    category_memory_dir: Path,
+    dry_run: bool = False,
+) -> RunResult:
+    """Newest statement, inferred month, filled Exception Sheet reused; commits unless dry-run."""
+    statement_path = newest_statement(statements_dir)
+    year, month = infer_statement_period(
+        statement_path, load_config(config_dir).statement_currency
+    )
+    exception_sheet = exception_sheet_path(output_dir, year, month)
+    return run_pipeline(
+        tracker_path=tracker_path,
+        statement_path=statement_path,
+        config_dir=config_dir,
+        year=year,
+        month=month,
+        output_dir=output_dir,
+        commit=not dry_run,
+        category_memory_dir=category_memory_dir,
+        review_decisions_path=exception_sheet if exception_sheet.exists() else None,
+        local_llm_suggestions=True,
+    )
+
+
+def exception_sheet_path(output_dir: Path, year: int, month: str) -> Path:
+    return output_dir / f"review_required_{year}_{month.lower()}.xlsx"
 
 
 def _category_registry_additions(review_decisions) -> tuple[CategoryRegistryAddition, ...]:
@@ -228,7 +261,7 @@ def _review_xlsx_output_path(
     if review_decisions_path is None:
         return None
 
-    default_path = output_dir / f"review_required_{year}_{month.lower()}.xlsx"
+    default_path = exception_sheet_path(output_dir, year, month)
     if review_decisions_path.resolve() != default_path.resolve():
         return None
-    return output_dir / f"review_required_{year}_{month.lower()}_after_decisions.xlsx"
+    return default_path.with_name(f"{default_path.stem}_after_decisions.xlsx")

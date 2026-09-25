@@ -90,6 +90,15 @@ uv run wealth-tracker template-workbook customize \
 
 Unsupported formula changes, arbitrary layout edits, missing metadata, and unsupported template versions are rejected instead of repaired automatically.
 
+## Monthly Command
+
+```bash
+uv run wealth-tracker monthly
+uv run wealth-tracker monthly --dry-run
+```
+
+`monthly` takes the newest CSV in `data/raw_statements/`, infers the month from its row dates, and runs categorisation, the two local model voters and the Trust Policy against `Net Worth Tracker.xlsx`. With zero rows in review it commits the month to a copied workbook; otherwise it writes the Exception Sheet `reports/review_required_<year>_<mon>.xlsx` and stops. Fill that sheet (blank accepts, `NONE` rejects) and re-run `monthly` to commit. The summary prints auto rows, rows in review, pending amount and the next action. `--dry-run` writes the Exception Sheet and Audit preview but never the workbook, backup or Category Memory. Without a running local model the run still completes; unmatched rows become exceptions. Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-dir` and `--category-memory-dir`.
+
 ## CSV-First Dry Run
 
 For the full monthly operator checklist, see [docs/monthly_workflow.md](docs/monthly_workflow.md).

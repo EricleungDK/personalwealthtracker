@@ -11,10 +11,12 @@ from .importer_profiles import (
     learn_importer_profile,
     reset_importer_profile,
 )
-from .pipeline import run_pipeline
+from .models import Authority, RunResult
+from .pipeline import exception_sheet_path, run_monthly, run_pipeline
 from .setup_workspace import initialize_local_workspace
 from .statement_import_assistant import run_statement_import_assistant
 from .template_workbook import create_template_workbook, customize_template_workbook
+from .workbook import rows_in_review
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +62,43 @@ def build_parser() -> argparse.ArgumentParser:
             "Write the month to a copied workbook when no rows remain in review. "
             "Dry-run is the default."
         ),
+    )
+    return parser
+
+
+def build_monthly_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Categorise the newest statement export for its month; commit when no rows "
+            "remain in review, otherwise write the Exception Sheet."
+        )
+    )
+    parser.add_argument(
+        "--tracker",
+        type=Path,
+        default=Path("Net Worth Tracker.xlsx"),
+        help="Path to the tracker workbook.",
+    )
+    parser.add_argument(
+        "--statements-dir",
+        type=Path,
+        default=Path("data/raw_statements"),
+        help="Raw statements folder; the newest CSV is used.",
+    )
+    parser.add_argument("--config-dir", type=Path, default=Path("config"), help="Config directory.")
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("reports"), help="Report output directory."
+    )
+    parser.add_argument(
+        "--category-memory-dir",
+        type=Path,
+        default=Path("data/category_memory"),
+        help="Private generated category memory directory.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the Exception Sheet and Audit without memory or workbook writes.",
     )
     return parser
 
@@ -308,6 +347,23 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
+    if argv and argv[0] == "monthly":
+        args = build_monthly_parser().parse_args(argv[1:])
+        try:
+            result = run_monthly(
+                tracker_path=args.tracker,
+                statements_dir=args.statements_dir,
+                config_dir=args.config_dir,
+                output_dir=args.output_dir,
+                category_memory_dir=args.category_memory_dir,
+                dry_run=args.dry_run,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        _print_monthly_summary(result, args.output_dir)
+        return 0
+
     if argv and argv[0] == "learn-category-memory":
         args = build_category_memory_parser().parse_args(argv[1:])
         try:
@@ -460,6 +516,34 @@ def main(argv: list[str] | None = None) -> int:
     if result.output_workbook_path:
         print(f"Output workbook: {result.output_workbook_path}")
     return 0
+
+
+def _print_monthly_summary(result: RunResult, output_dir: Path) -> None:
+    review_rows = rows_in_review(result.categorized_transactions, result.updates)
+    auto_count = sum(
+        item.authority is Authority.auto for item in result.categorized_transactions
+    )
+    pending_amount = sum(abs(item.transaction.amount) for item in review_rows)
+    currency = result.transactions[0].currency if result.transactions else ""
+    exception_sheet = exception_sheet_path(output_dir, result.target_year, result.target_month)
+    print(f"Mode: {result.mode}")
+    print(f"Statement: {result.source_statement}")
+    print(f"Month: {result.target_month} {result.target_year}")
+    print(f"Auto rows: {auto_count}")
+    print(f"Rows in review: {len(review_rows)}")
+    print(f"Pending amount: {pending_amount:.2f} {currency}".rstrip())
+    print(f"Report: {result.report_path}")
+    print(f"Exception sheet: {exception_sheet}")
+    if result.output_workbook_path:
+        print(f"Output workbook: {result.output_workbook_path}")
+        print("Next action: none; month committed.")
+    elif review_rows:
+        print(
+            f"Next action: fill {exception_sheet} (blank accepts, NONE rejects), "
+            "then re-run `wealth-tracker monthly`."
+        )
+    else:
+        print("Next action: re-run `wealth-tracker monthly` without --dry-run to commit.")
 
 
 def _parse_label_renames(raw_renames: list[str]) -> dict[str, str]:
