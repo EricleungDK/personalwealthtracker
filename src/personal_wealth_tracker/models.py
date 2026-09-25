@@ -147,3 +147,4 @@ class RunResult:
     local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)
     statement_import_diagnostics: tuple[StatementImportDiagnostic, ...] = ()
     source_statement: Path | None = None
+    exception_sheet_unreviewed: bool = False
