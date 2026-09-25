@@ -188,8 +188,9 @@ writer:
 local_llm:
   provider: "ollama"
   endpoint: "http://localhost:11434"
-  model: "gemma4:12b"
-  fallback_model: "gemma4:e4b"
+  model: "gemma4:26b"
+  second_model: "gemma4:12b"
+  fallback_model: "qwen3:14b"
   timeout_seconds: 60
   include_raw_description: false
 """

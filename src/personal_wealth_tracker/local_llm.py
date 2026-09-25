@@ -11,6 +11,7 @@ from .models import CategorizedTransaction, LocalLLMDiagnostics, Vote
 from .suggester import (
     INVALID_RESPONSE,
     PROVIDER_FAILURE,
+    ConsensusSuggester,
     Suggester,
     SuggesterContext,
     Suggestion,
@@ -137,6 +138,16 @@ class OllamaSuggester:
             },
             settings.timeout_seconds,
         )
+
+
+def local_consensus(
+    settings: LocalLLMSettings, transport: Transport = http_json_transport
+) -> ConsensusSuggester:
+    """Primary and second local model as the two Consensus voters, sharing the fallback."""
+    return ConsensusSuggester(
+        OllamaSuggester(settings, transport),
+        OllamaSuggester(replace(settings, model=settings.second_model), transport),
+    )
 
 
 def _system_prompt(context: SuggesterContext) -> str:
@@ -273,14 +284,18 @@ def apply_suggestions(
                 warnings.append(suggestion.evidence)
             continue
         counts["attempted"] += 1
-        if suggestion.source not in answering_models:
-            answering_models.append(suggestion.source)
-        vote = Vote(suggestion.category, suggestion.confidence, suggestion.source)
+        votes = suggestion.votes or (
+            Vote(suggestion.category, suggestion.confidence, suggestion.source),
+        )
+        for vote in votes:
+            if vote.source not in answering_models:
+                answering_models.append(vote.source)
+        top_confidence = max(vote.confidence for vote in votes)
         if suggestion.category is None:
             counts["none"] += 1
             updated[index] = replace(
                 item,
-                votes=(vote,),
+                votes=votes,
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma_no_suggestion",
                 reason=(
@@ -288,12 +303,12 @@ def apply_suggestions(
                     f"{_original_classification(item)}"
                 ),
             )
-        elif suggestion.confidence < config.review_threshold:
+        elif top_confidence < config.review_threshold:
             counts["low_confidence"] += 1
             warnings.append(
                 "Local LLM response for "
                 f"{item.transaction.transaction_id} was ignored: confidence "
-                f"{suggestion.confidence:.2f} is below the review threshold "
+                f"{top_confidence:.2f} is below the review threshold "
                 f"{config.review_threshold:.2f}."
             )
             continue
@@ -301,7 +316,7 @@ def apply_suggestions(
             counts["category"] += 1
             updated[index] = replace(
                 item,
-                votes=(vote,),
+                votes=votes,
                 suggested_category=suggestion.category,
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma",
@@ -310,11 +325,15 @@ def apply_suggestions(
         updated[index] = stamp_authority(updated[index], config)
 
     fallback = settings.fallback_model
-    if fallback and fallback != settings.model and fallback in answering_models:
+    configured = [
+        model for model in dict.fromkeys((settings.model, settings.second_model)) if model
+    ]
+    if fallback and fallback not in configured and fallback in answering_models:
+        unavailable = [model for model in configured if model not in answering_models]
         warnings.insert(
             0,
-            f"Configured local LLM model {settings.model!r} was unavailable; "
-            f"used fallback {fallback!r}.",
+            f"Configured local LLM model {', '.join(map(repr, unavailable or configured))} "
+            f"was unavailable; used fallback {fallback!r}.",
         )
     diagnostics = _diagnostics(
         settings,
@@ -376,6 +395,7 @@ def _diagnostics(
         provider=config.provider,
         endpoint=config.endpoint,
         model=config.model,
+        second_model=config.second_model,
         fallback_model=config.fallback_model,
         active_model=active_model,
         eligible_count=eligible_count,
