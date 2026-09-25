@@ -358,3 +358,4 @@ These backlog items are not active tasks yet.
 - 2026-06-07: Verified the completed package PRD slice set with `PYTHONPATH=/tmp/pwt-deps:src python3 -m pytest`, which passed with 198 tests.
 
 - 2026-09-05: Prepared the accumulated Local LLM review and public-package changes for remote publication on `feature/public-package-review-workflows`, grouped into implementation and documentation commits. Full suite passed with 204 tests; diff whitespace checks passed. Real financial inputs and generated outputs remain ignored. Moved the stray root `NUL` WSL error artifact outside the repository.
+- 2026-09-25: Implemented GitHub #4 taxonomy slice: `config/categories.yaml` leaves now carry `description:`, new leaves Restaurants and Entertainment (Living expenses) and Subscriptions (Services), and `CategoryRegistry.leaf_glossary` exposes leaf → description (blank when missing) for the Suggester. Workbook layout unchanged; full suite passed with 238 tests.
