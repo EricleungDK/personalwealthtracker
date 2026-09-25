@@ -359,12 +359,15 @@ def test_project_config_describes_every_leaf_category():
     assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
 
 
-def test_project_config_adds_restaurants_entertainment_and_subscriptions_leaves():
+def test_project_config_adds_restaurants_entertainment_and_no_generic_subscriptions_leaf():
     config = load_config(Path("config"))
     registry = config.category_registry
 
-    for leaf in ("Restaurants", "Entertainment", "Subscriptions"):
+    for leaf in ("Restaurants", "Entertainment"):
         assert registry.is_leaf_category(leaf)
+    assert not registry.is_leaf_category("Subscriptions")
+    assert registry.allows_new_leaf_children("Services")
+    assert "Disney+" in registry.children_by_parent["Services"]
     assert "Restaurants" in registry.children_by_parent["Living expenses"]
     assert "Food& Drinks (monthly)" in registry.children_by_parent["Living expenses"]
 

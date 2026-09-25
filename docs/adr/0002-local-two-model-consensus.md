@@ -26,6 +26,10 @@ Trust Policy (ADR 0001).
   `never_auto_categories`.
 - Otherwise the row is `review`, suggesting the primary model's leaf (else
   the second's) with the other answers as alternatives.
+- A voter may instead propose a new `<Service> subscription` leaf under
+  Services (issue #14). An existing leaf beats a proposal; proposals with the
+  same normalised name agree, but a proposal is always `review` and becomes a
+  new leaf only when the operator accepts it on the Exception Sheet.
 - Defaults: `model` `gemma4:26b`, `second_model` `gemma4:12b`,
   `fallback_model` `qwen3:14b`. The fallback is a different model so a
   missing voter cannot be replaced by the other voter's model; agreement
