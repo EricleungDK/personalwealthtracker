@@ -165,15 +165,19 @@ A transaction that may be reported with a suggestion but must not be written aut
 _Avoid_: Auto-write candidate
 
 **Local LLM Mode**:
-An optional on-device model-assisted categorization mode that processes minimized transaction context locally and returns review-only suggestions.
-_Avoid_: Remote API mode, deterministic rule, auto-write authority
+An optional on-device model-assisted categorization mode that processes minimized transaction context locally and returns suggestions that stay review-only unless Consensus and the Trust Policy grant `auto`.
+_Avoid_: Remote API mode, deterministic rule
 
 **Suggester**:
-The port every category model sits behind: `suggest(rows, context) -> suggestions`, with Ollama and Fake adapters.
+The port every category model sits behind: `suggest(rows, context) -> suggestions`, with Ollama, Fake and Consensus adapters.
 _Avoid_: LLM client, provider
 
+**Consensus**:
+The Suggester adapter that asks two local models per row and records each answer as a vote; the Trust Policy grants `auto` only when enough distinct models agree.
+_Avoid_: Ensemble, majority vote, confidence threshold
+
 **LLM Category Suggestion**:
-A model-generated candidate category for a review-only transaction, limited to an existing leaf category or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory.
+A model-generated candidate category for a review-only transaction, limited to an existing leaf category or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory unless Consensus grants the row `auto`.
 _Avoid_: Deterministic Category Match, Confirmed Review Decision, automatic category
 
 **Allowed Category Set**:

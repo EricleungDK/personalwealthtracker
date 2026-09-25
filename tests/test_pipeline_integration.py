@@ -941,6 +941,7 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     report = result.report_path.read_text(encoding="utf-8")
     assert "## Local LLM Mode" in report
     assert "- Status: enabled" in report
+    assert "- Second model: gemma4:12b" in report
     assert "- Eligible rows: 1" in report
     assert "- Provider calls attempted: 1" in report
     assert "- Existing-leaf suggestions: 1" in report
@@ -949,6 +950,7 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     audit = result.audit_path.read_text(encoding="utf-8")
     assert '"record_type": "local_llm_summary"' in audit
     assert '"existing_leaf_suggestions": 1' in audit
+    assert '"second_model": "gemma4:12b"' in audit
     assert '"categorization_method": "local_llm_gemma"' in audit
 
     workbook = load_workbook(result.review_xlsx_path, data_only=True)
