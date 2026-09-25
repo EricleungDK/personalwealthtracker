@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import date
 
 from .categorizer import categorize_transactions
 from .category_memory import learn_committed_month, load_category_memory, load_reviewed_policy
@@ -26,22 +25,6 @@ from .workbook import (
     rows_in_review,
     workbook_category_options,
 )
-
-
-MONTH_NUMBERS = {
-    "Jan": 1,
-    "Feb": 2,
-    "Mar": 3,
-    "Apr": 4,
-    "May": 5,
-    "Jun": 6,
-    "Jul": 7,
-    "Aug": 8,
-    "Sep": 9,
-    "Oct": 10,
-    "Nov": 11,
-    "Dec": 12,
-}
 
 
 def run_pipeline(
@@ -239,29 +222,6 @@ def _category_registry_additions(review_decisions) -> tuple[CategoryRegistryAddi
         )
         for (parent_category, leaf_category), transaction_ids in additions_by_category.items()
     )
-
-
-def _validate_target_period(transactions, year: int, month: str) -> None:
-    month = normalize_month(month)
-    start, end = _target_period(year, month)
-    out_of_period = [
-        transaction for transaction in transactions if not (start <= transaction.date < end)
-    ]
-    if not out_of_period:
-        return
-    dates = [transaction.date for transaction in out_of_period]
-    raise ValueError(
-        f"Statement contains {len(out_of_period)} transaction(s) outside target period "
-        f"{month} {year}: {min(dates).isoformat()} to {max(dates).isoformat()}."
-    )
-
-
-def _target_period(year: int, month: str) -> tuple[date, date]:
-    month_number = MONTH_NUMBERS[month]
-    start = date(year, month_number, 1)
-    if month_number == 12:
-        return start, date(year + 1, 1, 1)
-    return start, date(year, month_number + 1, 1)
 
 
 def _review_xlsx_output_path(

@@ -8,7 +8,7 @@ from personal_wealth_tracker.category_memory import CategoryMemory
 from personal_wealth_tracker.config import AppConfig, LocalLLMSettings
 from personal_wealth_tracker.local_llm import OllamaSuggester
 from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction
-from personal_wealth_tracker.pipeline import _validate_target_period, run_pipeline
+from personal_wealth_tracker.pipeline import run_pipeline
 
 
 def _transaction(transaction_date: date) -> Transaction:
@@ -21,19 +21,6 @@ def _transaction(transaction_date: date) -> Transaction:
         currency="DKK",
         direction="expense",
     )
-
-
-def test_validate_target_period_accepts_matching_month():
-    _validate_target_period([_transaction(date(2026, 4, 30))], 2026, "Apr")
-
-
-def test_validate_target_period_rejects_out_of_period_transactions():
-    with pytest.raises(ValueError, match="outside target period Apr 2026"):
-        _validate_target_period(
-            [_transaction(date(2026, 4, 30)), _transaction(date(2026, 5, 1))],
-            2026,
-            "Apr",
-        )
 
 
 def test_pipeline_rejects_tracker_statement_currency_mismatch(monkeypatch, tmp_path):
