@@ -339,7 +339,9 @@ def _positive_decimal(value: Any, label: str) -> Decimal:
 def register_category_registry_additions(
     config_dir: Path,
     additions: tuple[CategoryRegistryAddition, ...],
+    write: bool = True,
 ) -> tuple[CategoryRegistryAddition, ...]:
+    """Validate new leaves against the registry; append them to categories.yaml when `write`."""
     if not additions:
         return ()
 
@@ -347,6 +349,8 @@ def register_category_registry_additions(
     doc = _load_yaml(path)
     registry = _category_registry(doc)
     _validate_category_registry_additions(registry, additions)
+    if not write:
+        return additions
 
     if "category_registry" not in doc:
         raise ValueError("New leaf category registration requires category_registry config.")

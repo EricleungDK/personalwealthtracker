@@ -56,6 +56,7 @@ def run_pipeline(
     review_decisions_path: Path | None = None,
     local_llm_suggestions: bool = False,
     suggester: Suggester | None = None,
+    register_new_leaves: bool = True,
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -89,6 +90,7 @@ def run_pipeline(
             category_registry_additions = register_category_registry_additions(
                 config_dir,
                 category_registry_additions,
+                write=register_new_leaves,
             )
             config = load_config(config_dir)
         valid_categories = {
@@ -205,6 +207,7 @@ def run_monthly(
         category_memory_dir=category_memory_dir,
         review_decisions_path=exception_sheet if exception_sheet.exists() else None,
         local_llm_suggestions=True,
+        register_new_leaves=not dry_run,
     )
 
 
