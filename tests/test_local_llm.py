@@ -3,10 +3,17 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry, LocalLLMSettings
-from personal_wealth_tracker.local_llm import OllamaSuggester, apply_suggestions
+from personal_wealth_tracker.local_llm import OllamaSuggester, apply_suggestions, local_consensus
 from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction, Vote
-from personal_wealth_tracker.suggester import FakeSuggester, ScriptedVote, SuggesterContext
+from personal_wealth_tracker.suggester import (
+    ConsensusSuggester,
+    FakeSuggester,
+    ScriptedVote,
+    SuggesterContext,
+)
 
 GLOSSARY = {"Apple Cloud": "iCloud storage subscription.", "Traveling": "Trains, flights, hotels."}
 
@@ -261,6 +268,25 @@ def test_fallback_model_answers_are_reported_as_a_warning():
     )
 
 
+def test_fallback_warning_names_the_consensus_voter_that_was_unavailable():
+    settings = LocalLLMSettings()
+    transport = _Transport(
+        tags=["gemma4:26b", "qwen3:14b"],
+        chat=[_chat_reply("Train.", "Traveling", 0.9), _chat_reply("Rail.", "Traveling", 0.8)],
+    )
+
+    _, diagnostics = apply_suggestions(
+        [_categorized("tx1")],
+        replace(_config(), local_llm=settings),
+        local_consensus(settings, transport=transport),
+        _context(),
+    )
+
+    assert diagnostics.warnings == (
+        "Configured local LLM model 'gemma4:12b' was unavailable; used fallback 'qwen3:14b'.",
+    )
+
+
 def test_fallback_warning_survives_mixed_primary_and_fallback_answers():
     transport = _Transport(
         tags=["gemma4:12b", "gemma4:e4b"],
@@ -339,6 +365,157 @@ def test_suggestion_reaches_auto_when_policy_agreement_is_met():
     assert categorized[0].authority_reason == "1 model votes agree."
 
 
+def test_consensus_of_two_agreeing_voters_grants_auto():
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        _consensus(
+            {"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.9, "Train ticket.")},
+            {"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.8, "Travel merchant.")},
+        ),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == "Traveling"
+    assert categorized[0].votes == (
+        Vote(category="Traveling", confidence=0.9, source="gemma4:26b"),
+        Vote(category="Traveling", confidence=0.8, source="gemma4:12b"),
+    )
+    assert categorized[0].authority is Authority.auto
+    assert categorized[0].authority_reason == "2 model votes agree."
+
+
+def test_consensus_is_kept_when_any_voter_clears_the_review_threshold():
+    categorized, diagnostics = apply_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        _consensus(
+            {"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.5)},
+            {"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.9)},
+        ),
+        _context(),
+    )
+
+    assert categorized[0].authority is Authority.auto
+    assert diagnostics.low_confidence_response_count == 0
+
+
+@pytest.mark.parametrize(
+    ("primary", "second", "category", "reason"),
+    [
+        (
+            ScriptedVote("Traveling", 0.9),
+            ScriptedVote("Apple Cloud", 0.8),
+            "Traveling",
+            "Alternatives: Apple Cloud.",
+        ),
+        (ScriptedVote(None, 0.9), ScriptedVote("Apple Cloud", 0.8), "Apple Cloud", "Local model"),
+        (ScriptedVote("Groceries", 0.9), ScriptedVote("Traveling", 0.8), "Traveling", "Local model"),
+        (ScriptedVote("Groceries", 0.9), ScriptedVote("Groceries", 0.8), None, "answered NONE"),
+    ],
+)
+def test_consensus_without_two_matching_leaf_votes_goes_to_review(
+    primary, second, category, reason
+):
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        _consensus({"UNKNOWN TRAVEL": primary}, {"UNKNOWN TRAVEL": second}),
+        _context(),
+    )
+
+    assert categorized[0].suggested_category == category
+    assert reason in categorized[0].reason
+    assert categorized[0].authority is Authority.review
+
+
+def test_consensus_keeps_primary_vote_when_second_voter_skips_the_row():
+    class _Silent:
+        def suggest(self, rows, context):
+            return []
+
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        ConsensusSuggester(
+            FakeSuggester({"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.9)}, source="gemma4:26b"),
+            _Silent(),
+        ),
+        _context(),
+    )
+
+    assert categorized[0].votes == (
+        Vote(category="Traveling", confidence=0.9, source="gemma4:26b"),
+    )
+    assert categorized[0].authority is Authority.review
+
+
+@pytest.mark.parametrize(
+    ("amount", "never_auto", "reason"),
+    [
+        ("-1000.01", frozenset(), "above the auto cap"),
+        ("-42.50", frozenset({"Traveling"}), "never-auto"),
+    ],
+)
+def test_agreeing_consensus_over_cap_or_never_auto_goes_to_review(amount, never_auto, reason):
+    row = _categorized("tx1", merchant="UNKNOWN TRAVEL")
+    row = replace(row, transaction=replace(row.transaction, amount=Decimal(amount)))
+    config = replace(
+        _config(), trust_policy=replace(_config().trust_policy, never_auto_categories=never_auto)
+    )
+
+    categorized, _ = apply_suggestions(
+        [row],
+        config,
+        _consensus(
+            {"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.9)},
+            {"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.8)},
+        ),
+        _context(),
+    )
+
+    assert categorized[0].authority is Authority.review
+    assert reason in categorized[0].authority_reason
+
+
+def test_consensus_counts_only_answering_voters():
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        _config(),
+        ConsensusSuggester(
+            OllamaSuggester(_settings(), transport=_Transport(chat=[], tags=[])),
+            FakeSuggester({"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.9)}, source="gemma4:12b"),
+        ),
+        _context(),
+    )
+
+    assert categorized[0].votes == (
+        Vote(category="Traveling", confidence=0.9, source="gemma4:12b"),
+    )
+    assert categorized[0].authority is Authority.review
+    assert categorized[0].authority_reason == "1 of 2 required model votes agree."
+
+
+def test_default_consensus_asks_primary_then_second_local_model():
+    transport = _Transport(
+        tags=["gemma4:26b", "gemma4:12b", "qwen3:14b"],
+        chat=[_chat_reply("Train.", "Traveling", 0.9), _chat_reply("Rail.", "Traveling", 0.8)],
+    )
+
+    (suggestion,) = local_consensus(LocalLLMSettings(), transport=transport).suggest(
+        [_categorized("tx1")], _context()
+    )
+
+    assert [payload["model"] for _, payload, _ in transport.requests if payload] == [
+        "gemma4:26b",
+        "gemma4:12b",
+    ]
+    assert suggestion.votes == (
+        Vote(category="Traveling", confidence=0.9, source="gemma4:26b"),
+        Vote(category="Traveling", confidence=0.8, source="gemma4:12b"),
+    )
+
+
 def test_vote_source_is_the_model_that_answered():
     transport = _Transport(
         tags=["gemma4:12b", "gemma4:e4b"],
@@ -413,8 +590,15 @@ def test_suggester_skips_authoritative_matches_and_proxy_split_lines():
     assert suggester.calls[0][0] == ()
 
 
+def _consensus(primary_votes, second_votes) -> ConsensusSuggester:
+    return ConsensusSuggester(
+        FakeSuggester(primary_votes, source="gemma4:26b"),
+        FakeSuggester(second_votes, source="gemma4:12b"),
+    )
+
+
 def _settings(**overrides) -> LocalLLMSettings:
-    return LocalLLMSettings(**overrides)
+    return LocalLLMSettings(**{"model": "gemma4:12b", "fallback_model": "gemma4:e4b", **overrides})
 
 
 def _context(**overrides) -> SuggesterContext:
@@ -473,6 +657,7 @@ def _config() -> AppConfig:
         historical_mappings={},
         rules=(),
         fixed_rows=frozenset(),
+        local_llm=_settings(),
         category_registry=CategoryRegistry(
             leaf_categories=("Apple Cloud", "Traveling"),
             parent_categories=("Living expenses", "Income (net)"),

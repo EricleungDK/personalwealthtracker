@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from typing import Protocol
 
 from .category_memory import CategoryMemory, normalize_merchant_identity
 from .config import AppConfig
-from .models import CategorizedTransaction
+from .models import CategorizedTransaction, Vote
 
 MEMORY_NEIGHBOUR_LIMIT = 5
 INVALID_RESPONSE = "invalid_response"
@@ -25,6 +25,7 @@ class Suggestion:
     evidence: str
     source: str
     failure: str | None = None
+    votes: tuple[Vote, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,3 +106,52 @@ class FakeSuggester:
                 )
             )
         return suggestions
+
+
+class ConsensusSuggester:
+    """Asks two Suggesters per row; each answering voter becomes a vote for the Trust Policy."""
+
+    def __init__(self, primary: Suggester, second: Suggester):
+        self.primary = primary
+        self.second = second
+
+    def suggest(
+        self, rows: Sequence[CategorizedTransaction], context: SuggesterContext
+    ) -> list[Suggestion]:
+        primaries = self.primary.suggest(rows, context)
+        second_by_id = {
+            suggestion.transaction_id: suggestion
+            for suggestion in self.second.suggest(rows, context)
+        }
+        leaves = frozenset(context.leaf_glossary)
+        return [
+            _combine(primary, second_by_id.get(primary.transaction_id), leaves)
+            for primary in primaries
+        ]
+
+
+def _combine(
+    primary: Suggestion, second: Suggestion | None, leaves: frozenset[str]
+) -> Suggestion:
+    """Best leaf answer (primary first) carrying the answering votes; off-leaf is NONE."""
+    answers = [
+        suggestion if suggestion.category in leaves else replace(suggestion, category=None)
+        for suggestion in (primary, second)
+        if suggestion and not suggestion.failure
+    ]
+    if not answers:
+        return primary
+    best = next((answer for answer in answers if answer.category), answers[0])
+    alternatives = dict.fromkeys(
+        category
+        for answer in answers
+        for category in (answer.category, *answer.alternatives)
+        if category in leaves and category != best.category
+    )
+    return replace(
+        best,
+        alternatives=tuple(alternatives),
+        votes=tuple(
+            Vote(answer.category, answer.confidence, answer.source) for answer in answers
+        ),
+    )

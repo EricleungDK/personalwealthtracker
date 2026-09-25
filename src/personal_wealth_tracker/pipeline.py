@@ -6,7 +6,7 @@ from datetime import date
 from .categorizer import categorize_transactions
 from .category_memory import load_category_memory, load_reviewed_policy
 from .config import load_config, register_category_registry_additions
-from .local_llm import OllamaSuggester, apply_suggestions, disabled_diagnostics
+from .local_llm import apply_suggestions, disabled_diagnostics, local_consensus
 from .models import CategoryRegistryAddition, RunResult
 from .reporting import write_outputs
 from .review_decisions import (
@@ -104,7 +104,7 @@ def run_pipeline(
         categorized, local_llm_diagnostics = apply_suggestions(
             categorized,
             config,
-            suggester or OllamaSuggester(config.local_llm),
+            suggester or local_consensus(config.local_llm),
             build_suggester_context(
                 config,
                 category_memory,

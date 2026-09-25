@@ -109,17 +109,18 @@ Future Local LLM Mode should reuse the existing suggestion fields rather than wi
 
 ## Local LLM Suggestion Contract
 
-Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. Adapters: `OllamaSuggester` (`local_llm.py`) and `FakeSuggester` (scripted votes for tests). Each suggestion carries:
+Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. Adapters: `OllamaSuggester` (`local_llm.py`), `FakeSuggester` (scripted votes for tests), and `ConsensusSuggester` (two Suggesters; `local_consensus(settings)` wires `model` and `second_model`). Each suggestion carries:
 
 - `transaction_id`: row the suggestion is for.
 - `category`: an existing YAML Leaf Category Row, or NONE (no suggestion).
-- `confidence`: `0.0` to `1.0`. Category answers below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
+- `confidence`: `0.0` to `1.0`. Category answers whose highest vote is below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
 - `alternatives`: other leaves the model considered; enum-constrained in the schema, non-leaf values dropped.
 - `evidence`: short review-facing reason, used in the `reason` field.
 - `source`: model that answered.
 - `failure`: blank, `invalid_response`, or `provider_failure`.
+- `votes`: Consensus only; one `Vote` per answering voter. Off-leaf answers count as NONE; the suggestion is the primary voter's leaf, else the second's, and other voters' leaves join `alternatives`.
 
-Each answered suggestion becomes one `Vote` (category, confidence, source) on the row, and the Trust Policy re-stamps the row's authority. Failed and low-confidence suggestions leave the row unchanged.
+Each answered suggestion becomes its `votes` (or one `Vote` of category, confidence, source) on the row. Agreement counts distinct vote sources, so one model voting twice is one voter, and the Trust Policy re-stamps the row's authority. Failed and low-confidence suggestions leave the row unchanged.
 
 The Ollama adapter calls `/api/chat` with a system message holding the glossary, a JSON schema `format` whose `category` is an enum of leaves plus `NONE` and whose `reason` precedes `category`, `think: false`, temperature 0, `keep_alive`, and a 180-second cold-start timeout. If the configured model is not installed it uses the installed fallback model.
 
