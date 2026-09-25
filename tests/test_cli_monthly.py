@@ -126,6 +126,38 @@ def test_monthly_dry_run_previews_exception_and_audit_without_memory_or_workbook
         tracker.close()
 
 
+def test_monthly_dry_run_previews_new_leaf_request_without_writing_category_registry(
+    tmp_path, monkeypatch, capsys
+):
+    _workspace(tmp_path, monkeypatch)
+    _statement(
+        tmp_path,
+        "april.csv",
+        "2026/04/01;-42,50;957,50;DKK;PET SHOP;Card purchase;1;2;Yes\n",
+    )
+    _use_suggester(monkeypatch, FakeSuggester({}))
+    assert main(["monthly", "--dry-run"]) == 0
+    exception_sheet = tmp_path / "reports" / "review_required_2026_apr.xlsx"
+    workbook = load_workbook(exception_sheet)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        sheet.cell(row=2, column=headers["new_parent_category"]).value = "Living expenses"
+        sheet.cell(row=2, column=headers["new_leaf_category"]).value = "Pet Supplies"
+        workbook.save(exception_sheet)
+    finally:
+        workbook.close()
+    categories_yaml = tmp_path / "config" / "categories.yaml"
+    registry_before = categories_yaml.read_text(encoding="utf-8")
+    capsys.readouterr()
+
+    assert main(["monthly", "--dry-run"]) == 0
+
+    assert categories_yaml.read_text(encoding="utf-8") == registry_before
+    report = (tmp_path / "reports" / "report_2026_apr.md").read_text(encoding="utf-8")
+    assert "Pet Supplies under Living expenses" in report
+
+
 def test_monthly_without_local_model_completes_with_unmatched_rows_as_exceptions(
     tmp_path, monkeypatch, capsys
 ):
@@ -254,6 +286,7 @@ writer:
 category_registry:
   - label: "Living expenses"
     type: "parent"
+    allow_new_children: true
     children:
       - "Apple Cloud"
       - "Traveling"
