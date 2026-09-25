@@ -58,6 +58,7 @@ def build_suggester_context(
     }
     return SuggesterContext(
         leaf_glossary=dict(glossary),
+        guidance_aliases=dict(config.guidance_aliases),
         memory_examples=tuple(
             (mapping.merchant_identity, mapping.category) for mapping in memory.mappings
         ),

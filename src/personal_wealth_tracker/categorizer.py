@@ -236,7 +236,16 @@ def _categorize(
                 "Confirmed category memory match.",
             )
 
-    historical = _match_historical(normalized_description, config.historical_mappings)
+    guidance_alias = _match_pattern(normalized_description, config.guidance_aliases)
+    if guidance_alias:
+        reason = (
+            "Refund matched guidance alias; nets against category in reporting month."
+            if _is_refund_like(transaction, normalized_description)
+            else "Guidance alias match."
+        )
+        return _result(transaction, guidance_alias, 0.97, "guidance_alias", reason)
+
+    historical = _match_pattern(normalized_description, config.historical_mappings)
     if historical:
         reason = (
             "Refund matched historical mapping; nets against category in reporting month."
@@ -295,7 +304,7 @@ def _categorize(
     )
 
 
-def _match_historical(description: str, mappings: dict[str, str]) -> str | None:
+def _match_pattern(description: str, mappings: dict[str, str]) -> str | None:
     for pattern, category in mappings.items():
         if normalize_text(pattern) in description:
             return category

@@ -83,6 +83,62 @@ def test_category_memory_overrides_historical_mappings():
     assert not result.review_required
 
 
+def test_guidance_alias_categorises_ahead_of_historical_recurring_and_rule_tiers():
+    config = replace(
+        _config(),
+        guidance_aliases={
+            "apple.com": "Lunch (monthly)",
+            "telecom": "Lunch (monthly)",
+            "canteen": "Lunch (monthly)",
+        },
+        rules=(Rule("Food& Drinks (monthly)", ("canteen",), "expense", 0.9),),
+    )
+
+    results = categorize_transactions(
+        [
+            _transaction("APPLE.COM/BILL", "-25.00"),
+            _transaction("PRIVATE TELECOM", "-99.50"),
+            _transaction("CANTEEN NORTH 12", "-45.00"),
+        ],
+        config,
+    )
+
+    assert [result.suggested_category for result in results] == ["Lunch (monthly)"] * 3
+    assert {result.categorization_method for result in results} == {"guidance_alias"}
+    assert all(result.authority is Authority.auto for result in results)
+
+
+def test_guidance_alias_refund_nets_against_alias_category():
+    config = replace(_config(), guidance_aliases={"canteen": "Lunch (monthly)"})
+
+    result = categorize_transactions([_transaction("CANTEEN NORTH REFUND", "45.00")], config)[0]
+
+    assert result.suggested_category == "Lunch (monthly)"
+    assert result.reason == (
+        "Refund matched guidance alias; nets against category in reporting month."
+    )
+
+
+def test_category_memory_overrides_guidance_alias():
+    memory = CategoryMemory(
+        mappings=(
+            CategoryMemoryMapping(
+                merchant_identity="CANTEEN NORTH",
+                category="Food& Drinks (monthly)",
+                source_transaction_ids=("reviewed-canteen",),
+            ),
+        )
+    )
+    config = replace(_config(), guidance_aliases={"canteen": "Lunch (monthly)"})
+
+    result = categorize_transactions(
+        [_transaction("CANTEEN NORTH", "-45.00")], config, category_memory=memory
+    )[0]
+
+    assert result.suggested_category == "Food& Drinks (monthly)"
+    assert result.categorization_method == "category_memory"
+
+
 def test_keyword_rule_matches():
     result = categorize_transactions([_transaction("NETTO KOEBENHAVN", "-100.00")], _config())[0]
 

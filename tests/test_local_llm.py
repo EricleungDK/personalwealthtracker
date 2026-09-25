@@ -59,6 +59,18 @@ def test_ollama_prompt_carries_memory_neighbours_and_reviewed_policy():
     assert "Prefer NONE for private transfers." in payload["messages"][0]["content"]
 
 
+def test_ollama_prompt_carries_guidance_aliases():
+    transport = _Transport(chat=[_chat_reply("Canteen alias.", "Traveling", 0.9)])
+    context = _context(guidance_aliases={"CANTEEN EXAMPLE": "Traveling"})
+
+    OllamaSuggester(_settings(), transport=transport).suggest(
+        [_categorized("tx1", merchant="CANTEEN EXAMPLE 2")], context
+    )
+
+    _, payload, _ = transport.requests[-1]
+    assert "- CANTEEN EXAMPLE -> Traveling" in payload["messages"][0]["content"]
+
+
 def test_ollama_parses_category_none_and_invalid_responses():
     transport = _Transport(
         chat=[
