@@ -152,6 +152,7 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
     new_parent_category_column = headers.get("new_parent_category")
     new_leaf_category_column = headers.get("new_leaf_category")
     suggested_category_column = headers.get("suggested_category")
+    suggested_parent_category_column = headers.get("suggested_parent_category")
     learn_to_memory_column = headers.get("learn_to_memory")
 
     decisions: dict[str, MonthlyReviewDecision] = {}
@@ -170,7 +171,14 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
                 "new_parent_category."
             )
         if not manual_category and not new_leaf_category:
-            manual_category = _optional_stripped_cell(sheet, row, suggested_category_column)
+            suggested_category = _optional_stripped_cell(sheet, row, suggested_category_column)
+            suggested_parent = _optional_stripped_cell(
+                sheet, row, suggested_parent_category_column
+            )
+            if suggested_parent:
+                new_parent_category, new_leaf_category = suggested_parent, suggested_category
+            else:
+                manual_category = suggested_category
         if not manual_category and not new_leaf_category:
             continue
         transaction_id = str(sheet.cell(row=row, column=transaction_id_column).value or "").strip()
