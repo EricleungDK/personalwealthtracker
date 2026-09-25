@@ -378,6 +378,44 @@ def test_exception_sheet_offers_suggestion_alternatives_and_none_as_dropdown(tmp
         workbook.close()
 
 
+def test_exception_sheet_offers_alternatives_when_suggester_answered_none(tmp_path):
+    tracker = tmp_path / "tracker.xlsx"
+    _create_review_tracker(tracker)
+    none_answer = replace(
+        _categorized(
+            "tx-none",
+            "CAFE",
+            "-60.00",
+            "",
+            "Local model answered NONE.",
+            authority=Authority.review,
+            method="local_llm_gemma_no_suggestion",
+        ),
+        votes=(Vote(None, 0.4, "fake"),),
+        alternatives=("Manual Category",),
+    )
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tracker,
+        categorized=[none_answer],
+        updates=[],
+        workbook_config=_config(),
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        (validation,) = workbook["Review Required"].data_validations.dataValidation[:1]
+        assert "E2" in validation.sqref
+        assert validation.formula1 == '"Manual Category,NONE"'
+    finally:
+        workbook.close()
+
+
 def test_exception_sheet_falls_back_to_leaf_list_when_choices_cannot_be_inlined(tmp_path):
     tracker = tmp_path / "tracker.xlsx"
     _create_review_tracker(tracker)

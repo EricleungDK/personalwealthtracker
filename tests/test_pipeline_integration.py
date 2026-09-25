@@ -564,6 +564,42 @@ def test_commit_with_review_rows_writes_exception_sheet_instead_of_workbook(
     )
 
 
+def test_exception_sheet_dropdown_offers_suggester_alternatives(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester(
+        {"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9, alternatives=("Apple Cloud",))}
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    assert result.categorized_transactions[0].alternatives == ("Apple Cloud",)
+    workbook = load_workbook(result.review_xlsx_path)
+    try:
+        (dropdown,) = [
+            validation
+            for validation in workbook["Review Required"].data_validations.dataValidation
+            if "E2" in validation.sqref
+        ]
+    finally:
+        workbook.close()
+    assert dropdown.formula1 == '"Traveling,Apple Cloud,NONE"'
+
+
 def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     tracker = tmp_path / "tracker.xlsx"
