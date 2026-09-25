@@ -11,7 +11,6 @@ from pathlib import Path
 
 from .config import AppConfig
 from .models import (
-    Authority,
     CategorizedTransaction,
     TrackerUpdate,
     WorkbookPlan,
@@ -128,6 +127,22 @@ def plan_workbook_changes(
 
     workbook.close()
     return WorkbookPlan(updates=updates, structure_changes=structure_changes)
+
+
+def rows_in_review(
+    categorized: list[CategorizedTransaction], updates: list[TrackerUpdate]
+) -> list[CategorizedTransaction]:
+    blocked_ids = {
+        transaction_id
+        for update in updates
+        if update.write_action == "review"
+        for transaction_id in update.source_transactions
+    }
+    return [
+        item
+        for item in categorized
+        if item.review_required or item.transaction.transaction_id in blocked_ids
+    ]
 
 
 def workbook_category_options(
@@ -810,8 +825,6 @@ def _write_decision(
         return "review", "Target category row not found."
     if column is None:
         return "review", "Target month column not found."
-    if any(item.authority is Authority.review for item in items):
-        return "review", "One or more source transactions require review."
     if category in DERIVED_WORKBOOK_ROWS:
         return "skip", "Derived workbook row is formula-owned and not writable."
     if category in config.fixed_rows and not config.overwrite_fixed_rows:

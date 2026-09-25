@@ -206,7 +206,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Commit mode creates a backup under `data/backups/` and writes eligible updates only to a copied workbook under `data/processed/`. It skips formulas, fixed rows, populated manual cells, unknown categories, and review-required transactions.
+Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the exception sheet (`review_required_<year>_<month>.xlsx`); fill it and re-run with `--review-decisions` to commit. With zero rows in review it creates a backup under `data/backups/` and writes the month only to a copied workbook under `data/processed/`, skipping formulas and fixed rows.
 
 ## Project Structure
 

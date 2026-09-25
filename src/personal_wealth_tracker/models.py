@@ -148,6 +148,7 @@ class RunResult:
     review_csv_path: Path
     output_workbook_path: Path | None = None
     review_xlsx_path: Path | None = None
+    review_count: int = 0
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)
     statement_import_diagnostics: tuple[StatementImportDiagnostic, ...] = ()

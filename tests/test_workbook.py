@@ -190,7 +190,7 @@ def test_later_month_refund_targets_selected_month_without_reopening_prior_perio
         copied.close()
 
 
-def test_plan_updates_protects_formula_manual_fixed_and_review_rows(tmp_path):
+def test_plan_updates_protects_formula_manual_and_fixed_rows(tmp_path):
     tracker = _workbook_path(tmp_path)
     _create_workbook(tracker)
 
@@ -202,7 +202,6 @@ def test_plan_updates_protects_formula_manual_fixed_and_review_rows(tmp_path):
                 _categorized("tx-formula", "Formula Category", "-1.00"),
                 _categorized("tx-manual", "Manual Category", "-2.00"),
                 _categorized("tx-fixed", "Fixed Category", "-3.00"),
-                _categorized("tx-review", "Review Category", "-4.00", authority=Authority.review),
                 _categorized("tx-missing", "Missing Category", "-5.00"),
             ],
             2026,
@@ -217,8 +216,6 @@ def test_plan_updates_protects_formula_manual_fixed_and_review_rows(tmp_path):
     assert updates["Manual Category"].reason == "Target cell already contains a manual value."
     assert updates["Fixed Category"].write_action == "skip"
     assert updates["Fixed Category"].reason == "Fixed row is protected by config."
-    assert updates["Review Category"].write_action == "review"
-    assert updates["Review Category"].reason == "One or more source transactions require review."
     assert updates["Missing Category"].write_action == "review"
     assert updates["Missing Category"].reason == "Target category row not found."
 

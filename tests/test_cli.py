@@ -263,3 +263,45 @@ def test_cli_rejects_invalid_statement_format():
                 "Apr",
             ]
         )
+
+
+def test_cli_reports_rows_in_review_and_exception_sheet(monkeypatch, tmp_path, capsys):
+    def fake_run_pipeline(**_kwargs):
+        return RunResult(
+            mode="commit",
+            target_year=2026,
+            target_month="Apr",
+            statement_parser="nordea-csv",
+            transactions=[],
+            categorized_transactions=[],
+            updates=[],
+            structure_changes=[],
+            report_path=tmp_path / "report.md",
+            audit_path=tmp_path / "audit.jsonl",
+            categorized_csv_path=tmp_path / "categorized.csv",
+            review_csv_path=tmp_path / "review.csv",
+            review_xlsx_path=tmp_path / "review_required_2026_apr.xlsx",
+            review_count=2,
+        )
+
+    monkeypatch.setattr("personal_wealth_tracker.cli.run_pipeline", fake_run_pipeline)
+
+    exit_code = main(
+        [
+            "--tracker",
+            "tracker.xlsx",
+            "--statement",
+            "statement.csv",
+            "--year",
+            "2026",
+            "--month",
+            "Apr",
+            "--commit",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Rows in review: 2" in output
+    assert f"Exception sheet: {tmp_path / 'review_required_2026_apr.xlsx'}" in output
+    assert "Output workbook" not in output

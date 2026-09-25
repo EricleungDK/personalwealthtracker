@@ -101,7 +101,7 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 - `reason`: human-readable explanation for report and audit.
 - `votes`: model votes (category or null, confidence, source model) behind a model suggestion.
 - `authority`: `auto` or `review`, decided once per row by the Trust Policy (`trust_policy.py`). `review` rows must not be auto-written. `review_required` is derived from it.
-- `authority_reason`: one-line Trust Policy reason, shown in the `All Transactions` audit sheet.
+- `authority_reason`: one-line Trust Policy reason, shown as `reason` in the `Audit` sheet.
 
 Trust Policy rules, in order: rows not from a Trusted Statement Adapter are `review`; Monthly Review Decisions are `auto`; proxy split sources are `auto` (excluded from totals); rows without a category, in `never_auto_categories`, or above `auto_max_amount` are `review`; model rows need `min_agreement` agreeing votes; deterministic rows need confidence at or above `confidence_thresholds.auto_write`. Thresholds live under `trust_policy` in `config/settings.yaml` (defaults: `auto_max_amount` 1000, `min_agreement` 2, `never_auto_categories` Rent, Mom, Dad, both insurances, the three investment leaves, salary). See `docs/adr/0001-per-row-authority.md`.
 
@@ -165,14 +165,14 @@ Audit logs use `category_registry_addition` records for validated new leaf regis
 
 The manual review workbook contains:
 
-- `Review Required`: the operator work queue.
-- `All Transactions`: audit context for every parsed transaction.
+- `Review Required`: the Exception Sheet; only rows in review (`review` authority, or source of a `review` workbook update).
+- `Audit`: every `auto` row with `category`, `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
 - `Category Options`: workbook/category registry option metadata.
 - `Run Metadata`: reporting period, statement parser, generated timestamp, and transaction ID scheme.
 
 Review decision columns:
 
-- `manual_category`: current-month decision for an existing tracker workbook label or registered YAML Leaf Category Row. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
+- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion get a dropdown of suggestion, vote alternatives, and `NONE`; others get the leaf list with `NONE`. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.
