@@ -103,18 +103,21 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 
 Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, and `reason`, but it remains review-required and is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
 
-## Future Local LLM Suggestion Contract
+## Local LLM Suggestion Contract
 
-A local LLM provider response should be parsed into a small structured suggestion contract before it can affect categorized outputs:
+Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. Adapters: `OllamaSuggester` (`local_llm.py`) and `FakeSuggester` (scripted votes for tests). Each suggestion carries:
 
-- `transaction_id`: optional response echo for the transaction being suggested for. The prompt includes one transaction at a time, so responses should not be required to echo the ID; if a provider returns one, it must match exactly.
-- `status`: one of `category`, `no_suggestion`, `new_leaf_candidate`, or `provider_unavailable`.
-- `suggested_category`: required only when `status` is `category`; must be an existing YAML Leaf Category Row.
-- `new_leaf_candidate`: optional display label hint when `status` is `new_leaf_candidate`; it must not update the Category Registry directly.
-- `confidence`: provider confidence or locally derived confidence in the `0.0` to `1.0` range. `category` and `new_leaf_candidate` responses below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
-- `rationale`: short review-facing explanation suitable for the existing `reason` field.
+- `transaction_id`: row the suggestion is for.
+- `category`: an existing YAML Leaf Category Row, or NONE (no suggestion).
+- `confidence`: `0.0` to `1.0`. Category answers below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
+- `alternatives`: other leaves the model considered.
+- `evidence`: short review-facing reason, used in the `reason` field.
+- `source`: model that answered.
+- `failure`: blank, `invalid_response`, or `provider_failure`.
 
-Invalid JSON, missing required fields, categories outside the Allowed Category Set, low-confidence category/new-leaf responses, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
+The Ollama adapter calls `/api/chat` with a system message holding the glossary, a JSON schema `format` whose `category` is an enum of leaves plus `NONE` and whose `reason` precedes `category`, `think: false`, temperature 0, `keep_alive`, and a 180-second cold-start timeout. If the configured model is not installed it uses the installed fallback model.
+
+Invalid JSON, missing required fields, categories outside the Allowed Category Set, low-confidence category responses, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
 
 ## TrackerUpdate
 

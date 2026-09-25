@@ -35,10 +35,10 @@ Only redacted or synthetic fixtures should be committed for parser tests. Real C
 ## Future Local LLM Mode
 
 - Local LLM suggestions must be explicit opt-in, not automatic when a local provider is installed.
-- Local LLM prompts should use minimized transaction context by default: merchant identity, amount, date, direction, allowed YAML leaf categories, prior low-confidence deterministic suggestion context when present, and private reviewed policy guidance when available.
+- Local LLM prompts should use minimized transaction context by default: merchant identity, amount, date, direction, allowed YAML leaf categories, prior low-confidence deterministic suggestion context when present, private reviewed policy guidance when available, and up to five local Category Memory neighbours (merchant identity and category) nearest to the row.
 - raw Nordea descriptions are excluded from Local LLM prompts by default unless a future evaluation shows minimized context is insufficient and the operator explicitly enables that mode.
 - Local LLM output is review-only and must not auto-write workbook values or update Category Memory without a confirmed review decision.
-- Low-confidence Local LLM category and new-leaf responses should be ignored and reported rather than populating review suggestion fields.
+- Low-confidence Local LLM category responses should be ignored and reported rather than populating review suggestion fields.
 - Local LLM provider failures should fail closed to ordinary manual review rather than blocking the monthly run or silently broadening prompt data.
 - `data/category_memory/reviewed_policy.local.md` is private generated/editable guidance and must stay out of Git with Category Memory.
 

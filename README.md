@@ -134,7 +134,7 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 60-second provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category and new-leaf responses are ignored and reported so weak guesses stay in ordinary manual review.
+The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 180-second cold-start provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category responses are ignored and reported so weak guesses stay in ordinary manual review.
 
 When `learn-category-memory` imports rows with `learn_to_memory=yes`, it also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
 
