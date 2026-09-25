@@ -70,14 +70,18 @@ def row_merchant_identity(item: CategorizedTransaction) -> str:
     return normalize_merchant_identity(transaction.merchant or transaction.description)
 
 
+@dataclass(frozen=True)
+class ScriptedVote:
+    category: str | None
+    confidence: float
+    evidence: str = "Scripted vote."
+    alternatives: tuple[str, ...] = ()
+
+
 class FakeSuggester:
     """Scripted votes by merchant identity for tests; unscripted rows answer NONE."""
 
-    def __init__(
-        self,
-        votes: Mapping[str, tuple[str | None, float, str]],
-        source: str = "fake",
-    ):
+    def __init__(self, votes: Mapping[str, ScriptedVote], source: str = "fake"):
         self.votes = dict(votes)
         self.source = source
         self.calls: list[tuple[tuple[CategorizedTransaction, ...], SuggesterContext]] = []
@@ -88,16 +92,14 @@ class FakeSuggester:
         self.calls.append((tuple(rows), context))
         suggestions = []
         for item in rows:
-            category, confidence, evidence = self.votes.get(
-                row_merchant_identity(item), (None, 0.0, "No scripted vote.")
-            )
+            vote = self.votes.get(row_merchant_identity(item), ScriptedVote(None, 0.0))
             suggestions.append(
                 Suggestion(
                     transaction_id=item.transaction.transaction_id,
-                    category=category,
-                    confidence=confidence,
-                    alternatives=(),
-                    evidence=evidence,
+                    category=vote.category,
+                    confidence=vote.confidence,
+                    alternatives=vote.alternatives,
+                    evidence=vote.evidence,
                     source=self.source,
                 )
             )

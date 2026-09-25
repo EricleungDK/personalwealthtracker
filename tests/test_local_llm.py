@@ -1,11 +1,12 @@
 import json
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry, LocalLLMSettings
 from personal_wealth_tracker.local_llm import OllamaSuggester, apply_suggestions
-from personal_wealth_tracker.models import CategorizedTransaction, Transaction
-from personal_wealth_tracker.suggester import FakeSuggester, SuggesterContext
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction, Vote
+from personal_wealth_tracker.suggester import FakeSuggester, ScriptedVote, SuggesterContext
 
 GLOSSARY = {"Apple Cloud": "iCloud storage subscription.", "Traveling": "Trains, flights, hotels."}
 
@@ -156,7 +157,13 @@ def test_ollama_call_timeout_on_last_model_is_a_provider_failure():
 
 
 def test_category_suggestion_updates_unmatched_review_row():
-    suggester = FakeSuggester({"UNKNOWN TRAVEL": ("Traveling", 0.68, "Travel merchant.")})
+    suggester = FakeSuggester(
+        {
+            "UNKNOWN TRAVEL": ScriptedVote(
+                "Traveling", 0.68, "Travel merchant.", alternatives=("Apple Cloud",)
+            )
+        }
+    )
 
     categorized, diagnostics = apply_suggestions(
         [_categorized("tx1", merchant="UNKNOWN TRAVEL")], _config(), suggester, _context()
@@ -166,8 +173,11 @@ def test_category_suggestion_updates_unmatched_review_row():
     assert result.suggested_category == "Traveling"
     assert result.categorization_method == "local_llm_gemma"
     assert result.confidence == 0.68
-    assert result.review_required is True
+    assert result.votes == (Vote(category="Traveling", confidence=0.68, source="fake"),)
+    assert result.authority is Authority.review
+    assert result.authority_reason == "1 of 2 required model votes agree."
     assert "Travel merchant." in result.reason
+    assert "Alternatives: Apple Cloud." in result.reason
     assert diagnostics.eligible_count == 1
     assert diagnostics.attempted_count == 1
     assert diagnostics.existing_leaf_suggestions == 1
@@ -179,14 +189,15 @@ def test_none_answer_keeps_row_review_required_without_category():
     categorized, diagnostics = apply_suggestions(
         [_categorized("tx1", merchant="UNKNOWN SHOP")],
         _config(),
-        FakeSuggester({"UNKNOWN SHOP": (None, 0.2, "Insufficient merchant context.")}),
+        FakeSuggester({"UNKNOWN SHOP": ScriptedVote(None, 0.2, "Insufficient merchant context.")}),
         _context(),
     )
 
     result = categorized[0]
     assert result.suggested_category is None
     assert result.categorization_method == "local_llm_gemma_no_suggestion"
-    assert result.review_required is True
+    assert result.authority is Authority.review
+    assert result.authority_reason == "No category suggested."
     assert "Insufficient merchant context." in result.reason
     assert diagnostics.no_suggestion_count == 1
 
@@ -197,7 +208,7 @@ def test_low_confidence_category_keeps_original_row_and_warns():
     categorized, diagnostics = apply_suggestions(
         [original],
         _config(),
-        FakeSuggester({"AMBIGUOUS SHOP": ("Traveling", 0.40, "Weak travel signal.")}),
+        FakeSuggester({"AMBIGUOUS SHOP": ScriptedVote("Traveling", 0.40, "Weak travel signal.")}),
         _context(),
     )
 
@@ -269,8 +280,8 @@ def test_suggester_runs_on_low_confidence_rule_and_recurring_review_rows():
     )
     suggester = FakeSuggester(
         {
-            "UNKNOWN TRAVEL": ("Traveling", 0.66, "Travel merchant."),
-            "UNKNOWN CLOUD": ("Apple Cloud", 0.64, "Cloud subscription."),
+            "UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.66, "Travel merchant."),
+            "UNKNOWN CLOUD": ScriptedVote("Apple Cloud", 0.64, "Cloud subscription."),
         }
     )
 
@@ -281,28 +292,83 @@ def test_suggester_runs_on_low_confidence_rule_and_recurring_review_rows():
     assert "Original recurring: Traveling, confidence 0.80" in categorized[1].reason
 
 
+def test_suggestion_reaches_auto_when_policy_agreement_is_met():
+    config = replace(_config(), trust_policy=replace(_config().trust_policy, min_agreement=1))
+
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1", merchant="UNKNOWN TRAVEL")],
+        config,
+        FakeSuggester({"UNKNOWN TRAVEL": ScriptedVote("Traveling", 0.9, "Travel merchant.")}),
+        _context(),
+    )
+
+    assert categorized[0].authority is Authority.auto
+    assert categorized[0].authority_reason == "1 model votes agree."
+
+
+def test_vote_source_is_the_model_that_answered():
+    transport = _Transport(
+        tags=["gemma4:12b", "gemma4:e4b"],
+        chat=[TimeoutError("timed out"), _chat_reply("Train ticket.", "Traveling", 0.9)],
+    )
+
+    categorized, _ = apply_suggestions(
+        [_categorized("tx1")],
+        _config(),
+        OllamaSuggester(_settings(), transport=transport),
+        _context(),
+    )
+
+    assert categorized[0].votes == (
+        Vote(category="Traveling", confidence=0.9, source="gemma4:e4b"),
+    )
+
+
+def test_suggester_skips_confident_deterministic_rows_held_for_review_by_policy():
+    rows = [
+        _categorized(
+            "tx-rent",
+            suggested_category="Apple Cloud",
+            confidence=0.95,
+            method="rule",
+            authority=Authority.review,
+        )
+    ]
+    suggester = FakeSuggester({})
+
+    categorized, diagnostics = apply_suggestions(rows, _config(), suggester, _context())
+
+    assert categorized == rows
+    assert diagnostics.eligible_count == 0
+    assert suggester.calls[0][0] == ()
+
+
 def test_suggester_skips_authoritative_matches_and_proxy_split_lines():
     rows = [
         _categorized(
-            "tx-rule", suggested_category="Apple Cloud", method="rule", review_required=False
+            "tx-rule",
+            suggested_category="Apple Cloud",
+            confidence=0.95,
+            method="rule",
+            authority=Authority.auto,
         ),
         _categorized(
             "tx-review",
             suggested_category="Traveling",
             method="monthly_review_decision",
-            review_required=False,
+            authority=Authority.auto,
         ),
         _categorized(
             "tx-memory",
             suggested_category="Apple Cloud",
             method="category_memory",
-            review_required=False,
+            authority=Authority.auto,
         ),
         _categorized(
             "tx-proxy",
             suggested_category="Traveling",
             method="proxy_split_allocation",
-            review_required=False,
+            authority=Authority.auto,
         ),
     ]
     suggester = FakeSuggester({})
@@ -365,7 +431,6 @@ def _config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -395,7 +460,7 @@ def _categorized(
     suggested_category: str | None = None,
     confidence: float = 0.0,
     method: str = "unmatched",
-    review_required: bool = True,
+    authority: Authority = Authority.review,
     reason: str = "No historical or keyword rule matched.",
 ) -> CategorizedTransaction:
     return CategorizedTransaction(
@@ -412,6 +477,6 @@ def _categorized(
         suggested_category=suggested_category,
         confidence=confidence,
         categorization_method=method,
-        review_required=review_required,
+        authority=authority,
         reason=reason,
     )

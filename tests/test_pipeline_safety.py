@@ -7,7 +7,7 @@ import pytest
 from personal_wealth_tracker.category_memory import CategoryMemory
 from personal_wealth_tracker.config import AppConfig, LocalLLMSettings
 from personal_wealth_tracker.local_llm import OllamaSuggester
-from personal_wealth_tracker.models import CategorizedTransaction, Transaction
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction
 from personal_wealth_tracker.pipeline import _validate_target_period, run_pipeline
 
 
@@ -44,7 +44,6 @@ def test_pipeline_rejects_tracker_statement_currency_mismatch(monkeypatch, tmp_p
         year_header_row=2,
         month_header_row=3,
         statement_currency="EUR",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -172,7 +171,6 @@ def test_pipeline_rejects_out_of_period_before_categorization(monkeypatch, tmp_p
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -306,7 +304,6 @@ def _stub_pipeline_dependencies(monkeypatch):
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -330,7 +327,7 @@ def _stub_pipeline_dependencies(monkeypatch):
                 suggested_category=None,
                 confidence=0.0,
                 categorization_method="unmatched",
-                review_required=True,
+                authority=Authority.review,
                 reason="No category match.",
             )
             for transaction in transactions

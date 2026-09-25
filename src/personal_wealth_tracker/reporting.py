@@ -530,13 +530,14 @@ def _write_review_workbook(
         "suggested_category",
         "confidence",
         "method",
-        "review_required",
+        "authority",
         "reason",
         "split_role",
         "split_rule",
         "source_transaction_id",
         "allocated_amount",
         "residual_amount",
+        "authority_reason",
     ]
     options_headers = [
         "row_number",
@@ -566,13 +567,14 @@ def _write_review_workbook(
                 item.suggested_category or "",
                 f"{item.confidence:.2f}",
                 item.categorization_method,
-                item.review_required,
+                item.authority.value,
                 item.reason,
                 item.split_role,
                 item.split_rule,
                 item.source_transaction_id,
                 _format_optional_amount(item.allocated_amount),
                 _format_optional_amount(item.residual_amount),
+                item.authority_reason,
             ]
         )
         update = update_by_transaction.get(transaction.transaction_id)

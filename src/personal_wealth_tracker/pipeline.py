@@ -16,6 +16,7 @@ from .review_decisions import (
 )
 from .statement_adapters import import_trusted_statement
 from .suggester import Suggester, build_suggester_context
+from .trust_policy import apply_trust_policy
 from .utils import normalize_month
 from .workbook import (
     commit_updates,
@@ -94,9 +95,9 @@ def run_pipeline(
             for option in workbook_category_options(tracker_path, year, month, config)
         } | set(config.category_registry.leaf_categories)
         validate_monthly_review_decision_categories(review_decisions, valid_categories)
-        categorized = apply_monthly_review_decisions(
-            categorized,
-            review_decisions,
+        categorized = apply_trust_policy(
+            apply_monthly_review_decisions(categorized, review_decisions),
+            config,
         )
     local_llm_diagnostics = disabled_diagnostics(config.local_llm)
     if local_llm_suggestions:

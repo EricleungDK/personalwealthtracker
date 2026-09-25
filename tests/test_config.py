@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from personal_wealth_tracker.config import load_config
+from personal_wealth_tracker.config import TrustPolicySettings, load_config
 
 
 def test_load_config_merges_ignored_local_rules(tmp_path):
@@ -130,6 +130,52 @@ local_llm:
     assert config.local_llm.timeout_seconds == 5.0
     assert config.local_llm.keep_alive == "5m"
     assert config.local_llm.include_raw_description is True
+
+
+def test_load_config_defaults_trust_policy_settings(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.trust_policy == TrustPolicySettings()
+
+
+def test_load_config_reads_trust_policy_from_settings(tmp_path):
+    _write(
+        tmp_path / "settings.yaml",
+        """
+tracker:
+  currency: DKK
+statement:
+  currency: DKK
+confidence_thresholds:
+  auto_write: 0.9
+trust_policy:
+  auto_max_amount: 250.50
+  min_agreement: 3
+  never_auto_categories:
+    - Public Category
+""",
+    )
+    _write(tmp_path / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.trust_policy == TrustPolicySettings(
+        auto_max_amount=Decimal("250.50"),
+        min_agreement=3,
+        min_confidence=0.9,
+        never_auto_categories=frozenset({"Public Category"}),
+    )
+
+
+def test_project_settings_set_operator_trust_policy():
+    config = load_config(Path("config"))
+
+    assert config.trust_policy == TrustPolicySettings()
 
 
 def test_load_config_supports_private_proxy_split_rules(tmp_path):

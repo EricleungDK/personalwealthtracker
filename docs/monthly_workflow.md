@@ -50,7 +50,7 @@ uv run wealth-tracker \
 
 The committed defaults target `gemma4:12b` through Ollama's local HTTP API, with `gemma4:e4b` as the fallback model and a 180-second cold-start provider timeout; `keep_alive` keeps the model warm between rows. Settings live under `local_llm` in `config/settings.yaml`.
 
-Local model output is review-only. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations remain authoritative. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
+Local model output stays in review: the Trust Policy requires two agreeing model votes (`trust_policy.min_agreement`) and a single local model casts one. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations keep `auto` authority, except that any automatic row above `trust_policy.auto_max_amount` (default 1000 DKK) or in `trust_policy.never_auto_categories` goes to review. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
 
 Prompt context is minimized by default: merchant identity, amount, date, direction, YAML leaf category choices with their descriptions, up to five nearest Category Memory neighbours, and any existing low-confidence rule/recurring suggestion context. raw Nordea descriptions are excluded unless `include_raw_description: true` is deliberately configured later for evaluation.
 
