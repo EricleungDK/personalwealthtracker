@@ -31,6 +31,12 @@ AGREEING_VOTES = (
         (Evidence("local_llm", "Lunch (monthly)", 0.9, AGREEING_VOTES), "-50", Authority.auto, "2 model"),
         (Evidence("local_llm", "Lunch (monthly)", 0.99, AGREEING_VOTES[:1]), "-50", Authority.review, "1 of 2"),
         (
+            Evidence("local_llm", "Lunch (monthly)", 0.9, (AGREEING_VOTES[0], AGREEING_VOTES[0])),
+            "-50",
+            Authority.review,
+            "1 of 2",
+        ),
+        (
             Evidence(
                 "local_llm",
                 "Lunch (monthly)",

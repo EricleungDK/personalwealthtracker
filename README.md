@@ -122,7 +122,7 @@ Investment statements remain separate future PDF evidence. Bank CSV and PDF inpu
 
 ## Local LLM Review Suggestions
 
-Local LLM Mode is optional and review-only. Add `--local-llm-suggestions` to ask a local Ollama/Gemma model for local Ollama/Gemma review suggestions on unmatched transactions and low-confidence review rows:
+Local LLM Mode is optional; a single model answer is review-only. Add `--local-llm-suggestions` to ask two local models for local Ollama/Gemma review suggestions on unmatched transactions and low-confidence review rows:
 
 ```bash
 uv run wealth-tracker \
@@ -134,7 +134,7 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 180-second cold-start provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category responses are ignored and reported so weak guesses stay in ordinary manual review.
+Two local models vote on each row: `gemma4:26b` then `gemma4:12b`, with installed `qwen3:14b` as fallback and a 180-second cold-start provider timeout. When both pick the same leaf, the amount is at most 1000 DKK and the leaf is not never-auto, the row is `auto`; otherwise it stays in review with the suggestion and alternatives. Suggestions reuse the existing review workbook fields and never create categories or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category responses are ignored and reported so weak guesses stay in ordinary manual review.
 
 When `learn-category-memory` imports rows with `learn_to_memory=yes`, it also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
 

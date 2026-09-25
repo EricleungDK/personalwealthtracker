@@ -217,8 +217,9 @@ def test_local_llm_mode_documentation_is_in_sync():
         "Local LLM Mode",
         "--local-llm-suggestions",
         "review-only",
+        "gemma4:26b",
         "gemma4:12b",
-        "gemma4:e4b",
+        "qwen3:14b",
         "180-second cold-start provider timeout",
         "raw Nordea descriptions are excluded",
     ]
@@ -239,8 +240,9 @@ def test_local_llm_mode_documentation_is_in_sync():
 
     for phrase in [
         "local_llm:",
-        'model: "gemma4:12b"',
-        'fallback_model: "gemma4:e4b"',
+        'model: "gemma4:26b"',
+        'second_model: "gemma4:12b"',
+        'fallback_model: "qwen3:14b"',
         "timeout_seconds: 180",
         'keep_alive: "30m"',
         "include_raw_description: false",

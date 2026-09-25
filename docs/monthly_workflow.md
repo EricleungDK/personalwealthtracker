@@ -36,7 +36,7 @@ Dry-run does not modify the workbook. It writes local outputs under `reports/`:
 
 ### Optional Local LLM Mode
 
-Local LLM Mode is explicit opt-in. It never runs merely because Ollama is installed. Add `--local-llm-suggestions` only when you want review-only local model assistance:
+Local LLM Mode is explicit opt-in. It never runs merely because Ollama is installed. Add `--local-llm-suggestions` only when you want local model assistance (auto only on two-model Consensus):
 
 ```bash
 uv run wealth-tracker \
@@ -48,9 +48,9 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The committed defaults target `gemma4:12b` through Ollama's local HTTP API, with `gemma4:e4b` as the fallback model and a 180-second cold-start provider timeout; `keep_alive` keeps the model warm between rows. Settings live under `local_llm` in `config/settings.yaml`.
+Two local models vote on each row through Ollama's local HTTP API (Consensus): `gemma4:26b` (`model`) first, then `gemma4:12b` (`second_model`). Either voter uses the installed `qwen3:14b` (`fallback_model`) when its model is missing or fails, with a 180-second cold-start provider timeout; `keep_alive` keeps each model warm between rows. Settings live under `local_llm` in `config/settings.yaml`.
 
-Local model output stays in review: the Trust Policy requires two agreeing model votes (`trust_policy.min_agreement`) and a single local model casts one. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations keep `auto` authority, except that any automatic row above `trust_policy.auto_max_amount` (default 1000 DKK) or in `trust_policy.never_auto_categories` goes to review. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
+A local model suggestion reaches `auto` only when both voters pick the same leaf (`trust_policy.min_agreement`, default 2 distinct models), the amount is within `trust_policy.auto_max_amount`, and the leaf is not in `trust_policy.never_auto_categories`. Disagreement, NONE, or a non-leaf answer stays review-only, with the primary model's leaf as the suggestion and the other answers listed as alternatives in `reason`. Existing high-confidence deterministic matches, Monthly Review Decisions, Category Memory matches, and proxy split allocations keep `auto` authority, except that any automatic row above `trust_policy.auto_max_amount` (default 1000 DKK) or in `trust_policy.never_auto_categories` goes to review. Local LLM suggestions reuse the existing `suggested_category`, `method`, `confidence`, and `reason` fields in the review workbook; no primary LLM columns are added.
 
 Prompt context is minimized by default: merchant identity, amount, date, direction, YAML leaf category choices with their descriptions, up to five nearest Category Memory neighbours, and any existing low-confidence rule/recurring suggestion context. raw Nordea descriptions are excluded unless `include_raw_description: true` is deliberately configured later for evaluation.
 

@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-09-05
+Last updated: 2026-09-25
 
 ## Project State
 
@@ -141,6 +141,7 @@ Last updated: 2026-09-05
 | 2026-06-07 | Use the current repository as the incubation repo before splitting public and private layers. | Packaging work should start on a branch in this repo, then separate a public package/repository from private profile data only after the boundary between reusable agent, template workbook, and local personal configuration is clear. |
 | 2026-06-12 | Local LLM prompts may include prior low-confidence rule/recurring suggestion context and must ignore low-confidence category/new-leaf responses. | This gives the local model useful non-raw context for review rows while preventing weak model guesses from filling review suggestion fields. |
 | 2026-06-13 | Confirmed learned review decisions should also maintain an editable reviewed policy file for Local LLM guidance. | Deterministic Category Memory remains the authority for exact matches, while `reviewed_policy.local.md` gives the model broader private guidance without training it or granting workbook-write authority. |
+| 2026-09-25 | Local two-model Consensus with amount cap is write authority for model suggestions (issue #7, ADR 0002). | `gemma4:26b` + `gemma4:12b` must agree as distinct models; `qwen3:14b` is the installed fallback because `gemma4:e4b` is not installed and a gemma4:12b fallback would let one model vote twice. |
 | 2026-09-25 | Per-row Authority from one Trust Policy replaces scattered review checks (issue #5, ADR 0001). | Categorizer thresholds, LLM always-review, and workbook cell scan now read `authority`; amount cap 1000 DKK and a never-auto list apply to every automatic tier. |
 
 ## Open Questions
@@ -362,3 +363,4 @@ These backlog items are not active tasks yet.
 - 2026-09-25: Implemented GitHub #4 taxonomy slice: `config/categories.yaml` leaves now carry `description:`, new leaves Restaurants and Entertainment (Living expenses) and Subscriptions (Services), and `CategoryRegistry.leaf_glossary` exposes leaf → description (blank when missing) for the Suggester. Workbook layout unchanged; full suite passed with 238 tests.
 - 2026-09-25: Implemented issue #5: `trust_policy.py` decides `auto`/`review` per row; `trust_policy` settings added; All Transactions audit sheet shows `authority` and `authority_reason`.
 - 2026-09-25: Implemented GitHub #6 Suggester port: `suggester.py` (`Suggestion`, `SuggesterContext` with leaf glossary, guidance aliases, memory neighbours, reviewed policy; `FakeSuggester`), `OllamaSuggester` in `local_llm.py` (chat API, system glossary, JSON schema enum leaves + `NONE`, reason before category, think off, temperature 0, `keep_alive` 30m, 180 s timeout, installed fallback, injectable HTTP transport). `run_pipeline(suggester=...)` replaces `local_llm_client`; `new_leaf_candidate` status dropped. `tests/conftest.py` blocks live Ollama calls. Merged #5: each answered suggestion is a `Vote` re-stamped by the Trust Policy; `FakeSuggester` scripts `ScriptedVote` incl. alternatives. Full suite passed with 273 tests. Private benchmark rerun still pending (manual).
+- 2026-09-25: Implemented GitHub #7 Consensus: `ConsensusSuggester` asks primary then second Suggester, off-leaf answers count as NONE, failed voters cast no vote, suggestion is primary leaf else second with other leaves as alternatives; `local_consensus(settings)` is the pipeline default. `Evidence.agreement` counts distinct vote sources. `local_llm` defaults `gemma4:26b`, `second_model` `gemma4:12b`, fallback `qwen3:14b`; report/audit show second model; low-confidence gate uses the highest vote; fallback warning names the unanswered voter. ADR 0002 added. Full suite passed with 286 tests.

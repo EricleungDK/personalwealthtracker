@@ -21,7 +21,8 @@ class Evidence:
 
     @property
     def agreement(self) -> int:
-        return sum(1 for vote in self.votes if vote.category == self.category)
+        """Distinct models voting for the category; one model twice is one voter."""
+        return len({vote.source for vote in self.votes if vote.category == self.category})
 
 
 @dataclass(frozen=True)
