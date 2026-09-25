@@ -206,7 +206,9 @@ def _parse_reply(
     category = str(reply.get("category", "")).strip()
     if category != NONE_CATEGORY and category not in leaves:
         raise ValueError(f"category {category!r} is outside the allowed YAML leaf categories")
-    confidence = float(reply["confidence"]) if "confidence" in reply else -1.0
+    if "confidence" not in reply:
+        raise ValueError("response confidence is required")
+    confidence = float(reply["confidence"])
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("response confidence must be between 0.0 and 1.0")
     alternatives = tuple(
@@ -257,7 +259,7 @@ def apply_suggestions(
         ("attempted", "category", "none", "low_confidence", INVALID_RESPONSE, PROVIDER_FAILURE),
         0,
     )
-    active_model = None
+    answering_models: list[str] = []
     for index in eligible_indexes:
         item = updated[index]
         suggestion = by_transaction_id.get(item.transaction.transaction_id)
@@ -271,7 +273,8 @@ def apply_suggestions(
                 warnings.append(suggestion.evidence)
             continue
         counts["attempted"] += 1
-        active_model = active_model or suggestion.source
+        if suggestion.source not in answering_models:
+            answering_models.append(suggestion.source)
         vote = Vote(suggestion.category, suggestion.confidence, suggestion.source)
         if suggestion.category is None:
             counts["none"] += 1
@@ -306,16 +309,17 @@ def apply_suggestions(
             )
         updated[index] = stamp_authority(updated[index], config)
 
-    if active_model and active_model != settings.model and active_model == settings.fallback_model:
+    fallback = settings.fallback_model
+    if fallback and fallback != settings.model and fallback in answering_models:
         warnings.insert(
             0,
             f"Configured local LLM model {settings.model!r} was unavailable; "
-            f"used fallback {active_model!r}.",
+            f"used fallback {fallback!r}.",
         )
     diagnostics = _diagnostics(
         settings,
         enabled=True,
-        active_model=active_model,
+        active_model=answering_models[0] if answering_models else None,
         eligible_count=len(eligible_indexes),
         provider_failure_count=counts[PROVIDER_FAILURE],
         warnings=tuple(warnings),

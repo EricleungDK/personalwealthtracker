@@ -226,7 +226,7 @@ def test_pipeline_preserves_target_period_validation_after_csv_parsing(monkeypat
         )
 
 
-def test_pipeline_does_not_call_local_llm_client_when_mode_is_disabled(monkeypatch, tmp_path):
+def test_pipeline_does_not_call_suggester_when_mode_is_disabled(monkeypatch, tmp_path):
     _stub_pipeline_dependencies(monkeypatch)
     monkeypatch.setattr(
         "personal_wealth_tracker.statement_adapters.parse_nordea_csv",

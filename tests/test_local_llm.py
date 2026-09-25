@@ -249,6 +249,27 @@ def test_fallback_model_answers_are_reported_as_a_warning():
     )
 
 
+def test_fallback_warning_survives_mixed_primary_and_fallback_answers():
+    transport = _Transport(
+        tags=["gemma4:12b", "gemma4:e4b"],
+        chat=[
+            _chat_reply("Train.", "Traveling", 0.9),
+            TimeoutError("timed out"),
+            _chat_reply("Cloud.", "Apple Cloud", 0.9),
+        ],
+    )
+
+    _, diagnostics = apply_suggestions(
+        [_categorized("tx1", merchant="SHOP A"), _categorized("tx2", merchant="SHOP B")],
+        _config(),
+        OllamaSuggester(_settings(), transport=transport),
+        _context(),
+    )
+
+    assert diagnostics.active_model == "gemma4:12b"
+    assert "used fallback 'gemma4:e4b'" in diagnostics.warnings[0]
+
+
 def test_memory_neighbours_are_nearest_identities_only():
     context = _context(
         memory_examples=(("NETTO 123", "Groceries"), ("NETTO", "Groceries"), ("ZZZ BAR", "Bar"))
