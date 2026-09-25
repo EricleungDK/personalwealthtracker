@@ -6,7 +6,7 @@ from pathlib import Path
 from personal_wealth_tracker.categorizer import categorize_transactions
 from personal_wealth_tracker.category_memory import CategoryMemory, CategoryMemoryMapping
 from personal_wealth_tracker.config import AppConfig, RecurringRule, Rule, load_config
-from personal_wealth_tracker.models import Transaction
+from personal_wealth_tracker.models import Authority, Transaction
 
 
 def _config() -> AppConfig:
@@ -17,7 +17,6 @@ def _config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -164,6 +163,38 @@ def test_unmatched_requires_review():
     assert result.review_required
 
 
+def test_deterministic_match_above_auto_cap_requires_review():
+    result = categorize_transactions([_transaction("NETTO", "-1000.01")], _config())[0]
+
+    assert result.suggested_category == "Food& Drinks (monthly)"
+    assert result.authority is Authority.review
+    assert result.authority_reason == "Amount 1000.01 is above the auto cap 1000."
+
+
+def test_never_auto_category_requires_review_even_from_confident_rule():
+    config = replace(
+        _config(),
+        trust_policy=replace(
+            _config().trust_policy,
+            never_auto_categories=frozenset({"Food& Drinks (monthly)"}),
+        ),
+    )
+
+    result = categorize_transactions([_transaction("NETTO", "-50.00")], config)[0]
+
+    assert result.authority is Authority.review
+    assert result.authority_reason == "Food& Drinks (monthly) is a never-auto category."
+
+
+def test_low_confidence_rule_requires_review():
+    config = replace(_config(), rules=(Rule("Food& Drinks (monthly)", ("netto",), "expense", 0.7),))
+
+    result = categorize_transactions([_transaction("NETTO", "-50.00")], config)[0]
+
+    assert result.authority is Authority.review
+    assert "below the auto threshold" in result.authority_reason
+
+
 def test_project_config_maps_mastercard_by_transaction_direction():
     config = load_config(Path("config"))
 
@@ -177,10 +208,11 @@ def test_project_config_maps_mastercard_by_transaction_direction():
 
     assert negative.suggested_category == "Nordea Credit Card"
     assert negative.confidence == 0.98
-    assert not negative.review_required
+    assert negative.authority is Authority.review
+    assert "above the auto cap" in negative.authority_reason
     assert positive.suggested_category == "Mastercard refund"
     assert positive.confidence == 0.98
-    assert not positive.review_required
+    assert positive.authority is Authority.auto
 
 
 def test_project_config_uses_csv_merchant_descriptions_for_known_categories_only():

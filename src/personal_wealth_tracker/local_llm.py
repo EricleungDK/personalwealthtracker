@@ -7,7 +7,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from .config import AppConfig, LocalLLMSettings
-from .models import CategorizedTransaction, LocalLLMDiagnostics
+from .models import CategorizedTransaction, LocalLLMDiagnostics, Vote
 from .suggester import (
     INVALID_RESPONSE,
     PROVIDER_FAILURE,
@@ -16,6 +16,7 @@ from .suggester import (
     Suggestion,
     row_merchant_identity,
 )
+from .trust_policy import stamp_authority
 
 NONE_CATEGORY = "NONE"
 TAGS_TIMEOUT_SECONDS = 10.0
@@ -246,7 +247,7 @@ def apply_suggestions(
     context: SuggesterContext,
 ) -> tuple[list[CategorizedTransaction], LocalLLMDiagnostics]:
     settings = config.local_llm
-    eligible_indexes = _eligible_indexes(categorized)
+    eligible_indexes = _eligible_indexes(categorized, config.trust_policy.min_confidence)
     suggestions = suggester.suggest([categorized[index] for index in eligible_indexes], context)
     by_transaction_id = {suggestion.transaction_id: suggestion for suggestion in suggestions}
 
@@ -271,14 +272,18 @@ def apply_suggestions(
             continue
         counts["attempted"] += 1
         active_model = active_model or suggestion.source
+        vote = Vote(suggestion.category, suggestion.confidence, suggestion.source)
         if suggestion.category is None:
             counts["none"] += 1
             updated[index] = replace(
                 item,
+                votes=(vote,),
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma_no_suggestion",
-                review_required=True,
-                reason=f"Local model answered NONE: {suggestion.evidence} {_original_classification(item)}",
+                reason=(
+                    f"Local model answered NONE: {suggestion.evidence} "
+                    f"{_original_classification(item)}"
+                ),
             )
         elif suggestion.confidence < config.review_threshold:
             counts["low_confidence"] += 1
@@ -288,16 +293,18 @@ def apply_suggestions(
                 f"{suggestion.confidence:.2f} is below the review threshold "
                 f"{config.review_threshold:.2f}."
             )
+            continue
         else:
             counts["category"] += 1
             updated[index] = replace(
                 item,
+                votes=(vote,),
                 suggested_category=suggestion.category,
                 confidence=suggestion.confidence,
                 categorization_method="local_llm_gemma",
-                review_required=True,
                 reason=_suggestion_reason(suggestion, item),
             )
+        updated[index] = stamp_authority(updated[index], config)
 
     if active_model and active_model != settings.model and active_model == settings.fallback_model:
         warnings.insert(
@@ -331,11 +338,14 @@ def _original_classification(item: CategorizedTransaction) -> str:
     )
 
 
-def _eligible_indexes(categorized: list[CategorizedTransaction]) -> list[int]:
+def _eligible_indexes(
+    categorized: list[CategorizedTransaction], min_confidence: float
+) -> list[int]:
     return [
         index
         for index, item in enumerate(categorized)
-        if item.review_required and item.categorization_method in {"unmatched", "rule", "recurring"}
+        if item.categorization_method in {"unmatched", "rule", "recurring"}
+        and item.confidence < min_confidence
     ]
 
 

@@ -5,6 +5,7 @@ from openpyxl import Workbook, load_workbook
 
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry
 from personal_wealth_tracker.models import (
+    Authority,
     CategorizedTransaction,
     TrackerUpdate,
     Transaction,
@@ -147,7 +148,8 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "-42.50",
             "",
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
+            authority_reason="No category suggested.",
             method="unmatched",
             confidence=0.0,
             merchant="UNKNOWN SHOP",
@@ -158,7 +160,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "-125.00",
             "Food& Drinks (monthly)",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
             merchant="NETTO",
@@ -247,19 +249,21 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "suggested_category",
             "confidence",
             "method",
-            "review_required",
+            "authority",
             "reason",
             "split_role",
             "split_rule",
             "source_transaction_id",
             "allocated_amount",
             "residual_amount",
+            "authority_reason",
         ]
         assert audit_sheet.max_row == 3
         assert audit_sheet["A2"].value == "tx-review"
-        assert audit_sheet["K2"].value is True
+        assert audit_sheet["K2"].value == "review"
+        assert audit_sheet["R2"].value == "No category suggested."
         assert audit_sheet["A3"].value == "tx-food"
-        assert audit_sheet["K3"].value is False
+        assert audit_sheet["K3"].value == "auto"
 
         options_sheet = workbook["Category Options"]
         assert [cell.value for cell in options_sheet[1]] == [
@@ -336,7 +340,7 @@ def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path
             "-42.50",
             None,
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
             method="unmatched",
             confidence=0.0,
         )
@@ -446,7 +450,7 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
             "-42.50",
             "",
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
             method="unmatched",
             confidence=0.0,
         ),
@@ -456,7 +460,7 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
             "-2160.00",
             "",
             "Proxy split residual needs current-month review.",
-            review_required=True,
+            authority=Authority.review,
             method="proxy_split_residual",
             confidence=0.0,
             source_transaction_id="tx-source",
@@ -517,7 +521,7 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             "-25.00",
             "Manual Category",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
         ),
@@ -527,7 +531,7 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             "-30.00",
             "Fixed Category",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
         ),
@@ -537,7 +541,7 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             "-40.00",
             "Food& Drinks (monthly)",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
         ),
@@ -612,7 +616,7 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
             "-125.00",
             "Food& Drinks (monthly)",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
         ),
         _categorized(
@@ -621,7 +625,7 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
             "-250.00",
             "Fitness",
             "Recurring amount/date rule match.",
-            review_required=True,
+            authority=Authority.review,
             method="recurring",
             confidence=0.75,
         ),
@@ -631,7 +635,7 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
             "-42.50",
             "",
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
             method="unmatched",
             confidence=0.0,
         ),
@@ -666,7 +670,8 @@ def _categorized(
     amount: str,
     category: str,
     reason: str,
-    review_required: bool = False,
+    authority: Authority = Authority.auto,
+    authority_reason: str = "",
     method: str = "rule",
     confidence: float = 0.95,
     merchant: str | None = None,
@@ -691,7 +696,8 @@ def _categorized(
         suggested_category=category or None,
         confidence=confidence,
         categorization_method=method,
-        review_required=review_required,
+        authority=authority,
+        authority_reason=authority_reason,
         reason=reason,
         source_transaction_id=source_transaction_id,
         split_rule=split_rule,
@@ -766,7 +772,6 @@ def _config(
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,

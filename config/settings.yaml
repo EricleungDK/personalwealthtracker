@@ -27,3 +27,17 @@ local_llm:
   timeout_seconds: 180
   keep_alive: "30m"
   include_raw_description: false
+
+trust_policy:
+  auto_max_amount: 1000
+  min_agreement: 2
+  never_auto_categories:
+    - "Rent (monthly)"
+    - "Mom"
+    - "Dad"
+    - "House insurance Tryg (yearly, in Jan)"
+    - "Liability insurance (yearly, in Apr)"
+    - "Annuity K43"
+    - "Annuity M12"
+    - "Stock investment plan"
+    - "Full-time job (net)"

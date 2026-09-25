@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from enum import Enum
 from pathlib import Path
+
+
+class Authority(str, Enum):
+    auto = "auto"
+    review = "review"
 
 
 @dataclass(frozen=True)
@@ -25,18 +31,31 @@ class Transaction:
 
 
 @dataclass(frozen=True)
+class Vote:
+    category: str | None
+    confidence: float
+    source: str
+
+
+@dataclass(frozen=True)
 class CategorizedTransaction:
     transaction: Transaction
     suggested_category: str | None
     confidence: float
     categorization_method: str
-    review_required: bool
     reason: str
+    authority: Authority = Authority.review
+    authority_reason: str = ""
+    votes: tuple[Vote, ...] = ()
     source_transaction_id: str | None = None
     split_rule: str | None = None
     split_role: str | None = None
     allocated_amount: Decimal | None = None
     residual_amount: Decimal | None = None
+
+    @property
+    def review_required(self) -> bool:
+        return self.authority is Authority.review
 
 
 @dataclass(frozen=True)

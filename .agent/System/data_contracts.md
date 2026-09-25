@@ -97,11 +97,15 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 - `transaction`: normalized transaction.
 - `suggested_category`: existing tracker row category or null.
 - `confidence`: deterministic confidence score.
-- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, future review-only methods such as `local_llm_gemma`, or `unmatched`.
-- `review_required`: true when the transaction must not be auto-written.
+- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, model methods such as `local_llm_gemma`, or `unmatched`.
 - `reason`: human-readable explanation for report and audit.
+- `votes`: model votes (category or null, confidence, source model) behind a model suggestion.
+- `authority`: `auto` or `review`, decided once per row by the Trust Policy (`trust_policy.py`). `review` rows must not be auto-written. `review_required` is derived from it.
+- `authority_reason`: one-line Trust Policy reason, shown in the `All Transactions` audit sheet.
 
-Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, and `reason`, but it remains review-required and is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
+Trust Policy rules, in order: rows not from a Trusted Statement Adapter are `review`; Monthly Review Decisions are `auto`; proxy split sources are `auto` (excluded from totals); rows without a category, in `never_auto_categories`, or above `auto_max_amount` are `review`; model rows need `min_agreement` agreeing votes; deterministic rows need confidence at or above `confidence_thresholds.auto_write`. Thresholds live under `trust_policy` in `config/settings.yaml` (defaults: `auto_max_amount` 1000, `min_agreement` 2, `never_auto_categories` Rent, Mom, Dad, both insurances, the three investment leaves, salary). See `docs/adr/0001-per-row-authority.md`.
+
+Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, `reason`, and `votes`; the Trust Policy keeps it `review` until `min_agreement` votes agree (a single local model never does), and it is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
 
 ## Local LLM Suggestion Contract
 
@@ -110,10 +114,12 @@ Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, c
 - `transaction_id`: row the suggestion is for.
 - `category`: an existing YAML Leaf Category Row, or NONE (no suggestion).
 - `confidence`: `0.0` to `1.0`. Category answers below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
-- `alternatives`: other leaves the model considered.
+- `alternatives`: other leaves the model considered; enum-constrained in the schema, non-leaf values dropped.
 - `evidence`: short review-facing reason, used in the `reason` field.
 - `source`: model that answered.
 - `failure`: blank, `invalid_response`, or `provider_failure`.
+
+Each answered suggestion becomes one `Vote` (category, confidence, source) on the row, and the Trust Policy re-stamps the row's authority. Failed and low-confidence suggestions leave the row unchanged.
 
 The Ollama adapter calls `/api/chat` with a system message holding the glossary, a JSON schema `format` whose `category` is an enum of leaves plus `NONE` and whose `reason` precedes `category`, `think: false`, temperature 0, `keep_alive`, and a 180-second cold-start timeout. If the configured model is not installed it uses the installed fallback model.
 
