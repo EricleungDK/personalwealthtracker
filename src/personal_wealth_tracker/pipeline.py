@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 from .categorizer import categorize_transactions
@@ -151,6 +153,11 @@ def run_pipeline(
         ),
     )
 
+    if review_xlsx_path == exception_sheet_path(output_dir, year, month):
+        _written_fingerprint_path(review_xlsx_path).write_text(
+            _fingerprint(review_xlsx_path), encoding="utf-8"
+        )
+
     return RunResult(
         mode=mode,
         target_year=year,
@@ -188,7 +195,8 @@ def run_monthly(
         statement_path, load_config(config_dir).statement_currency
     )
     exception_sheet = exception_sheet_path(output_dir, year, month)
-    return run_pipeline(
+    unreviewed = exception_sheet.exists() and not _changed_since_written(exception_sheet)
+    result = run_pipeline(
         tracker_path=tracker_path,
         statement_path=statement_path,
         config_dir=config_dir,
@@ -197,14 +205,33 @@ def run_monthly(
         output_dir=output_dir,
         commit=not dry_run,
         category_memory_dir=category_memory_dir,
-        review_decisions_path=exception_sheet if exception_sheet.exists() else None,
+        review_decisions_path=(
+            exception_sheet if exception_sheet.exists() and not unreviewed else None
+        ),
         local_llm_suggestions=True,
         register_new_leaves=not dry_run,
     )
+    return replace(result, exception_sheet_unreviewed=unreviewed)
 
 
 def exception_sheet_path(output_dir: Path, year: int, month: str) -> Path:
     return output_dir / f"review_required_{year}_{month.lower()}.xlsx"
+
+
+def _changed_since_written(exception_sheet: Path) -> bool:
+    """True unless the sheet still has the bytes and mtime the tool last wrote it with."""
+    written = _written_fingerprint_path(exception_sheet)
+    return not written.exists() or written.read_text(encoding="utf-8") != _fingerprint(
+        exception_sheet
+    )
+
+
+def _written_fingerprint_path(exception_sheet: Path) -> Path:
+    return exception_sheet.with_name(f"{exception_sheet.name}.written")
+
+
+def _fingerprint(path: Path) -> str:
+    return f"{hashlib.sha256(path.read_bytes()).hexdigest()} {path.stat().st_mtime_ns}"
 
 
 def _category_registry_additions(review_decisions) -> tuple[CategoryRegistryAddition, ...]:

@@ -21,7 +21,7 @@ uv run wealth-tracker monthly
 
 - takes the most recently modified CSV in `data/raw_statements/` (by file time, not statement date) and infers the month from its row dates; a CSV spanning several months fails,
 - categorises every row (Category Memory, Guidance Aliases, rules, then the two local model voters) and lets the Trust Policy mark each row `auto` or `review`,
-- reuses a filled `reports/review_required_<year>_<mon>.xlsx` (e.g. `review_required_2026_apr.xlsx`) as decisions when it exists,
+- reuses `reports/review_required_<year>_<mon>.xlsx` (e.g. `review_required_2026_apr.xlsx`) as decisions once you have saved it; a sheet unchanged since the tool wrote it is ignored and the next action says `Exception sheet not reviewed yet: <path>`,
 - commits the month when zero rows remain in review, otherwise writes the Exception Sheet and stops,
 - prints `Auto rows`, `Rows in review`, `Pending amount`, the report and Exception Sheet paths, and the next action.
 
@@ -31,6 +31,7 @@ Outputs under `reports/`:
 
 - `report_<year>_<mon>.md` - run summary, `Categorization Quality` (classification rate, no-review rate, method counts), `Local LLM Mode` diagnostics, planned workbook and structure changes.
 - `review_required_<year>_<mon>.xlsx` - the Exception Sheet workbook: `Review Required`, `Audit` and `Category Options` sheets.
+- `review_required_<year>_<mon>.xlsx.written` - fingerprint of the sheet as the tool last wrote it; do not edit.
 - `review_required_<year>_<mon>.csv`, `categorized_transactions_<year>_<mon>.csv`, `audit_<year>_<mon>.jsonl` - plain inspection and machine-readable audit.
 
 When the filled sheet is read back, the follow-up workbook is written as `review_required_<year>_<mon>_after_decisions.xlsx`; keep editing `review_required_<year>_<mon>.xlsx`, which is the file `monthly` reads.
@@ -47,7 +48,7 @@ Dry run writes the report, Exception Sheet and Audit preview, but never the work
 
 The `Review Required` sheet lists only rows in review: `review`-authority transactions and sources of a blocked workbook update (see `target_cell` and `workbook_reason`). Each row shows `suggested_category`; the `manual_category` dropdown offers the suggestion, model alternatives, and `NONE`.
 
-- Blank `manual_category` accepts `suggested_category`. A blank row without a suggestion stays in review.
+- Blank `manual_category` accepts `suggested_category`. A blank row without a suggestion stays in review. Save the sheet even when every row stays blank; an unsaved sheet is not read.
 - `NONE` rejects the suggestion: the row is resolved but written to no category.
 - Any other value must be an existing Leaf Category Row, such as `Food& Drinks (monthly)` or `Apple Cloud`. Parent/Section Row labels such as `Living expenses`, `Services` and `Insurance` group the tracker and are not valid targets.
 - For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The commit run registers it in `config/categories.yaml` (reported under `Category Registry Updates`) and may insert the row into the copied workbook when placement and parent formulas are safe.

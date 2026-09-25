@@ -110,6 +110,7 @@ def test_monthly_dry_run_previews_exception_and_audit_without_memory_or_workbook
         preview.close()
     assert ["BIG SHOP" in row["description"] for row in review_rows] == [True]
     assert ["UNKNOWN SHOP" in row["description"] for row in audit_rows] == [True]
+    _save_unchanged(tmp_path / "reports" / "review_required_2026_apr.xlsx")
 
     assert main(["monthly", "--dry-run"]) == 0
 
@@ -189,6 +190,67 @@ def test_monthly_without_local_model_completes_with_unmatched_rows_as_exceptions
     assert "UNKNOWN SHOP" in review_row["description"]
 
 
+def test_monthly_rerun_with_untouched_exception_sheet_commits_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    _workspace(tmp_path, monkeypatch, trust_policy=ONE_VOTE_TRUST_POLICY)
+    _statement(
+        tmp_path,
+        "april.csv",
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1;2;Yes\n"
+        "2026/04/02;-2500,00;-1542,50;DKK;BIG SHOP;Card purchase;1;2;Yes\n",
+    )
+    _use_suggester(
+        monkeypatch,
+        FakeSuggester(
+            {merchant: ScriptedVote("Traveling", 0.9) for merchant in ("UNKNOWN SHOP", "BIG SHOP")}
+        ),
+    )
+    assert main(["monthly"]) == 0
+    assert main(["monthly", "--dry-run"]) == 0
+    capsys.readouterr()
+
+    exit_code = main(["monthly"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Rows in review: 1" in output
+    assert (
+        "Next action: Exception sheet not reviewed yet: "
+        f"{Path('reports/review_required_2026_apr.xlsx')}"
+    ) in output
+    for private_dir in ("data/processed", "data/backups", "data/category_memory"):
+        assert not (tmp_path / private_dir).exists()
+
+
+def test_monthly_rerun_after_saving_blank_exception_sheet_commits_suggestions(
+    tmp_path, monkeypatch, capsys
+):
+    _workspace(tmp_path, monkeypatch, trust_policy=ONE_VOTE_TRUST_POLICY)
+    _statement(
+        tmp_path,
+        "april.csv",
+        "2026/04/01;-2500,00;-1500,00;DKK;BIG SHOP;Card purchase;1;2;Yes\n",
+    )
+    _use_suggester(monkeypatch, FakeSuggester({"BIG SHOP": ScriptedVote("Traveling", 0.9)}))
+    assert main(["monthly"]) == 0
+    assert main(["monthly"]) == 0
+    capsys.readouterr()
+    _save_unchanged(tmp_path / "reports" / "review_required_2026_apr.xlsx")
+
+    exit_code = main(["monthly"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Next action: none; month committed." in output
+    (copied_path,) = (tmp_path / "data" / "processed").glob("*.xlsx")
+    copied = load_workbook(copied_path)
+    try:
+        assert copied["Net worth"]["C6"].value == 2500
+    finally:
+        copied.close()
+
+
 def test_monthly_rerun_after_filling_exception_sheet_commits_month(
     tmp_path, monkeypatch, capsys
 ):
@@ -210,7 +272,7 @@ def test_monthly_rerun_after_filling_exception_sheet_commits_month(
     assert "Output workbook" not in capsys.readouterr().out
     assert main(["monthly"]) == 0
     unfilled_rerun = capsys.readouterr().out
-    assert "Rows in review: 1" in unfilled_rerun
+    assert "Rows in review: 2" in unfilled_rerun
     assert f"Exception sheet: {Path('reports/review_required_2026_apr.xlsx')}\n" in unfilled_rerun
     exception_sheet = tmp_path / "reports" / "review_required_2026_apr.xlsx"
     workbook = load_workbook(exception_sheet)
@@ -315,6 +377,14 @@ def _use_suggester(monkeypatch, suggester: FakeSuggester) -> None:
     monkeypatch.setattr(
         "personal_wealth_tracker.pipeline.local_consensus", lambda _settings: suggester
     )
+
+
+def _save_unchanged(path: Path) -> None:
+    workbook = load_workbook(path)
+    try:
+        workbook.save(path)
+    finally:
+        workbook.close()
 
 
 def _sheet_rows(sheet) -> list[dict[str, object]]:
