@@ -217,7 +217,7 @@ A manual review row that fills `new_parent_category` and `new_leaf_category` to 
 _Avoid_: Overloaded manual_category, automatic alias creation
 
 **Category Memory**:
-Private local categorization knowledge learned from confirmed review decisions.
+Private local categorization knowledge learned when a month commits, each entry with provenance `human` (confirmed decision) or `auto` (consensus result, trusted after two committed months).
 _Avoid_: Public rule, self-trained guess
 
 **Reviewed Decision File**:
@@ -229,7 +229,7 @@ A hand-written private categorization rule maintained by the user.
 _Avoid_: Learned mapping, generated memory
 
 **Guidance Alias**:
-A hand-written private merchant pattern mapped to a leaf category, matched directly after **Category Memory** and shown to the **Suggester**; kept in ignored `config/guidance_aliases.local.yaml`.
+A hand-written private merchant pattern mapped to a leaf category, matched directly after `human` **Category Memory** and shown to the **Suggester**; kept in ignored `config/guidance_aliases.local.yaml`.
 _Avoid_: Alias (tracker label alias), learned mapping
 
 **Merchant Identity**:
@@ -365,13 +365,13 @@ _Avoid_: Credit card settlement, liability payment
 - A reviewed second run may update the **Category Registry** with a valid **New Leaf Category Request** before planning workbook structure changes.
 - A **Confirmed Review Decision** can create or update **Category Memory**.
 - Rule: Category Memory can learn only Leaf Category Row targets that exist in the Category Registry.
-- **Category Memory** must not be learned from unconfirmed automatic matches.
+- Consensus results are learned as `auto` **Category Memory** that categorises only after two consistent committed months; before that it is a **Suggester** hint.
 - **Category Memory** is generated private data and remains separate from a hand-written **Local Rule**.
 - **Category Memory** uses **Merchant Identity** as its default matching key.
 - A recurring **Confirmed Review Decision** can add a **Recurring Match Hint** to narrow future matches.
 - A single **Confirmed Review Decision** can make future matching **Category Memory** review-free, but it does not bypass workbook safety checks.
-- A **Reviewed Decision File** is the input that promotes **Confirmed Review Decision** records into **Category Memory**.
-- Learning into **Category Memory** and writing to the **Tracker Workbook** are separate workflow steps.
+- Committing a month learns its **Confirmed Review Decision** records into **Category Memory**; a **Reviewed Decision File** import remains a manual escape hatch.
+- A dry run never writes **Category Memory**.
 - A **Bank Statement** can support **Cashflow Row** updates.
 - A **Bank Statement** can support **Net Salary Income** when a deterministic salary match exists.
 - **Net Salary Income** may update the `Full-time job (net)` row when workbook safety checks pass.
@@ -524,7 +524,7 @@ _Avoid_: Credit card settlement, liability payment
 - "fixed conversion rate" for a split transfer means a configured **Proxy Split Conversion Rate**, not a live or inferred rate.
 - "credit card payment" means **Credit Card Settlement**, not the underlying **Card Purchase** expenses.
 - "match" means a **Deterministic Category Match** when deciding whether an automatic write is allowed.
-- "auto-learning" means creating **Category Memory** from a **Confirmed Review Decision**, not self-training from automatic matches.
+- "auto-learning" means creating **Category Memory** on commit; consensus-only entries stay untrusted `auto` hints until two committed months agree.
 - "local rules" are manually curated **Local Rules**; generated **Category Memory** is a separate private store.
 - "merchant" in category memory means **Merchant Identity**, not the raw full statement description.
 - "review CSV" is raw output until the user confirms decisions; resolved term is **Reviewed Decision File** for importable decisions.

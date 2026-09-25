@@ -173,7 +173,7 @@ Audit logs use `category_registry_addition` records for validated new leaf regis
 The manual review workbook contains:
 
 - `Review Required`: the Exception Sheet; only rows in review (`review` authority, or source of a `review` workbook update).
-- `Audit`: every `auto` row with `category`, `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
+- `Audit`: every `auto` row with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next `--review-decisions` run), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
 - `Category Options`: workbook/category registry option metadata.
 - `Run Metadata`: reporting period, statement parser, generated timestamp, and transaction ID scheme.
 
@@ -182,7 +182,7 @@ Review decision columns:
 - `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion or alternatives get a dropdown of suggestion, `alternatives`, voted categories, and `NONE`; others get the leaf list with `NONE`. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
-- `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.
+- `learn_to_memory`: commit learning learns every decided row unless `no`; the manual `learn-category-memory` import learns only `yes`/truthy rows.
 
 The `Review Required` sheet should keep editable review decision columns close to the transaction description so the operator can classify rows without horizontal scanning. Less frequently edited workbook safety and audit columns can sit farther right. Preferred column order:
 
@@ -276,14 +276,14 @@ Applied conversion-rate metadata belongs in report and audit contracts, not in w
 
 Bank statement salary deposits may support net income rows, but they must not be used to infer payroll deduction rows. Payroll deduction rows such as taxes and labour market contribution should preserve existing workbook formulas or manual workbook logic unless a future source is explicitly introduced.
 
-## Future Category Memory
+## Category Memory
 
-Learned category memory should be stored separately from hand-written local rules, under ignored private generated data such as `data/category_memory/`.
+Learned category memory is stored separately from hand-written local rules, in ignored `data/category_memory/category_memory.json`.
 
-Each learned mapping should be created only from a confirmed review decision and should preserve enough audit metadata to inspect or reset it later.
+Memory is learned when a month commits. Each mapping has `provenance`: `human` (Exception Sheet decision, Audit correction, or manual import; entries without `provenance` load as `human`) or `auto` (consensus result, with `committed_months`). An `auto` mapping categorises only once it lists two committed months; before that it is only a Suggester memory neighbour. A `human` decision replaces an `auto` mapping for the merchant, and `NONE` removes the merchant's hint-less mappings.
 
 Matching keys should use a normalized merchant identity by default. Recurring learned mappings may include amount tolerance and day-window hints. Learned memory should avoid full raw descriptions when they contain changing references or sensitive account details.
 
-Reviewed policy guidance lives beside Category Memory as `data/category_memory/reviewed_policy.local.md`. It is generated from learned mappings and preserves an editable `## Manual Guidance` section. Local LLM prompts may use this policy as review guidance, but the policy is not a confirmed transaction decision, does not bypass Category Memory gating, and does not authorize workbook writes.
+Reviewed policy guidance lives beside Category Memory as `data/category_memory/reviewed_policy.local.md`. It is generated from `human` mappings and preserves an editable `## Manual Guidance` section. Local LLM prompts may use this policy as review guidance, but the policy is not a confirmed transaction decision, does not bypass Category Memory gating, and does not authorize workbook writes.
 
 A future reviewed decision import should be a separate input contract from raw review output. It should contain the transaction identifier or source fingerprint, the confirmed category, and enough metadata to derive the merchant identity and optional recurring match hints.

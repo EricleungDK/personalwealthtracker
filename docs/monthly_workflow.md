@@ -75,9 +75,9 @@ Then check `review_required_<year>_<month>.xlsx` for manual classification:
 - Leave `manual_category` blank to accept `suggested_category`, type `NONE` to reject it and leave the row uncategorised, or pick an existing Leaf Category Row to override it.
 - Use `new_parent_category` and `new_leaf_category` when the correct leaf category is missing. Select the allowed Parent/Section Row in `new_parent_category`, then type the exact new display label in `new_leaf_category`.
 - Do not fill both `manual_category` and `new_leaf_category` on the same review row.
-- Leave `learn_to_memory` blank unless a merchant decision should be considered for future Category Memory learning.
+- Leave `learn_to_memory` blank to learn the decision into Category Memory when the month commits; set `no` for a one-off decision.
 - Use the `Category Options` sheet to distinguish parent, derived, and leaf rows and to avoid derived, fixed, formula-owned, or otherwise unsafe category choices.
-- Use the `Audit` sheet to spot-check every `auto` row with its `source`, `votes`, and `reason`.
+- Use the `Audit` sheet to spot-check every `auto` row with its `source`, `votes`, and `reason`. Fill `corrected_category` (a leaf or `NONE`) to override a wrong row; the corrected run replaces any learned Category Memory for that merchant.
 
 The `review_required_<year>_<month>.csv` file remains available for simple inspection and automation:
 
@@ -137,9 +137,9 @@ This dry run still does not modify the workbook. Check the updated report and ca
 If a newly registered Leaf Category Row is not present in the tracker workbook yet, the report shows a planned structure change. Commit mode may insert that row into a copied workbook only when placement, sibling formatting, and parent formulas are safe to update.
 If `--review-decisions` points at the default generated review workbook, the reviewed input is preserved and the follow-up review workbook is written as `review_required_<year>_<month>_after_decisions.xlsx`.
 
-## 5. Optionally Learn Future Memory
+## 5. Manual Memory Import (Escape Hatch)
 
-After editing the review workbook, import only rows where either `manual_category` or a reviewed `new_leaf_category` is filled and `learn_to_memory` is `yes` into category memory:
+Category Memory is learned when a month commits (see step 6), so this step is normally skipped. To import decisions by hand without committing, import only rows where either `manual_category` or a reviewed `new_leaf_category` is filled and `learn_to_memory` is `yes` into category memory:
 
 ```bash
 uv run wealth-tracker learn-category-memory \
@@ -148,11 +148,11 @@ uv run wealth-tracker learn-category-memory \
 ```
 
 The command still accepts reviewed CSV files for automation and older workflows.
-Learning and workbook commit are separate steps. `manual_category` and reviewed `new_leaf_category` choices fix the current month; `learn_to_memory` is an explicit opt-in for future runs. Rows with blank or non-yes `learn_to_memory` are not learned, and non-learnable category options are skipped.
+This manual import learns with provenance `human`. `manual_category` and reviewed `new_leaf_category` choices fix the current month; `learn_to_memory` is an explicit opt-in for future runs. Rows with blank or non-yes `learn_to_memory` are not learned, and non-learnable category options are skipped.
 Reviewed XLSX learning validates the workbook metadata, supported transaction ID scheme, and YAML leaf category registry. Category Memory skips Parent/Section Row labels, derived rows, missing categories, fixed rows, and other non-leaf targets. A newly registered Leaf Category Row can be learned after the reviewed second run has added it to `config/categories.yaml`, even before the new row has been inserted into the tracker workbook.
-Learned Category Memory is used before hand-written historical mappings, recurring rules, and keyword rules in future monthly runs.
+`human` Category Memory is used before Guidance Aliases, hand-written historical mappings, recurring rules, and keyword rules in future monthly runs; trusted `auto` memory sits just after Guidance Aliases.
 
-The same learning step updates `data/category_memory/reviewed_policy.local.md`. The auto-generated section lists learned merchant/category examples, and the `## Manual Guidance` section is preserved for your edits. Local LLM Mode may include this policy as review guidance, but it is not model training, not workbook-write authority, and not Category Memory by itself.
+Every learning step updates `data/category_memory/reviewed_policy.local.md`. The auto-generated section lists `human` merchant/category examples, and the `## Manual Guidance` section is preserved for your edits. Local LLM Mode may include this policy as review guidance, but it is not model training, not workbook-write authority, and not Category Memory by itself.
 
 After learning, run the dry-run again with `--review-decisions` and review the new categorization before committing workbook changes.
 
@@ -177,7 +177,10 @@ Commit mode:
 - creates a backup under `data/backups/`,
 - writes only to a copied workbook under `data/processed/`,
 - preserves the original workbook,
-- skips unsafe workbook updates.
+- skips unsafe workbook updates,
+- learns Category Memory from the committed month (dry runs never write memory):
+  - Exception Sheet decisions and Audit corrections are learned with provenance `human` and apply from the next month; `learn_to_memory` `no` opts a row out, and `NONE` forgets that merchant's learned entry.
+  - Consensus (`auto`) results are learned with provenance `auto`. They categorise only after the same merchant and category are committed in two months; until then they are shown to the Suggester as memory neighbours. A different category restarts the count.
 
 If there were no current-month manual decisions, omit `--review-decisions`.
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from decimal import Decimal, ROUND_HALF_UP
 
-from .category_memory import CategoryMemory, match_category_memory
+from .category_memory import HUMAN_PROVENANCE, CategoryMemory, match_category_memory
 from .config import AppConfig, ProxySplitAllocation, ProxySplitRule, RecurringRule, Rule
 from .models import CategorizedTransaction, Transaction
 from .trust_policy import apply_trust_policy
@@ -225,16 +225,17 @@ def _categorize(
 ) -> CategorizedTransaction:
     normalized_description = normalize_text(transaction.description)
 
-    if category_memory is not None:
-        memory_match = match_category_memory(transaction, category_memory)
-        if memory_match:
-            return _result(
-                transaction,
-                memory_match.category,
-                0.97,
-                "category_memory",
-                "Confirmed category memory match.",
-            )
+    memory_match = (
+        match_category_memory(transaction, category_memory) if category_memory else None
+    )
+    if memory_match and memory_match.provenance == HUMAN_PROVENANCE:
+        return _result(
+            transaction,
+            memory_match.category,
+            0.97,
+            "category_memory",
+            "Confirmed category memory match.",
+        )
 
     guidance_alias = _match_pattern(normalized_description, config.guidance_aliases)
     if guidance_alias:
@@ -244,6 +245,15 @@ def _categorize(
             else "Guidance alias match."
         )
         return _result(transaction, guidance_alias, 0.97, "guidance_alias", reason)
+
+    if memory_match:
+        return _result(
+            transaction,
+            memory_match.category,
+            0.97,
+            "category_memory",
+            "Trusted auto category memory match.",
+        )
 
     historical = _match_pattern(normalized_description, config.historical_mappings)
     if historical:

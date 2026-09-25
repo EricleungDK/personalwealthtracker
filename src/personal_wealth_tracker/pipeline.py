@@ -4,12 +4,13 @@ from pathlib import Path
 from datetime import date
 
 from .categorizer import categorize_transactions
-from .category_memory import load_category_memory, load_reviewed_policy
+from .category_memory import learn_committed_month, load_category_memory, load_reviewed_policy
 from .config import load_config, register_category_registry_additions
 from .local_llm import apply_suggestions, disabled_diagnostics, local_consensus
 from .models import CategoryRegistryAddition, RunResult
 from .reporting import write_outputs
 from .review_decisions import (
+    MonthlyReviewDecision,
     apply_monthly_review_decisions,
     load_monthly_review_decisions,
     validate_monthly_review_decision_categories,
@@ -82,6 +83,7 @@ def run_pipeline(
         category_memory=category_memory,
     )
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
+    review_decisions: dict[str, MonthlyReviewDecision] = {}
     if review_decisions_path is not None:
         review_decisions = load_monthly_review_decisions(review_decisions_path, year, month)
         category_registry_additions = _category_registry_additions(review_decisions)
@@ -127,6 +129,13 @@ def run_pipeline(
             config,
             Path("data/processed"),
             structure_changes=structure_changes,
+        )
+        learn_committed_month(
+            category_memory_dir,
+            categorized,
+            review_decisions,
+            f"{year}-{month}",
+            frozenset(config.category_registry.leaf_categories) - config.fixed_rows,
         )
 
     (
