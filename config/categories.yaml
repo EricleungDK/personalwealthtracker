@@ -50,11 +50,11 @@ category_registry:
   - label: Cleaning costs (monthly)
     description: "Home cleaning service and cleaning supplies (rengøring), e.g. Helpling, Happy Helper."
   - label: Traveling
-    description: "Flights, hotels, holiday rentals, car rental and spending abroad on trips, e.g. SAS, Norwegian, Ryanair, easyJet, Booking.com, Airbnb, Hotels.com, Hertz, duty free."
+    description: "Flights, hotels, holiday rentals, car rental and any spending abroad on trips: foreign restaurants, tours, airport duty free shops, e.g. SAS, Norwegian, Ryanair, easyJet, Booking.com, Airbnb, Hotels.com, Hertz, duty free."
   - label: electricity
     description: "Electricity and utility bills for the home, e.g. Ørsted, Andel Energi, Norlys, Radius, HOFOR."
   - label: transportation
-    description: "Public transport, travel cards, bike and scooter rentals, taxis and fuel, e.g. Rejsekort, DSB, Movia, Metroselskabet, Voi, Lime, Donkey Republic, Bolt, Uber, Dantaxi, Circle K, Q8, Shell, OK."
+    description: "Public transport, trains, ferries, travel cards, bike and scooter rentals, taxis and fuel, e.g. Rejsekort, DSB, Movia, Metroselskabet, Voi, Lime, Donkey Republic, Bolt, Uber, Dantaxi, Circle K, Q8, Shell, OK."
   - label: Restaurants
     description: "Eating out at restaurants, cafes, bars and takeaway, e.g. Wolt, Just Eat, McDonald's, Burger King, Joe & The Juice, Espresso House, Starbucks, sushi, pizza, grill, pub; not groceries or workday lunch."
   - label: Entertainment
@@ -90,9 +90,9 @@ category_registry:
   allow_new_children: true
   children:
   - label: House insurance Tryg (yearly, in Jan)
-    description: "Yearly Tryg home insurance premium paid in January (indboforsikring)."
+    description: "Yearly Tryg home insurance premium (indboforsikring)."
   - label: Liability insurance (yearly, in Apr)
-    description: "Yearly liability insurance premium paid in April (ansvarsforsikring)."
+    description: "Yearly liability insurance premium (ansvarsforsikring), e.g. Tryg."
 - label: Investments
   type: parent
   allow_new_children: true
