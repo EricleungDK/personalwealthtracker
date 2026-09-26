@@ -53,16 +53,20 @@ def test_filled_exception_sheet_loads_every_decision_kind(tmp_path):
         updates=[],
     )
 
-    _fill(sheet_path, "Review Required", {
-        "tx-reject": {"manual_category": "NONE"},
-        "tx-explicit": {"manual_category": "Apple Cloud"},
-        "tx-new-leaf": {
-            "new_parent_category": "Living expenses",
-            "new_leaf_category": "Pet Supplies",
+    _fill(
+        sheet_path,
+        "Review Required",
+        {
+            "tx-reject": {"manual_category": "NONE"},
+            "tx-explicit": {"manual_category": "Apple Cloud"},
+            "tx-new-leaf": {
+                "new_parent_category": "Living expenses",
+                "new_leaf_category": "Pet Supplies",
+            },
+            "tx-one-off": {"manual_category": "Traveling", "learn_to_memory": "no"},
+            RESIDUAL_ID: {"manual_category": "Traveling"},
         },
-        "tx-one-off": {"manual_category": "Traveling", "learn_to_memory": "no"},
-        RESIDUAL_ID: {"manual_category": "Traveling"},
-    })
+    )
     _fill(sheet_path, "Audit", {"tx-auto": {"corrected_category": "Apple Cloud"}})
 
     assert load_monthly_review_decisions(sheet_path, 2026, "May") == EXPECTED_DECISIONS

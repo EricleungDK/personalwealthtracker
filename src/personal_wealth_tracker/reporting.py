@@ -521,9 +521,15 @@ def _write_review_workbook(
     review_sheet.title = "Review Required"
     audit_sheet = workbook.create_sheet("Audit")
     options_sheet = workbook.create_sheet("Category Options")
+    decision_options_sheet = workbook.create_sheet("Decision Options")
     metadata_sheet = workbook.create_sheet("Run Metadata")
 
-    audit_items = [item for item in categorized if not item.review_required]
+    review_items = sorted(
+        rows_in_review(categorized, updates),
+        key=lambda item: (bool(item.suggested_category), item.transaction.date),
+    )
+    review_ids = {item.transaction.transaction_id for item in review_items}
+    audit_items = [item for item in categorized if item.transaction.transaction_id not in review_ids]
     audit_headers = [
         "transaction_id",
         "date",
@@ -558,10 +564,6 @@ def _write_review_workbook(
         row = _audit_row(item)
         audit_sheet.append([row.get(header) for header in audit_headers])
 
-    review_items = sorted(
-        rows_in_review(categorized, updates),
-        key=lambda item: (item.suggested_category is not None, item.transaction.date),
-    )
     review_headers = [
         "date",
         "description",
@@ -591,13 +593,13 @@ def _write_review_workbook(
     ].hidden = True
     manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
     review_sheet[f"{manual_category_column}1"].comment = Comment(
-        MANUAL_CATEGORY_NOTE, "wealth-tracker"
+        MANUAL_CATEGORY_NOTE, author="wealth-tracker"
     )
 
-    manual_category_options = [
-        REJECT_SUGGESTION,
-        *(option.category for option in category_options if option.category_type == "leaf"),
+    leaf_categories = [
+        option.category for option in category_options if option.category_type == "leaf"
     ]
+    manual_category_options = [REJECT_SUGGESTION, *leaf_categories]
     new_parent_category_options = [
         option.category for option in category_options if option.allows_new_children
     ]
@@ -632,15 +634,19 @@ def _write_review_workbook(
     option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
     option_end_row = len(manual_category_options) + 1
     leaf_list_formula = f"'Category Options'!${option_column}$2:${option_column}${option_end_row}"
-    validations_by_formula: dict[str, DataValidation] = {}
+    # One Decision Options column per review row: no 255-character inline-list cap.
     for row, item in enumerate(review_items, start=2):
-        formula = _inline_list_formula(_decision_choices(item)) or leaf_list_formula
-        if formula not in validations_by_formula:
-            validation = DataValidation(type="list", formula1=formula)
-            _allow_blank_validation(validation)
-            review_sheet.add_data_validation(validation)
-            validations_by_formula[formula] = validation
-        validations_by_formula[formula].add(f"{manual_category_column}{row}")
+        choices = _decision_choices(item, leaf_categories)
+        choice_column = get_column_letter(row - 1)
+        for choice_row, choice in enumerate(choices, start=1):
+            decision_options_sheet.cell(row=choice_row, column=row - 1, value=choice)
+        validation = DataValidation(
+            type="list",
+            formula1=f"'Decision Options'!${choice_column}$1:${choice_column}${len(choices)}",
+        )
+        _allow_blank_validation(validation)
+        review_sheet.add_data_validation(validation)
+        validation.add(f"{manual_category_column}{row}")
 
     correction_validation = DataValidation(type="list", formula1=leaf_list_formula)
     _allow_blank_validation(correction_validation)
@@ -680,6 +686,7 @@ def _write_review_workbook(
         metadata_sheet.append([key, value])
 
     options_sheet.sheet_state = "hidden"
+    decision_options_sheet.sheet_state = "hidden"
     metadata_sheet.sheet_state = "hidden"
     workbook.save(path)
     workbook.close()
@@ -722,13 +729,14 @@ def _review_row(item: CategorizedTransaction, update: TrackerUpdate | None) -> d
 
 
 def _split_values(item: CategorizedTransaction) -> dict[str, str | None]:
-    return {
-        "split_role": item.split_role,
-        "split_rule": item.split_rule,
-        "source_transaction_id": item.source_transaction_id,
-        "allocated_amount": _format_optional_amount(item.allocated_amount),
-        "residual_amount": _format_optional_amount(item.residual_amount),
-    }
+    values = (
+        item.split_role,
+        item.split_rule,
+        item.source_transaction_id,
+        _format_optional_amount(item.allocated_amount),
+        _format_optional_amount(item.residual_amount),
+    )
+    return dict(zip(SPLIT_HEADERS, values, strict=True))
 
 
 def _blocked_note(update: TrackerUpdate | None) -> str | None:
@@ -744,27 +752,19 @@ def _format_votes(item: CategorizedTransaction) -> str:
     )
 
 
-def _decision_choices(item: CategorizedTransaction) -> list[str]:
-    """manual_category choices; a proposed new leaf is accepted via the new-leaf cells."""
+def _decision_choices(item: CategorizedTransaction, leaf_categories: list[str]) -> list[str]:
+    """Suggestion and alternatives, then NONE, then every leaf.
+
+    A proposed new leaf is not offered; it is accepted via the new-leaf cells.
+    """
     proposed = item.suggested_category if item.new_leaf_parent else None
     candidates = [
         item.suggested_category,
         *item.alternatives,
         *(vote.category for vote in item.votes),
     ]
-    choices = list(
-        dict.fromkeys(category for category in candidates if category and category != proposed)
-    )
-    return [*choices, REJECT_SUGGESTION] if choices else []
-
-
-def _inline_list_formula(choices: list[str]) -> str | None:
-    # Excel inline lists are comma-separated and capped at 255 characters.
-    joined = ",".join(choices)
-    unsafe = any("," in choice or '"' in choice for choice in choices)
-    if not choices or unsafe or len(joined) > 255:
-        return None
-    return f'"{joined}"'
+    suggestions = [category for category in candidates if category and category != proposed]
+    return list(dict.fromkeys([*suggestions, REJECT_SUGGESTION, *leaf_categories]))
 
 
 def _allow_blank_validation(validation) -> None:

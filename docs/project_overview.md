@@ -132,7 +132,7 @@ Use the files this way:
 - Start with the Markdown report to understand the run quality and planned workbook changes.
 - Use `review_required_<period>.xlsx` when you need to manually classify transactions.
 - Use `Audit` inside the review workbook to spot-check `auto` rows (source, votes, reason).
-- `Category Options` and `Run Metadata` are hidden helper sheets (dropdown lists, run period); unhide them only to inspect workbook fields and safety notes.
+- `Category Options`, `Decision Options` and `Run Metadata` are hidden helper sheets (dropdown lists, run period); unhide them only to inspect workbook fields and safety notes.
 - Use the audit log only when you need a detailed machine-readable trace.
 
 ## Scripts And Tests

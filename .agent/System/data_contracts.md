@@ -176,7 +176,8 @@ Audit logs use `category_registry_addition` records for validated new leaf regis
 The manual review workbook contains:
 
 - `Review Required`: the Exception Sheet; only rows in review (`review` authority, or source of a `review` workbook update).
-- `Audit`: every `auto` row with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next `--review-decisions` run), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
+- `Audit`: every `auto` row not in review (a row blocked by its workbook cell is only on `Review Required`) with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next `--review-decisions` run), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
+- `Decision Options` (hidden): one column per `Review Required` row holding that row's `manual_category` dropdown list.
 - `Category Options` (hidden): workbook/category registry option metadata; dropdown source, read by `learn-category-memory`.
 - `Run Metadata` (hidden): reporting period, statement parser, generated timestamp, and transaction ID scheme; read by the decision loaders.
 
@@ -184,7 +185,7 @@ The manual review workbook contains:
 
 Review decision columns:
 
-- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Rows with a suggestion or alternatives get a dropdown of suggestion, `alternatives`, voted categories, and `NONE`; others get the leaf list with `NONE`. A Subscription Leaf Proposal is not offered there: `suggested_parent_category` shows `Services`, and a blank row accepts the proposal as a New Leaf Category Request (`new_parent_category` = `suggested_parent_category`, `new_leaf_category` = `suggested_category`). If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
+- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Every row's dropdown lists its suggestion, `alternatives` and voted categories first, then `NONE`, then every leaf; each row's list lives in its own column of the hidden `Decision Options` sheet (no 255-character inline-list cap). Typing a value not in the list is allowed. A Subscription Leaf Proposal is not offered there: `suggested_parent_category` shows `Services`, and a blank row accepts the proposal as a New Leaf Category Request (`new_parent_category` = `suggested_parent_category`, `new_leaf_category` = `suggested_category`). If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: commit learning learns every decided row unless `no`; the manual `learn-category-memory` import learns only `yes`/truthy rows.

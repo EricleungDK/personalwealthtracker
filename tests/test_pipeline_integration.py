@@ -590,14 +590,10 @@ def test_exception_sheet_dropdown_offers_suggester_alternatives(tmp_path, monkey
     assert result.categorized_transactions[0].alternatives == ("Apple Cloud",)
     workbook = load_workbook(result.review_xlsx_path)
     try:
-        (dropdown,) = [
-            validation
-            for validation in workbook["Review Required"].data_validations.dataValidation
-            if "E2" in validation.sqref
-        ]
+        options = _dropdown_options(workbook, "E2")
     finally:
         workbook.close()
-    assert dropdown.formula1 == '"Traveling,Apple Cloud,NONE"'
+    assert options[:3] == ["Traveling", "Apple Cloud", "NONE"]
 
 
 def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkeypatch):
@@ -762,18 +758,14 @@ def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_
     try:
         sheet = workbook["Review Required"]
         (row,) = _sheet_rows(sheet)
-        (dropdown,) = [
-            validation
-            for validation in sheet.data_validations.dataValidation
-            if "F2" in validation.sqref
-        ]
+        options = _dropdown_options(workbook, "F2")
     finally:
         workbook.close()
     assert list(row)[3:6] == ["suggested_category", "suggested_parent_category", "manual_category"]
     assert row["suggested_category"] == "Claude subscription"
     assert row["suggested_parent_category"] == "Services"
     assert row["manual_category"] is None
-    assert "Claude subscription" not in dropdown.formula1
+    assert options == ["NONE", "Disney+"]
     assert "- New-leaf proposals: 1" in first.report_path.read_text(encoding="utf-8")
     assert '"new_leaf_proposal_count": 1' in first.audit_path.read_text(encoding="utf-8")
 
@@ -2074,6 +2066,17 @@ def _sheet_rows(sheet) -> list[dict[str, object]]:
         dict(zip(headers, (cell.value for cell in row)))
         for row in sheet.iter_rows(min_row=2)
     ]
+
+
+def _dropdown_options(workbook, cell: str) -> list[object]:
+    (validation,) = [
+        validation
+        for validation in workbook["Review Required"].data_validations.dataValidation
+        if cell in validation.sqref
+    ]
+    sheet_name, cells = validation.formula1.rsplit("!", 1)
+    sheet = workbook[sheet_name.strip("'")]
+    return [row[0].value for row in sheet[cells.replace("$", "")]]
 
 
 def _write(path: Path, content: str) -> None:
