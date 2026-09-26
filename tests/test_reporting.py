@@ -994,3 +994,47 @@ def _config(
         fixed_rows=fixed_rows,
         category_registry=category_registry,
     )
+
+
+def test_exception_sheet_explains_proposed_leaf_row_is_added_on_commit(tmp_path):
+    proposal = replace(
+        _categorized(
+            "tx-proposal",
+            "CHATGPT",
+            "-150.00",
+            "ChatGPT subscription",
+            "Local model proposed new leaf.",
+            authority=Authority.review,
+            method="local_llm_gemma",
+        ),
+        new_leaf_parent="Services",
+    )
+    updates = [
+        _update(
+            "ChatGPT subscription",
+            Decimal("150.00"),
+            ("tx-proposal",),
+            None,
+            write_action="review",
+            reason="Target category row not found.",
+        )
+    ]
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=[proposal],
+        updates=updates,
+        statement_parser="nordea-csv",
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        (row,) = _sheet_rows(workbook["Review Required"])
+        assert row["blocked"] == "New category: row added under Services when you commit."
+    finally:
+        workbook.close()
