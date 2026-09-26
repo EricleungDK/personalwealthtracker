@@ -765,10 +765,11 @@ def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_
         (dropdown,) = [
             validation
             for validation in sheet.data_validations.dataValidation
-            if "E2" in validation.sqref
+            if "F2" in validation.sqref
         ]
     finally:
         workbook.close()
+    assert list(row)[3:6] == ["suggested_category", "suggested_parent_category", "manual_category"]
     assert row["suggested_category"] == "Claude subscription"
     assert row["suggested_parent_category"] == "Services"
     assert row["manual_category"] is None
@@ -1534,10 +1535,9 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
         assert "llm_suggested_category" not in headers
         assert "llm_reason" not in headers
         assert review_sheet.cell(row=2, column=headers["suggested_category"]).value == "Traveling"
-        assert review_sheet.cell(row=2, column=headers["method"]).value == "local_llm_gemma"
-        assert "Merchant looks travel related." in review_sheet.cell(
-            row=2, column=headers["reason"]
-        ).value
+        reason = review_sheet.cell(row=2, column=headers["reason"]).value
+        assert "Merchant looks travel related." in reason
+        assert reason.endswith("(local_llm_gemma)")
     finally:
         workbook.close()
 

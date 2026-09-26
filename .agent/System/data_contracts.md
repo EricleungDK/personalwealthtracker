@@ -177,8 +177,10 @@ The manual review workbook contains:
 
 - `Review Required`: the Exception Sheet; only rows in review (`review` authority, or source of a `review` workbook update).
 - `Audit`: every `auto` row with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next `--review-decisions` run), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
-- `Category Options`: workbook/category registry option metadata.
-- `Run Metadata`: reporting period, statement parser, generated timestamp, and transaction ID scheme.
+- `Category Options` (hidden): workbook/category registry option metadata; dropdown source, read by `learn-category-memory`.
+- `Run Metadata` (hidden): reporting period, statement parser, generated timestamp, and transaction ID scheme; read by the decision loaders.
+
+`Audit` shows split columns (`split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount`) only when one of its rows is a split row.
 
 Review decision columns:
 
@@ -187,33 +189,26 @@ Review decision columns:
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: commit learning learns every decided row unless `no`; the manual `learn-category-memory` import learns only `yes`/truthy rows.
 
-The `Review Required` sheet should keep editable review decision columns close to the transaction description so the operator can classify rows without horizontal scanning. Less frequently edited workbook safety and audit columns can sit farther right. Preferred column order:
+The `Review Required` sheet is operator-first. Loaders read columns by header name, so order and optional columns may change. Column order:
 
-- `transaction_id`
 - `date`
 - `description`
 - `amount`
-- `manual_category`
+- `suggested_category`
+- `suggested_parent_category` (only when a row proposes a new leaf)
+- `manual_category` (header note: blank accepts; no suggestion needs a category or `NONE`)
+- `reason` (Suggester/rule reason with the categorization method appended in brackets)
+- `confidence`
 - `new_parent_category`
 - `new_leaf_category`
 - `learn_to_memory`
-- `split_role`
-- `split_rule`
-- `source_transaction_id`
-- `allocated_amount`
-- `residual_amount`
-- `suggested_category`
-- `suggested_parent_category`
-- `method`
-- `reason`
-- `workbook_action`
-- `target_cell`
-- `workbook_reason`
-- `merchant_identity`
-- `confidence`
-- `direction`
+- `blocked`: `<target_cell>: <reason>` only when the row's workbook update is `review` (blocks the commit); empty for `write` and `skip`
+- `split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount` (only when a split row is in review)
+- `transaction_id` (hidden)
 
-Older reviewed workbooks without `new_parent_category` and `new_leaf_category` remain importable for existing manual category decisions.
+Rows without `suggested_category` sort first, then by date. `merchant_identity` and `direction` are not shown (still in `Audit`).
+
+Older reviewed workbooks remain importable: the pre-#18 layout (`transaction_id` first, with `method`, `workbook_action`, `target_cell`, `workbook_reason`, `merchant_identity` and `direction` columns) and workbooks without `new_parent_category` and `new_leaf_category` (manual category decisions only).
 
 ## Category Registry
 

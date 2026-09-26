@@ -33,6 +33,15 @@ blocked on its own (ADR 0001 left this in place).
   both still match, the sheet counts as unreviewed, is not read, and the
   next action is `Exception sheet not reviewed yet: <path>`. Exit code stays
   0. The explicit `--review-decisions` path always reads the given file.
+- The sheet is operator-first (issue #18): `date`, `description`, `amount`,
+  `suggested_category` (`suggested_parent_category` only when a row proposes
+  a new leaf), `manual_category` (header note: blank accepts, no suggestion
+  needs a category or `NONE`), `reason` (method appended), `confidence`, the
+  optional inputs, a `blocked` note filled only for a `review` workbook
+  update, split columns only when split rows exist, and a hidden
+  `transaction_id`. Rows without a suggestion sort first, then by date.
+  `Category Options` and `Run Metadata` are hidden. Decisions are read by
+  header name, so earlier layouts still load.
 - Cell-level blocking is removed. There is no "Unreviewed" pseudo-leaf.
 - The `Audit` sheet lists every `auto` row with source, votes and reason.
 

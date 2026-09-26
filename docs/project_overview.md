@@ -132,7 +132,7 @@ Use the files this way:
 - Start with the Markdown report to understand the run quality and planned workbook changes.
 - Use `review_required_<period>.xlsx` when you need to manually classify transactions.
 - Use `Audit` inside the review workbook to spot-check `auto` rows (source, votes, reason).
-- Use `Category Options` inside the review workbook to see workbook fields and safety notes.
+- `Category Options` and `Run Metadata` are hidden helper sheets (dropdown lists, run period); unhide them only to inspect workbook fields and safety notes.
 - Use the audit log only when you need a detailed machine-readable trace.
 
 ## Scripts And Tests
@@ -174,7 +174,7 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
 - Category Memory: Private learned merchant/category choices for future runs.
 - Local LLM Mode: Explicit opt-in `--local-llm-suggestions` mode that can add review-only local Ollama/Gemma hints to unmatched or low-confidence rows.
-- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `method`, `confidence`, and `reason` fields; it is not a confirmed decision.
+- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `confidence`, and `reason` fields (the method is appended to `reason` in brackets); it is not a confirmed decision.
 - LLM New Leaf Candidate: A model hint that a missing leaf row may be needed. It does not fill `new_parent_category` or `new_leaf_category` for you.
 - Statement Import Assistant: A review-only path for unknown statement formats. It writes untrusted import review artifacts and does not feed monthly planning until a later confirmed-import workflow exists.
 - Importer Profile: Private local JSON learned from confirmed unknown-import review rows. It can produce filterable Educated Import Guesses for similar future sources and is exported only by explicit command.
