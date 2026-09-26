@@ -175,8 +175,8 @@ Audit logs use `category_registry_addition` records for validated new leaf regis
 
 The manual review workbook contains:
 
-- `Review Required`: the Exception Sheet; only rows in review (`review` authority, or source of a `review` workbook update).
-- `Audit`: every `auto` row not in review (a row blocked by its workbook cell is only on `Review Required`) with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next `--review-decisions` run), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
+- `Review Required`: the Exception Sheet; rows in review (`review` authority, or source of a `review` workbook update), then, when `monthly` rewrites it, rows resolved by a carried decision with that decision prefilled (issue #20).
+- `Audit`: every `auto` row not in review (a row blocked by its workbook cell is only on `Review Required`) with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next run that reads the sheet; `monthly` rewrites it prefilled), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
 - `Decision Options` (hidden): one column per `Review Required` row holding that row's `manual_category` dropdown list.
 - `Category Options` (hidden): workbook/category registry option metadata; dropdown source, read by `learn-category-memory`.
 - `Run Metadata` (hidden): reporting period, statement parser, generated timestamp, and transaction ID scheme; read by the decision loaders.
@@ -189,6 +189,8 @@ Review decision columns:
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
 - `learn_to_memory`: commit learning learns every decided row unless `no`; the manual `learn-category-memory` import learns only `yes`/truthy rows.
+
+Carried decisions (issue #20): `monthly` rewrites `review_required_<year>_<mon>.xlsx` in place every run with the decisions it read prefilled, keyed by `transaction_id`: `manual_category` (a blank accept is written as the accepted category, `NONE` as `NONE`), `new_parent_category`/`new_leaf_category`, `learn_to_memory` `no`, and Audit `corrected_category`. A carried accepted Subscription Leaf Proposal shows `suggested_parent_category`/`suggested_category` with equal `new_*` cells, which the loader reads as the accepted proposal; every other carried row shows no suggestion, so clearing its prefilled cell reopens it. While the sheet is unchanged since the tool wrote it (`.written` fingerprint), the loader reads filled cells only (`blank_accepts=False`). An unreadable sheet, or one that cannot be opened for writing (Excel lock), raises before any commit or output. `--review-decisions` still writes `_after_decisions.xlsx` next to the default sheet and carries nothing.
 
 The `Review Required` sheet is operator-first. Loaders read columns by header name, so order and optional columns may change. Column order:
 

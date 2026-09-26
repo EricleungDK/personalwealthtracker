@@ -14,6 +14,11 @@ from personal_wealth_tracker.models import (
     WorkbookStructureChange,
 )
 from personal_wealth_tracker.reporting import write_outputs
+from personal_wealth_tracker.review_decisions import (
+    MonthlyReviewDecision,
+    apply_monthly_review_decisions,
+    load_monthly_review_decisions,
+)
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
@@ -853,6 +858,76 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
     assert "- rule: 1" in report
     assert "- recurring: 1" in report
     assert "- unmatched: 1" in report
+
+
+def test_rewritten_exception_sheet_reads_back_every_carried_decision_without_blank_accept(
+    tmp_path,
+):
+    decisions = {
+        decision.transaction_id: decision
+        for decision in (
+            MonthlyReviewDecision("tx-manual", manual_category="Apple Cloud"),
+            MonthlyReviewDecision("tx-none", manual_category="NONE", learn_to_memory=False),
+            MonthlyReviewDecision(
+                "tx-typed-leaf", new_parent_category="Services", new_leaf_category="Pet Supplies"
+            ),
+            MonthlyReviewDecision(
+                "tx-proposal",
+                new_parent_category="Services",
+                new_leaf_category="ChatGPT subscription",
+                accepted_subscription_proposal=True,
+            ),
+            MonthlyReviewDecision("tx-audit", manual_category="NONE", audit_correction=True),
+        )
+    }
+    categorized = [
+        *(
+            _categorized(transaction_id, transaction_id.upper(), "-10.00", "", "Rows.")
+            for transaction_id in decisions
+        ),
+        _categorized(
+            "tx-open",
+            "OPEN",
+            "-10.00",
+            "Apple Cloud",
+            "Model.",
+            authority=Authority.review,
+        ),
+    ]
+    decided = [
+        replace(item, authority=Authority.auto) if item.transaction.transaction_id in decisions
+        else item
+        for item in apply_monthly_review_decisions(categorized, decisions)
+    ]
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=decided,
+        updates=[],
+        statement_parser="nordea-csv",
+        carried_decisions=decisions,
+    )
+
+    assert load_monthly_review_decisions(review_xlsx_path, 2026, "May", blank_accepts=False) == (
+        decisions
+    )
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        rows = {row["transaction_id"]: row for row in _sheet_rows(workbook["Review Required"])}
+    finally:
+        workbook.close()
+    assert next(iter(rows)) == "tx-open"
+    assert rows["tx-manual"]["suggested_category"] is None
+    assert rows["tx-typed-leaf"]["suggested_category"] is None
+    assert (
+        rows["tx-proposal"]["suggested_category"],
+        rows["tx-proposal"]["suggested_parent_category"],
+    ) == ("ChatGPT subscription", "Services")
 
 
 def _categorized(

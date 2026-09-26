@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from collections import Counter
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from .models import (
     TrackerUpdate,
     WorkbookStructureChange,
 )
-from .review_decisions import REJECT_SUGGESTION
+from .review_decisions import REJECT_SUGGESTION, MonthlyReviewDecision
 from .utils import TRANSACTION_ID_SCHEME_VERSION
 from .workbook import WorkbookCategoryOption, rows_in_review, workbook_category_options
 
@@ -47,7 +48,9 @@ def write_outputs(
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = (),
     local_llm_diagnostics: LocalLLMDiagnostics | None = None,
     review_xlsx_path: Path | None = None,
+    carried_decisions: dict[str, MonthlyReviewDecision] | None = None,
 ) -> tuple[Path, Path, Path, Path, Path]:
+    """`carried_decisions` are prefilled into the Exception Sheet so a rewrite keeps them."""
     structure_changes = structure_changes or []
     output_dir.mkdir(parents=True, exist_ok=True)
     period = f"{year}_{month.lower()}"
@@ -96,6 +99,7 @@ def write_outputs(
         categorized,
         updates,
         category_options,
+        carried_decisions or {},
     )
     return report_path, audit_path, categorized_path, review_path, review_xlsx_path
 
@@ -502,6 +506,7 @@ def _write_review_workbook(
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
     category_options: list[WorkbookCategoryOption],
+    carried_decisions: dict[str, MonthlyReviewDecision],
 ) -> None:
     try:
         from openpyxl import Workbook
@@ -524,10 +529,25 @@ def _write_review_workbook(
     decision_options_sheet = workbook.create_sheet("Decision Options")
     metadata_sheet = workbook.create_sheet("Run Metadata")
 
-    review_items = sorted(
-        rows_in_review(categorized, updates),
-        key=lambda item: (bool(item.suggested_category), item.transaction.date),
-    )
+    in_review = rows_in_review(categorized, updates)
+    in_review_ids = {item.transaction.transaction_id for item in in_review}
+    resolved_by_carried_decision = [
+        item
+        for item in categorized
+        if (decision := carried_decisions.get(item.transaction.transaction_id))
+        and not decision.audit_correction
+        and item.transaction.transaction_id not in in_review_ids
+    ]
+    # Rows needing a decision first, then rows a carried decision resolves.
+    review_items = [
+        _as_carried(item, carried_decisions.get(item.transaction.transaction_id))
+        for item in (
+            *sorted(
+                in_review, key=lambda item: (bool(item.suggested_category), item.transaction.date)
+            ),
+            *sorted(resolved_by_carried_decision, key=lambda item: item.transaction.date),
+        )
+    ]
     review_ids = {item.transaction.transaction_id for item in review_items}
     audit_items = [item for item in categorized if item.transaction.transaction_id not in review_ids]
     audit_headers = [
@@ -562,6 +582,8 @@ def _write_review_workbook(
 
     for item in audit_items:
         row = _audit_row(item)
+        if decision := carried_decisions.get(item.transaction.transaction_id):
+            row["corrected_category"] = decision.manual_category
         audit_sheet.append([row.get(header) for header in audit_headers])
 
     review_headers = [
@@ -587,6 +609,8 @@ def _write_review_workbook(
     review_sheet.append(review_headers)
     for item in review_items:
         row = _review_row(item, update_by_transaction.get(item.transaction.transaction_id))
+        if decision := carried_decisions.get(item.transaction.transaction_id):
+            row |= _carried_decision_cells(decision)
         review_sheet.append([row.get(header) for header in review_headers])
     review_sheet.column_dimensions[
         get_column_letter(review_headers.index("transaction_id") + 1)
@@ -725,6 +749,29 @@ def _review_row(item: CategorizedTransaction, update: TrackerUpdate | None) -> d
         "blocked": _blocked_note(item, update),
         "transaction_id": transaction.transaction_id,
         **_split_values(item),
+    }
+
+
+def _as_carried(
+    item: CategorizedTransaction, decision: MonthlyReviewDecision | None
+) -> CategorizedTransaction:
+    """A carried decision shows no suggestion, so clearing it reopens the row.
+
+    An accepted proposal still shows the proposal its prefilled new-leaf cells match.
+    """
+    if decision is None:
+        return item
+    if decision.accepted_subscription_proposal:
+        return replace(item, new_leaf_parent=decision.new_parent_category)
+    return replace(item, suggested_category=None)
+
+
+def _carried_decision_cells(decision: MonthlyReviewDecision) -> dict[str, str | None]:
+    return {
+        "manual_category": decision.manual_category or None,
+        "new_parent_category": decision.new_parent_category or None,
+        "new_leaf_category": decision.new_leaf_category or None,
+        "learn_to_memory": None if decision.learn_to_memory else "no",
     }
 
 

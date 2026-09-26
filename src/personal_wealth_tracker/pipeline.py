@@ -46,7 +46,10 @@ def run_pipeline(
     review_decisions_path: Path | None = None,
     local_llm_suggestions: bool = False,
     suggester: Suggester | None = None,
+    blank_accepts: bool = True,
+    carry_review_decisions: bool = False,
 ) -> RunResult:
+    """`carry_review_decisions` rewrites the default Exception Sheet with the decisions prefilled."""
     month = normalize_month(month)
     config = load_config(config_dir)
 
@@ -74,7 +77,9 @@ def run_pipeline(
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     review_decisions: dict[str, MonthlyReviewDecision] = {}
     if review_decisions_path is not None:
-        review_decisions = load_monthly_review_decisions(review_decisions_path, year, month)
+        review_decisions = load_monthly_review_decisions(
+            review_decisions_path, year, month, blank_accepts=blank_accepts
+        )
         category_registry_additions = pending_category_registry_additions(
             config_dir, _category_registry_additions(review_decisions, year, month)
         )
@@ -146,12 +151,10 @@ def run_pipeline(
         workbook_config=config,
         category_registry_additions=category_registry_additions,
         local_llm_diagnostics=local_llm_diagnostics,
-        review_xlsx_path=_review_xlsx_output_path(
-            output_dir,
-            year,
-            month,
-            review_decisions_path,
-        ),
+        review_xlsx_path=None
+        if carry_review_decisions
+        else _review_xlsx_output_path(output_dir, year, month, review_decisions_path),
+        carried_decisions=review_decisions if carry_review_decisions else {},
     )
 
     if review_xlsx_path == exception_sheet_path(output_dir, year, month):
@@ -190,13 +193,19 @@ def run_monthly(
     category_memory_dir: Path,
     dry_run: bool = False,
 ) -> RunResult:
-    """Newest statement, inferred month, filled Exception Sheet reused; commits unless dry-run."""
+    """Newest statement, inferred month, filled Exception Sheet reused; commits unless dry-run.
+
+    The sheet is always rewritten in place with its decisions carried forward. While unsaved
+    since the last write, only its filled cells count: blank rows are not accepted.
+    """
     statement_path = newest_statement(statements_dir)
     year, month = infer_statement_period(
         statement_path, load_config(config_dir).statement_currency
     )
     exception_sheet = exception_sheet_path(output_dir, year, month)
     unreviewed = exception_sheet.exists() and not _changed_since_written(exception_sheet)
+    if exception_sheet.exists():
+        _ensure_writable(exception_sheet)
     result = run_pipeline(
         tracker_path=tracker_path,
         statement_path=statement_path,
@@ -206,16 +215,27 @@ def run_monthly(
         output_dir=output_dir,
         commit=not dry_run,
         category_memory_dir=category_memory_dir,
-        review_decisions_path=(
-            exception_sheet if exception_sheet.exists() and not unreviewed else None
-        ),
+        review_decisions_path=exception_sheet if exception_sheet.exists() else None,
         local_llm_suggestions=True,
+        blank_accepts=not unreviewed,
+        carry_review_decisions=True,
     )
     return replace(result, exception_sheet_unreviewed=unreviewed)
 
 
 def exception_sheet_path(output_dir: Path, year: int, month: str) -> Path:
     return output_dir / f"review_required_{year}_{month.lower()}.xlsx"
+
+
+def _ensure_writable(exception_sheet: Path) -> None:
+    """Fail before any commit if the rewrite would fail, e.g. while Excel holds the sheet."""
+    try:
+        with exception_sheet.open("r+b"):
+            pass
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot write {exception_sheet.name} ({exc}). Close it in Excel, then re-run."
+        ) from exc
 
 
 def _changed_since_written(exception_sheet: Path) -> bool:
