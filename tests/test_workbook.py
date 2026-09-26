@@ -636,10 +636,22 @@ def test_plan_workbook_changes_blocks_ambiguous_leaf_parent_formula(tmp_path):
     change = plan.structure_changes[0]
     assert change.change_type == "insert_leaf_category"
     assert change.write_action == "review"
-    assert change.target_range == "8:8"
+    assert change.target_range is None
     assert "Parent formula is not a simple SUM range" in change.reason
     assert plan.updates[0].write_action == "review"
     assert plan.updates[0].reason == "Target category row not found."
+
+    output_path = commit_updates(
+        tracker, plan.updates, config, tmp_path / "processed", structure_changes=plan.structure_changes
+    )
+    copied = load_workbook(output_path)
+    try:
+        sheet = copied["Net worth"]
+        assert sheet["B8"].value == "Services"
+        assert sheet["C5"].value == "=C6+C7"
+        assert "Pet Supplies" not in {cell.value for cell in sheet["B"]}
+    finally:
+        copied.close()
 
 
 def _create_workbook(path: Path) -> None:
