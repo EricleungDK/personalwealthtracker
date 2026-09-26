@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from .models import Transaction
@@ -20,6 +20,7 @@ REQUIRED_HEADERS = (
     "Reconciled",
 )
 GENERIC_PROVIDER_NAMES = {"Vipps MobilePay"}
+BOOKING_DATE_FORMATS = ("%Y/%m/%d", "%d/%m/%Y")
 
 
 def parse_nordea_csv(path: Path, expected_currency: str = "DKK") -> list[Transaction]:
@@ -39,7 +40,7 @@ def parse_nordea_csv(path: Path, expected_currency: str = "DKK") -> list[Transac
                     f"expected currency {expected_currency!r}."
                 )
 
-            booked_date = datetime.strptime(row["Booking date"].strip(), "%Y/%m/%d").date()
+            booked_date = _parse_booking_date(row["Booking date"], row_number)
             amount = parse_danish_decimal(row["Amount"])
             balance = parse_danish_decimal(row["Balance"]) if row.get("Balance") else None
             description = _derive_description(row)
@@ -67,6 +68,18 @@ def _validate_headers(fieldnames: list[str] | None) -> None:
     missing = [header for header in REQUIRED_HEADERS if header not in fieldnames]
     if missing:
         raise ValueError(f"Nordea CSV is missing required headers: {', '.join(missing)}.")
+
+
+def _parse_booking_date(value: str, row_number: int) -> date:
+    text = value.strip()
+    for date_format in BOOKING_DATE_FORMATS:
+        try:
+            return datetime.strptime(text, date_format).date()
+        except ValueError:
+            continue
+    raise ValueError(
+        f"Nordea CSV row {row_number} booking date {text!r} is not YYYY/MM/DD or DD/MM/YYYY."
+    )
 
 
 def _derive_description(row: dict[str, str]) -> str:

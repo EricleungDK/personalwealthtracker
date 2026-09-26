@@ -27,7 +27,7 @@ The public/private boundary is documented in [docs/public_private_boundary.md](d
 
 Real CSV exports are ignored by Git and must not be committed. Keep them under an ignored local path such as `data/raw_statements/` or pass any other ignored local path to `--statement`.
 
-Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules.
+Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules. Guidance Aliases for merchants whose names vary (merchant pattern → leaf category) belong in ignored `config/guidance_aliases.local.yaml`; start from `config/guidance_aliases.local.example.yaml`.
 
 Local profile files belong under ignored paths such as `profiles/default.local.yaml`. Start from `config/profile.example.yaml` when documenting local tracker workbook paths, statement folders, report folders, Category Memory, Importer Profiles, and local rule overlays.
 
@@ -90,6 +90,15 @@ uv run wealth-tracker template-workbook customize \
 
 Unsupported formula changes, arbitrary layout edits, missing metadata, and unsupported template versions are rejected instead of repaired automatically.
 
+## Monthly Command
+
+```bash
+uv run wealth-tracker monthly
+uv run wealth-tracker monthly --dry-run
+```
+
+`monthly` takes the newest CSV in `data/raw_statements/`, infers the month from its row dates, and runs categorisation, the two local model voters and the Trust Policy against `Net Worth Tracker.xlsx`. With zero rows in review it commits the month to a copied workbook; otherwise it writes the Exception Sheet `reports/review_required_<year>_<mon>.xlsx` and stops. Fill and save that sheet (blank accepts the suggestion, `NONE` rejects; a row without a suggestion needs a category or `NONE`) and re-run `monthly`; each run rewrites that one sheet with your decisions kept and the rows still open listed first, until the month commits. Blank rows in a sheet unchanged since the tool wrote it are not accepted. The summary prints auto rows, rows in review, pending amount and the next action. `--dry-run` writes the Exception Sheet and Audit preview but never the workbook, backup, Category Memory or category registry (new leaf requests are only listed in the report). Without a running local model the run still completes; unmatched rows become exceptions. Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-dir` and `--category-memory-dir`.
+
 ## CSV-First Dry Run
 
 For the full monthly operator checklist, see [docs/monthly_workflow.md](docs/monthly_workflow.md).
@@ -122,7 +131,7 @@ Investment statements remain separate future PDF evidence. Bank CSV and PDF inpu
 
 ## Local LLM Review Suggestions
 
-Local LLM Mode is optional and review-only. Add `--local-llm-suggestions` to ask a local Ollama/Gemma model for local Ollama/Gemma review suggestions on unmatched transactions and low-confidence review rows:
+Local LLM Mode is optional; a single model answer is review-only. Add `--local-llm-suggestions` to ask two local models for local Ollama/Gemma review suggestions on unmatched transactions and low-confidence review rows:
 
 ```bash
 uv run wealth-tracker \
@@ -134,9 +143,9 @@ uv run wealth-tracker \
   --local-llm-suggestions
 ```
 
-The default model is `gemma4:12b` with `gemma4:e4b` as fallback and a 60-second provider timeout. Suggestions reuse the existing review workbook fields and never write workbook values, create categories, or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category and new-leaf responses are ignored and reported so weak guesses stay in ordinary manual review.
+Two local models vote on each row: `gemma4:26b` then `gemma4:12b`, with installed `qwen3:14b` as fallback and a 180-second cold-start provider timeout. When both pick the same leaf, the amount is at most 1000 DKK and the leaf is not never-auto, the row is `auto`; otherwise it stays in review with the suggestion and alternatives. Suggestions reuse the existing review workbook fields and never create categories or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category responses are ignored and reported so weak guesses stay in ordinary manual review.
 
-When `learn-category-memory` imports rows with `learn_to_memory=yes`, it also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
+Committing a month learns Category Memory: decisions as `human`, consensus results as `auto` (used only after two consistent committed months, a Suggester hint before that). Learning also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
 
 ## Unknown Statement Import Review
 
@@ -206,7 +215,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Commit mode creates a backup under `data/backups/` and writes eligible updates only to a copied workbook under `data/processed/`. It skips formulas, fixed rows, populated manual cells, unknown categories, and review-required transactions.
+Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the exception sheet (`review_required_<year>_<month>.xlsx`); fill it and re-run with `--review-decisions` to commit. With zero rows in review it creates a backup under `data/backups/` and writes the month only to a copied workbook under `data/processed/`, skipping formulas and fixed rows.
 
 ## Project Structure
 

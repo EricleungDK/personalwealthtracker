@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-06-07
+Last updated: 2026-09-26
 
 ## Template Workbook Metadata
 
@@ -97,24 +97,36 @@ Educated Import Guesses from Importer Profiles are review hints. High-confidence
 - `transaction`: normalized transaction.
 - `suggested_category`: existing tracker row category or null.
 - `confidence`: deterministic confidence score.
-- `categorization_method`: `category_memory`, `historical`, `recurring`, `rule`, `monthly_review_decision`, future review-only methods such as `local_llm_gemma`, or `unmatched`.
-- `review_required`: true when the transaction must not be auto-written.
+- `categorization_method`: `category_memory`, `guidance_alias`, `historical`, `recurring`, `rule`, `monthly_review_decision`, model methods such as `local_llm_gemma`, or `unmatched`.
 - `reason`: human-readable explanation for report and audit.
+- `votes`: model votes (category or null, confidence, source model) behind a model suggestion.
+- `alternatives`: other leaves the Suggester offered for the row; feed the Exception Sheet dropdown.
+- `authority`: `auto` or `review`, decided once per row by the Trust Policy (`trust_policy.py`). `review` rows must not be auto-written. `review_required` is derived from it.
+- `authority_reason`: one-line Trust Policy reason, shown as `reason` in the `Audit` sheet.
 
-Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, and `reason`, but it remains review-required and is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
+Trust Policy rules, in order: rows not from a Trusted Statement Adapter are `review`; Monthly Review Decisions are `auto`; proxy split sources are `auto` (excluded from totals); rows without a category, with a Subscription Leaf Proposal, in `never_auto_categories`, or above `auto_max_amount` are `review`; model rows need `min_agreement` agreeing votes; deterministic rows need confidence at or above `confidence_thresholds.auto_write`. Thresholds live under `trust_policy` in `config/settings.yaml` (defaults: `auto_max_amount` 1000, `min_agreement` 2, `never_auto_categories` Rent, Parent B, Parent A, both insurances, the three investment leaves, salary). See `docs/adr/0001-per-row-authority.md`.
 
-## Future Local LLM Suggestion Contract
+Future Local LLM Mode should reuse the existing suggestion fields rather than widening the primary review queue. A local model suggestion may populate `suggested_category`, `categorization_method`, `confidence`, `reason`, and `votes`; the Trust Policy keeps it `review` until `min_agreement` votes agree (a single local model never does), and it is not a confirmed decision until the operator fills `manual_category` or the reviewed new-leaf fields. Local LLM Mode may assist unmatched transactions and low-confidence deterministic suggestions that already require review; high-confidence deterministic matches should not be replaced by model output.
 
-A local LLM provider response should be parsed into a small structured suggestion contract before it can affect categorized outputs:
+## Local LLM Suggestion Contract
 
-- `transaction_id`: optional response echo for the transaction being suggested for. The prompt includes one transaction at a time, so responses should not be required to echo the ID; if a provider returns one, it must match exactly.
-- `status`: one of `category`, `no_suggestion`, `new_leaf_candidate`, or `provider_unavailable`.
-- `suggested_category`: required only when `status` is `category`; must be an existing YAML Leaf Category Row.
-- `new_leaf_candidate`: optional display label hint when `status` is `new_leaf_candidate`; it must not update the Category Registry directly.
-- `confidence`: provider confidence or locally derived confidence in the `0.0` to `1.0` range. `category` and `new_leaf_candidate` responses below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
-- `rationale`: short review-facing explanation suitable for the existing `reason` field.
+Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. The Ollama row prompt shows the raw statement merchant text (`merchant`); normalised identity stays the lookup key. Adapters: `OllamaSuggester` (`local_llm.py`), `FakeSuggester` (scripted votes for tests), and `ConsensusSuggester` (two Suggesters; `local_consensus(settings)` wires `model` and `second_model`). Each suggestion carries:
 
-Invalid JSON, missing required fields, categories outside the Allowed Category Set, low-confidence category/new-leaf responses, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
+- `transaction_id`: row the suggestion is for.
+- `category`: an existing YAML Leaf Category Row, a Subscription Leaf Proposal `<Service> subscription`, or NONE (no suggestion).
+- `new_leaf_parent`: `Services` when `category` is a Subscription Leaf Proposal, else blank. A proposed service that already names a leaf (`Apple Cloud`, or `Claude` once `Claude subscription` exists) returns that leaf instead.
+- `confidence`: `0.0` to `1.0`. Category answers whose highest vote is below the configured review threshold are ignored and counted as low-confidence responses so weak guesses do not populate review suggestion fields.
+- `alternatives`: other leaves the model considered; enum-constrained in the schema, non-leaf values dropped.
+- `evidence`: short review-facing reason, used in the `reason` field.
+- `source`: model that answered.
+- `failure`: blank, `invalid_response`, or `provider_failure`.
+- `votes`: Consensus only; one `Vote` per answering voter. Off-leaf answers count as NONE; the suggestion is the primary voter's leaf, else the second's, else the primary's proposal, else the second's, and other voters' leaves join `alternatives`. An existing leaf always beats a proposal; proposals with the same name after case and whitespace folding vote for the same leaf, a different proposal votes NONE, but a proposal is `review` regardless of agreement.
+
+Each answered suggestion becomes its `votes` (or one `Vote` of category, confidence, source) on the row. Agreement counts distinct vote sources, so one model voting twice is one voter, and the Trust Policy re-stamps the row's authority. Failed and low-confidence suggestions leave the row unchanged.
+
+The Ollama adapter calls `/api/chat` with a system message holding the glossary, a JSON schema `format` whose `category` is an enum of leaves plus `NONE` and `NEW_SUBSCRIPTION` (service named in `new_subscription_service`, validated as up to 40 word characters, spaces and `.+&'-`) and whose `reason` precedes `category`, `think: false`, temperature 0, `keep_alive`, and a 180-second cold-start timeout. If the configured model is not installed it uses the installed fallback model.
+
+Invalid JSON, missing required fields, categories outside the Allowed Category Set, low-confidence category responses, timeouts, unavailable Ollama, or unavailable models should leave the original deterministic or unmatched review state intact and add a report/audit warning instead of failing the monthly run. Provider failures may retry the configured fallback model once for a row before counting as unrecovered provider failures.
 
 ## TrackerUpdate
 
@@ -130,6 +142,8 @@ Invalid JSON, missing required fields, categories outside the Allowed Category S
 Direct value updates should target leaf workbook rows only. Derived workbook rows and section totals should appear in reports as skipped or formula-owned when encountered, not as writable targets.
 
 Future period-column creation should be represented separately from value updates so reports can distinguish planned structure changes from financial cell writes. Dry-run output should expose the planned structure change before commit mode applies it.
+
+Leaf-row insertion records (`insert_leaf_category`) carry `parent_category`, `leaf_category`, `source_range` (format source row, the section's last row) and `target_range` (the new row, `parent SUM end + 1`). Rows are numbered for the workbook state after all earlier changes in the list, which commit replays in order. `review` records carry the blocking reason.
 
 Period-column creation records should include the target year/month and the source template period column used for formulas and formatting.
 
@@ -161,59 +175,62 @@ Audit logs use `category_registry_addition` records for validated new leaf regis
 
 The manual review workbook contains:
 
-- `Review Required`: the operator work queue.
-- `All Transactions`: audit context for every parsed transaction.
-- `Category Options`: workbook/category registry option metadata.
-- `Run Metadata`: reporting period, statement parser, generated timestamp, and transaction ID scheme.
+- `Review Required`: the Exception Sheet; rows in review (`review` authority, or source of a `review` workbook update), then, when `monthly` rewrites it, rows resolved by a carried decision with that decision prefilled (issue #20).
+- `Audit`: every `auto` row not in review (a row blocked by its workbook cell is only on `Review Required`) with `category`, `corrected_category` (blank keeps the row; a leaf or `NONE` becomes a Monthly Review Decision on the next run that reads the sheet; `monthly` rewrites it prefilled), `source` (categorization method), `votes` (`category (model, confidence)`, `;`-joined), `reason` (Trust Policy reason), and `evidence`.
+- `Decision Options` (hidden): one column per `Review Required` row holding that row's `manual_category` dropdown list.
+- `Category Options` (hidden): workbook/category registry option metadata; dropdown source, read by `learn-category-memory`.
+- `Run Metadata` (hidden): reporting period, statement parser, generated timestamp, and transaction ID scheme; read by the decision loaders.
+
+`Audit` shows split columns (`split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount`) only when one of its rows is a split row.
 
 Review decision columns:
 
-- `manual_category`: current-month decision for an existing tracker workbook label or registered YAML Leaf Category Row. If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
+- `manual_category`: current-month decision. Blank accepts `suggested_category`; `NONE` rejects it and leaves the row uncategorised; otherwise an existing tracker workbook label or registered YAML Leaf Category Row. Every row's dropdown lists its suggestion, `alternatives` and voted categories first, then `NONE`, then every leaf; each row's list lives in its own column of the hidden `Decision Options` sheet (no 255-character inline-list cap). Typing a value not in the list is allowed. A Subscription Leaf Proposal is not offered there: `suggested_parent_category` shows `Services`, and a blank row accepts the proposal as a New Leaf Category Request (`new_parent_category` = `suggested_parent_category`, `new_leaf_category` = `suggested_category`). If the YAML leaf is not present in the tracker workbook yet, workbook planning should surface the required row insertion.
 - `new_parent_category`: allowed Parent/Section Row for a missing leaf category request.
 - `new_leaf_category`: exact display label for the missing Leaf Category Row to add. It is mutually exclusive with `manual_category`.
-- `learn_to_memory`: explicit opt-in flag. Only `yes`/truthy values allow future Category Memory learning.
+- `learn_to_memory`: commit learning learns every decided row unless `no`; the manual `learn-category-memory` import learns only `yes`/truthy rows.
 
-The `Review Required` sheet should keep editable review decision columns close to the transaction description so the operator can classify rows without horizontal scanning. Less frequently edited workbook safety and audit columns can sit farther right. Preferred column order:
+Carried decisions (issue #20): `monthly` rewrites `review_required_<year>_<mon>.xlsx` in place every run with the decisions it read prefilled, keyed by `transaction_id`: `manual_category` (a blank accept is written as the accepted category, `NONE` as `NONE`), `new_parent_category`/`new_leaf_category`, `learn_to_memory` `no`, and Audit `corrected_category`. A carried accepted Subscription Leaf Proposal shows `suggested_parent_category`/`suggested_category` with equal `new_*` cells, which the loader reads as the accepted proposal; every other carried row shows no suggestion, so clearing its prefilled cell reopens it. While the sheet is unchanged since the tool wrote it (`.written` fingerprint), the loader reads filled cells only (`blank_accepts=False`). An unreadable sheet, or one that cannot be opened for writing (Excel lock), raises before any commit or output. `--review-decisions` still writes `_after_decisions.xlsx` next to the default sheet and carries nothing.
 
-- `transaction_id`
+The `Review Required` sheet is operator-first. Loaders read columns by header name, so order and optional columns may change. Column order:
+
 - `date`
 - `description`
 - `amount`
-- `manual_category`
+- `suggested_category`
+- `suggested_parent_category` (only when a row proposes a new leaf)
+- `manual_category` (header note: blank accepts; no suggestion needs a category or `NONE`)
+- `reason` (Suggester/rule reason with the categorization method appended in brackets)
+- `confidence`
 - `new_parent_category`
 - `new_leaf_category`
 - `learn_to_memory`
-- `split_role`
-- `split_rule`
-- `source_transaction_id`
-- `allocated_amount`
-- `residual_amount`
-- `suggested_category`
-- `method`
-- `reason`
-- `workbook_action`
-- `target_cell`
-- `workbook_reason`
-- `merchant_identity`
-- `confidence`
-- `direction`
+- `blocked`: `<target_cell>: <reason>` only when the row's workbook update is `review` (blocks the commit); empty for `write` and `skip`
+- `split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount` (only when a split row is in review)
+- `transaction_id` (hidden)
 
-Older reviewed workbooks without `new_parent_category` and `new_leaf_category` remain importable for existing manual category decisions.
+Rows without `suggested_category` sort first, then by date. `merchant_identity` and `direction` are not shown (still in `Audit`).
+
+Older reviewed workbooks remain importable: the pre-#18 layout (`transaction_id` first, with `method`, `workbook_action`, `target_cell`, `workbook_reason`, `merchant_identity` and `direction` columns) and workbooks without `new_parent_category` and `new_leaf_category` (manual category decisions only).
 
 ## Category Registry
 
 `config/categories.yaml` is the durable category registry. It supports:
 
 - parent entries with `allow_new_children` and `children`,
-- leaf string entries,
+- leaf string entries, or leaf mappings with `label` and `description`,
 - derived entries that are never direct transaction targets,
 - explicit aliases that resolve old or short labels to registry labels.
 
 Parent/Section Row labels group child rows and may allow reviewed new leaf requests. Leaf Category Row labels are the valid targets for `manual_category`, workbook value planning, and Category Memory learning. Derived rows such as workbook totals are allowed as context but not as write or memory targets.
 
+Leaf `description` text forms the leaf glossary (`CategoryRegistry.leaf_glossary`, leaf → description) that the Suggester sees. A leaf without a description maps to an empty string. Adding a leaf does not change the tracker workbook; a missing leaf row is only planned for insertion when a transaction targets it.
+
 The registry rejects duplicate labels using case-insensitive trimmed matching while preserving exact display labels in YAML and reports.
 
 Category Memory learning validates against leaf categories. Learning skips Parent/Section Row labels, derived rows, missing categories, fixed rows, and other non-leaf targets. A reviewed `new_leaf_category` can be learned only after the reviewed second run has added it to the YAML registry, even before the new row has been inserted into the tracker workbook.
+
+New leaf registration (issue #19): a reviewed run registers requested leaves in memory only, so workbook planning, decision validation and row insertion see them. `config/categories.yaml` is written only after the atomic month commit succeeds; a dry run or a run blocked by rows in review leaves it byte-identical. The write is a minimal text edit: `- label: <leaf>` and `description: "..."` are inserted after the last child under the parent's `children:` (an empty `children: []` becomes a block list), keeping every other line and the file's line endings. The description is `<Service> subscription billing.` for an accepted Subscription Leaf Proposal and `Added in monthly review <Mon YYYY>.` for an operator-typed leaf. A leaf already registered under the same parent is skipped, so re-running with the same Exception Sheet adds no duplicate.
 
 ## Future Proxy Split Rules
 
@@ -263,14 +280,14 @@ Applied conversion-rate metadata belongs in report and audit contracts, not in w
 
 Bank statement salary deposits may support net income rows, but they must not be used to infer payroll deduction rows. Payroll deduction rows such as taxes and labour market contribution should preserve existing workbook formulas or manual workbook logic unless a future source is explicitly introduced.
 
-## Future Category Memory
+## Category Memory
 
-Learned category memory should be stored separately from hand-written local rules, under ignored private generated data such as `data/category_memory/`.
+Learned category memory is stored separately from hand-written local rules, in ignored `data/category_memory/category_memory.json`.
 
-Each learned mapping should be created only from a confirmed review decision and should preserve enough audit metadata to inspect or reset it later.
+Memory is learned when a month commits. Each mapping has `provenance`: `human` (Exception Sheet decision, Audit correction, or manual import; entries without `provenance` load as `human`) or `auto` (consensus result, with `committed_months`). An `auto` mapping categorises only once it lists two committed months; before that it is only a Suggester memory neighbour. A `human` decision replaces an `auto` mapping for the merchant, and `NONE` removes the merchant's hint-less mappings.
 
 Matching keys should use a normalized merchant identity by default. Recurring learned mappings may include amount tolerance and day-window hints. Learned memory should avoid full raw descriptions when they contain changing references or sensitive account details.
 
-Reviewed policy guidance lives beside Category Memory as `data/category_memory/reviewed_policy.local.md`. It is generated from learned mappings and preserves an editable `## Manual Guidance` section. Local LLM prompts may use this policy as review guidance, but the policy is not a confirmed transaction decision, does not bypass Category Memory gating, and does not authorize workbook writes.
+Reviewed policy guidance lives beside Category Memory as `data/category_memory/reviewed_policy.local.md`. It is generated from `human` mappings and preserves an editable `## Manual Guidance` section. Local LLM prompts may use this policy as review guidance, but the policy is not a confirmed transaction decision, does not bypass Category Memory gating, and does not authorize workbook writes.
 
 A future reviewed decision import should be a separate input contract from raw review output. It should contain the transaction identifier or source fingerprint, the confirmed category, and enough metadata to derive the merchant identity and optional recurring match hints.

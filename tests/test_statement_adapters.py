@@ -118,6 +118,33 @@ def test_trusted_statement_adapter_rejects_out_of_period_transactions_with_diagn
     assert "outside target period Apr 2026" in str(exc_info.value)
 
 
+def test_trusted_statement_adapter_accepts_month_end_and_rejects_next_year_in_december(
+    tmp_path,
+):
+    statement = tmp_path / "statement.csv"
+    _write_csv(
+        statement,
+        ["2026/12/31;-10,00;990,00;DKK;GROCERY SHOP;Card purchase;1111;2222;Yes"],
+    )
+    result = import_trusted_statement(
+        statement, statement_format="nordea-csv", expected_currency="DKK", year=2026, month="Dec"
+    )
+    assert [transaction.date for transaction in result.transactions] == [date(2026, 12, 31)]
+
+    _write_csv(
+        statement,
+        ["2027/01/01;-10,00;990,00;DKK;GROCERY SHOP;Card purchase;1111;2222;Yes"],
+    )
+    with pytest.raises(StatementImportError, match="outside target period Dec 2026"):
+        import_trusted_statement(
+            statement,
+            statement_format="nordea-csv",
+            expected_currency="DKK",
+            year=2026,
+            month="Dec",
+        )
+
+
 def test_trusted_statement_adapter_wraps_parser_failures_as_diagnostics(tmp_path):
     statement = tmp_path / "statement.csv"
     _write_csv(
@@ -269,7 +296,6 @@ def _app_config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,

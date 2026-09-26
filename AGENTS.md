@@ -6,7 +6,7 @@ Project-specific guidance for coding agents working in `PersonalWorthTracker`.
 
 - This repository contains an implemented MVP Python CLI for local-first monthly tracker workbook updates.
 - Product requirements, architecture notes, data contracts, and domain language live under `.agent/System/`.
-- The current workflow is CSV-first Nordea statement processing with PDF fallback, dry-run review artifacts, reviewed-decision import, optional Category Memory learning, and commit-to-copy workbook updates.
+- The current workflow is CSV-first Nordea statement processing with PDF fallback, dry-run review artifacts, reviewed-decision import, Category Memory learning on commit, and commit-to-copy workbook updates.
 - Real financial inputs, generated outputs, local category memory, and local agent tooling must stay out of Git.
 
 ## Repository Discovery
@@ -80,3 +80,17 @@ When using `to-issues`, publish approved slices in dependency order, keep `.agen
 - Keep durable decisions in `.agent/Tasks/context.md` or the relevant `.agent/System/` document.
 - Keep user-facing setup and usage notes in `README.md`.
 - Avoid temporary process notes in user-facing documentation.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `EricleungDK/personalwealthtracker` via `gh`; `.agent/issues/` is historical only. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: glossary at `.agent/System/domain_language.md`, ADRs under `docs/adr/`. See `docs/agents/domain.md`.

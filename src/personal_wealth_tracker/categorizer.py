@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 from decimal import Decimal, ROUND_HALF_UP
 
-from .category_memory import CategoryMemory, match_category_memory
+from .category_memory import HUMAN_PROVENANCE, CategoryMemory, match_category_memory
 from .config import AppConfig, ProxySplitAllocation, ProxySplitRule, RecurringRule, Rule
 from .models import CategorizedTransaction, Transaction
+from .trust_policy import apply_trust_policy
 from .utils import normalize_text
 
 
@@ -35,7 +36,7 @@ def categorize_transactions(
             categorized.extend(split_items)
             continue
         categorized.append(_categorize(transaction, config, category_memory))
-    return categorized
+    return apply_trust_policy(categorized, config)
 
 
 def _proxy_split_results_by_transaction(
@@ -100,7 +101,6 @@ def _proxy_split_result(transaction: Transaction, rule: ProxySplitRule) -> list[
             suggested_category=None,
             confidence=1.0,
             categorization_method="proxy_split_source",
-            review_required=False,
             reason=f"Proxy split source for {rule.name}; excluded from workbook totals.",
             source_transaction_id=source_id,
             split_rule=rule.name,
@@ -114,7 +114,6 @@ def _proxy_split_result(transaction: Transaction, rule: ProxySplitRule) -> list[
                 suggested_category=allocation.category,
                 confidence=1.0,
                 categorization_method="proxy_split_allocation",
-                review_required=False,
                 reason=(
                     "Proxy split allocation: "
                     f"{allocation.base_amount} * {rule.conversion_rate} = {amount} DKK."
@@ -132,7 +131,6 @@ def _proxy_split_result(transaction: Transaction, rule: ProxySplitRule) -> list[
                 suggested_category=None,
                 confidence=0.0,
                 categorization_method="proxy_split_residual",
-                review_required=True,
                 reason="Proxy split residual needs current-month review.",
                 source_transaction_id=source_id,
                 split_rule=rule.name,
@@ -158,7 +156,6 @@ def _blocked_proxy_split(
         suggested_category=None,
         confidence=0.0,
         categorization_method="proxy_split_blocked",
-        review_required=True,
         reason=reason,
         source_transaction_id=transaction.transaction_id,
         split_rule=rule.name,
@@ -228,19 +225,37 @@ def _categorize(
 ) -> CategorizedTransaction:
     normalized_description = normalize_text(transaction.description)
 
-    if category_memory is not None:
-        memory_match = match_category_memory(transaction, category_memory)
-        if memory_match:
-            return _result(
-                transaction,
-                memory_match.category,
-                0.97,
-                "category_memory",
-                False,
-                "Confirmed category memory match.",
-            )
+    memory_match = (
+        match_category_memory(transaction, category_memory) if category_memory else None
+    )
+    if memory_match and memory_match.provenance == HUMAN_PROVENANCE:
+        return _result(
+            transaction,
+            memory_match.category,
+            0.97,
+            "category_memory",
+            "Confirmed category memory match.",
+        )
 
-    historical = _match_historical(normalized_description, config.historical_mappings)
+    guidance_alias = _match_pattern(normalized_description, config.guidance_aliases)
+    if guidance_alias:
+        reason = (
+            "Refund matched guidance alias; nets against category in reporting month."
+            if _is_refund_like(transaction, normalized_description)
+            else "Guidance alias match."
+        )
+        return _result(transaction, guidance_alias, 0.97, "guidance_alias", reason)
+
+    if memory_match:
+        return _result(
+            transaction,
+            memory_match.category,
+            0.97,
+            "category_memory",
+            "Trusted auto category memory match.",
+        )
+
+    historical = _match_pattern(normalized_description, config.historical_mappings)
     if historical:
         reason = (
             "Refund matched historical mapping; nets against category in reporting month."
@@ -252,25 +267,21 @@ def _categorize(
             historical,
             0.98,
             "historical",
-            False,
             reason,
         )
 
     recurring = _match_recurring(transaction, normalized_description, config.recurring_rules)
     if recurring:
-        review_required = recurring.confidence < config.auto_write_threshold
         return _result(
             transaction,
             recurring.category,
             recurring.confidence,
             "recurring",
-            review_required,
             "Recurring amount/date rule match.",
         )
 
     rule = _match_rule(transaction, normalized_description, config.rules)
     if rule:
-        review_required = rule.confidence < config.auto_write_threshold
         if _is_refund_against_expense_rule(transaction, normalized_description, rule.direction):
             reason = "Refund matched expense keyword rule; nets against category in reporting month."
         elif rule.category == EXPENSE_CLAIMS_CATEGORY:
@@ -282,7 +293,6 @@ def _categorize(
             rule.category,
             rule.confidence,
             "rule",
-            review_required,
             reason,
         )
 
@@ -292,7 +302,6 @@ def _categorize(
             None,
             0.0,
             "unmatched",
-            True,
             "Refund-like transaction needs review because no deterministic category matched.",
         )
 
@@ -301,12 +310,11 @@ def _categorize(
         None,
         0.0,
         "unmatched",
-        True,
         "No historical or keyword rule matched.",
     )
 
 
-def _match_historical(description: str, mappings: dict[str, str]) -> str | None:
+def _match_pattern(description: str, mappings: dict[str, str]) -> str | None:
     for pattern, category in mappings.items():
         if normalize_text(pattern) in description:
             return category
@@ -376,7 +384,6 @@ def _result(
     category: str | None,
     confidence: float,
     method: str,
-    review_required: bool,
     reason: str,
 ) -> CategorizedTransaction:
     return CategorizedTransaction(
@@ -384,6 +391,5 @@ def _result(
         suggested_category=category,
         confidence=confidence,
         categorization_method=method,
-        review_required=review_required,
         reason=reason,
     )

@@ -70,6 +70,33 @@ def test_rejects_missing_or_unexpected_row_currency(tmp_path):
         parse_nordea_csv(missing_currency, expected_currency="DKK")
 
 
+@pytest.mark.parametrize(
+    ("booking_date", "expected"),
+    [
+        ("2026/04/03", "2026-04-03"),
+        ("2026/04/25", "2026-04-25"),
+        ("03/04/2026", "2026-04-03"),
+        ("25/04/2026", "2026-04-25"),
+    ],
+)
+def test_parses_both_nordea_booking_date_formats(tmp_path, booking_date, expected):
+    path = tmp_path / "export.csv"
+    _write_csv(path, [_csv_row(booking_date, "-10,00", "990,00", "NETTO", "Card purchase")])
+
+    [transaction] = parse_nordea_csv(path)
+
+    assert transaction.date.isoformat() == expected
+
+
+@pytest.mark.parametrize("booking_date", ["2026-04-03", "04/31/2026", "2026/13/01", ""])
+def test_rejects_unparseable_booking_date(tmp_path, booking_date):
+    path = tmp_path / "export.csv"
+    _write_csv(path, [_csv_row(booking_date, "-10,00", "990,00", "NETTO", "Card purchase")])
+
+    with pytest.raises(ValueError, match=f"row 2 booking date {booking_date!r}.*YYYY/MM/DD.*DD/MM/YYYY"):
+        parse_nordea_csv(path)
+
+
 def test_csv_transaction_ids_are_stable_across_repeated_parses_order_and_path(tmp_path):
     rows = [
         _csv_row("2026/04/01", "-10,00", "990,00", "NETTO", "Card purchase"),

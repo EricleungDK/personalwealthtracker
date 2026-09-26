@@ -1,9 +1,18 @@
 from pathlib import Path
 from decimal import Decimal
+import difflib
+import shutil
+import subprocess
 
 import pytest
 
-from personal_wealth_tracker.config import load_config
+from personal_wealth_tracker.config import (
+    TrustPolicySettings,
+    load_config,
+    pending_category_registry_additions,
+    persist_category_registry_additions,
+)
+from personal_wealth_tracker.models import CategoryRegistryAddition
 
 
 def test_load_config_merges_ignored_local_rules(tmp_path):
@@ -90,9 +99,11 @@ def test_load_config_defaults_local_llm_provider_settings(tmp_path):
 
     assert config.local_llm.provider == "ollama"
     assert config.local_llm.endpoint == "http://localhost:11434"
-    assert config.local_llm.model == "gemma4:12b"
-    assert config.local_llm.fallback_model == "gemma4:e4b"
-    assert config.local_llm.timeout_seconds == 60.0
+    assert config.local_llm.model == "gemma4:26b"
+    assert config.local_llm.second_model == "gemma4:12b"
+    assert config.local_llm.fallback_model == "qwen3:14b"
+    assert config.local_llm.timeout_seconds == 180.0
+    assert config.local_llm.keep_alive == "30m"
     assert config.local_llm.include_raw_description is False
 
 
@@ -108,8 +119,10 @@ local_llm:
   provider: ollama
   endpoint: "http://127.0.0.1:11435"
   model: "gemma4:e2b"
+  second_model: "qwen3:14b"
   fallback_model: "gemma4:e4b"
   timeout_seconds: 5
+  keep_alive: "5m"
   include_raw_description: true
 """,
     )
@@ -124,9 +137,109 @@ local_llm:
     assert config.local_llm.provider == "ollama"
     assert config.local_llm.endpoint == "http://127.0.0.1:11435"
     assert config.local_llm.model == "gemma4:e2b"
+    assert config.local_llm.second_model == "qwen3:14b"
     assert config.local_llm.fallback_model == "gemma4:e4b"
     assert config.local_llm.timeout_seconds == 5.0
+    assert config.local_llm.keep_alive == "5m"
     assert config.local_llm.include_raw_description is True
+
+
+def test_load_config_defaults_trust_policy_settings(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.trust_policy == TrustPolicySettings()
+
+
+def test_load_config_reads_trust_policy_from_settings(tmp_path):
+    _write(
+        tmp_path / "settings.yaml",
+        """
+tracker:
+  currency: DKK
+statement:
+  currency: DKK
+confidence_thresholds:
+  auto_write: 0.9
+trust_policy:
+  auto_max_amount: 250.50
+  min_agreement: 3
+  never_auto_categories:
+    - Public Category
+""",
+    )
+    _write(tmp_path / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.trust_policy == TrustPolicySettings(
+        auto_max_amount=Decimal("250.50"),
+        min_agreement=3,
+        min_confidence=0.9,
+        never_auto_categories=frozenset({"Public Category"}),
+    )
+
+
+def test_project_settings_set_operator_trust_policy():
+    config = load_config(Path("config"))
+
+    assert config.trust_policy == TrustPolicySettings()
+
+
+def test_load_config_reads_ignored_guidance_alias_file(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Lunch\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+    _write(
+        tmp_path / "guidance_aliases.local.yaml",
+        "CANTEEN NORTH: Lunch\nCANTEEN SOUTH: Lunch\n",
+    )
+
+    config = load_config(tmp_path)
+
+    assert config.guidance_aliases == {"CANTEEN NORTH": "Lunch", "CANTEEN SOUTH": "Lunch"}
+
+
+def test_load_config_without_guidance_alias_file_has_no_aliases(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    assert load_config(tmp_path).guidance_aliases == {}
+
+
+def test_load_config_rejects_guidance_alias_to_unknown_leaf(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(tmp_path / "categories.yaml", "categories:\n  - Lunch\naliases: {}\n")
+    _write(tmp_path / "rules.yaml", "{}\n")
+    _write(tmp_path / "guidance_aliases.local.yaml", "CANTEEN NORTH: Canteen\n")
+
+    with pytest.raises(ValueError) as error:
+        load_config(tmp_path)
+
+    assert str(error.value) == (
+        "guidance alias 'CANTEEN NORTH' targets 'Canteen', which is not a leaf category."
+    )
+
+
+def test_guidance_alias_example_is_synthetic_and_real_file_is_ignored(tmp_path):
+    example = Path("config/guidance_aliases.local.example.yaml")
+    for name in ("settings.yaml", "categories.yaml", "rules.yaml"):
+        _write(tmp_path / name, Path("config", name).read_text(encoding="utf-8"))
+    _write(tmp_path / "guidance_aliases.local.yaml", example.read_text(encoding="utf-8"))
+
+    aliases = load_config(tmp_path).guidance_aliases
+
+    assert aliases
+    assert all("EXAMPLE" in pattern for pattern in aliases)
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "config/guidance_aliases.local.yaml"], check=False
+    )
+    assert ignored.returncode == 0
 
 
 def test_load_config_supports_private_proxy_split_rules(tmp_path):
@@ -243,6 +356,121 @@ def test_project_config_exposes_parent_leaf_category_registry():
     assert "Living expenses" not in config.categories
     assert "Insurance" not in config.categories
     assert "Taxes" not in config.categories
+
+
+def test_project_config_describes_every_leaf_category():
+    config = load_config(Path("config"))
+
+    glossary = config.category_registry.leaf_glossary
+
+    assert set(glossary) == set(config.category_registry.leaf_categories)
+    assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
+
+
+def test_project_config_stays_described_after_registering_new_leaves(tmp_path):
+    config_dir = tmp_path / "config"
+    shutil.copytree(Path("config"), config_dir)
+    categories_yaml = config_dir / "categories.yaml"
+    before = categories_yaml.read_text(encoding="utf-8")
+    additions = (
+        CategoryRegistryAddition(
+            "Services", "Claude subscription", ("tx-1",), "Claude subscription billing."
+        ),
+        CategoryRegistryAddition(
+            "Living expenses", "Pet: supplies", ("tx-2",), "Added in monthly review Aug 2026."
+        ),
+    )
+
+    persist_category_registry_additions(
+        config_dir, pending_category_registry_additions(config_dir, additions)
+    )
+
+    after = categories_yaml.read_text(encoding="utf-8")
+    diff = list(difflib.ndiff(before.splitlines(), after.splitlines()))
+    assert [line for line in diff if line.startswith("- ")] == []
+    assert [line[2:] for line in diff if line.startswith("+ ")] == [
+        '  - label: "Pet: supplies"',
+        '    description: "Added in monthly review Aug 2026."',
+        "  - label: Claude subscription",
+        '    description: "Claude subscription billing."',
+    ]
+    config = load_config(config_dir)
+    glossary = config.category_registry.leaf_glossary
+    assert set(glossary) == set(config.category_registry.leaf_categories)
+    assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
+    assert config.category_registry.children_by_parent["Services"][-1] == "Claude subscription"
+    assert pending_category_registry_additions(config_dir, additions) == ()
+
+
+def test_registering_new_leaf_keeps_crlf_line_endings_and_fills_empty_children(tmp_path):
+    categories_yaml = tmp_path / "categories.yaml"
+    categories_yaml.write_bytes(
+        b"category_registry:\r\n"
+        b'  - label: "Plan #1"  # comment\r\n'
+        b"  - label: Services\r\n"
+        b"    allow_new_children: true\r\n"
+        b"    children: []\r\n"
+        b"aliases: {}\r\n"
+    )
+
+    persist_category_registry_additions(
+        tmp_path,
+        (CategoryRegistryAddition("Services", "Claude subscription", ("tx-1",), "Billing."),),
+    )
+
+    assert categories_yaml.read_bytes() == (
+        b"category_registry:\r\n"
+        b'  - label: "Plan #1"  # comment\r\n'
+        b"  - label: Services\r\n"
+        b"    allow_new_children: true\r\n"
+        b"    children:\r\n"
+        b"    - label: Claude subscription\r\n"
+        b'      description: "Billing."\r\n'
+        b"aliases: {}\r\n"
+    )
+
+
+def test_project_config_adds_restaurants_entertainment_and_no_generic_subscriptions_leaf():
+    config = load_config(Path("config"))
+    registry = config.category_registry
+
+    for leaf in ("Restaurants", "Entertainment"):
+        assert registry.is_leaf_category(leaf)
+    assert not registry.is_leaf_category("Subscriptions")
+    assert registry.allows_new_leaf_children("Services")
+    assert "Disney+" in registry.children_by_parent["Services"]
+    assert "Restaurants" in registry.children_by_parent["Living expenses"]
+    assert "Food& Drinks (monthly)" in registry.children_by_parent["Living expenses"]
+
+
+def test_load_config_exposes_leaf_glossary_with_blank_missing_descriptions(tmp_path):
+    _write(tmp_path / "settings.yaml", "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n")
+    _write(
+        tmp_path / "categories.yaml",
+        """
+category_registry:
+  - label: Living expenses
+    type: parent
+    children:
+      - label: Rent
+        description: Monthly housing rent.
+      - Shopping
+  - label: Salary
+    description: Net pay from employer.
+  - label: Total net worth
+    type: derived
+aliases: {}
+""",
+    )
+    _write(tmp_path / "rules.yaml", "{}\n")
+
+    config = load_config(tmp_path)
+
+    assert config.category_registry.leaf_glossary == {
+        "Rent": "Monthly housing rent.",
+        "Shopping": "",
+        "Salary": "Net pay from employer.",
+    }
 
 
 def test_load_config_supports_tree_shaped_category_registry(tmp_path):

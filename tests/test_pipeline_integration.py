@@ -1,4 +1,4 @@
-import json
+import difflib
 from pathlib import Path
 from decimal import Decimal
 
@@ -6,8 +6,9 @@ from openpyxl import Workbook, load_workbook
 import pytest
 
 from personal_wealth_tracker.config import load_config
-from personal_wealth_tracker.models import LocalLLMAvailability
+from personal_wealth_tracker.models import Authority
 from personal_wealth_tracker.pipeline import run_pipeline
+from personal_wealth_tracker.suggester import ConsensusSuggester, FakeSuggester, ScriptedVote
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
@@ -137,16 +138,15 @@ def test_pipeline_applies_exact_proxy_split_rule_without_double_counting_source(
 
     workbook = load_workbook(result.review_xlsx_path, data_only=True)
     try:
-        audit_sheet = workbook["All Transactions"]
+        audit_sheet = workbook["Audit"]
         headers = {cell.value: index for index, cell in enumerate(audit_sheet[1], start=1)}
         methods = [
-            audit_sheet.cell(row=row, column=headers["method"]).value
+            audit_sheet.cell(row=row, column=headers["source"]).value
             for row in range(2, audit_sheet.max_row + 1)
         ]
     finally:
         workbook.close()
-    assert methods.count("proxy_split_source") == 1
-    assert methods.count("proxy_split_allocation") == 2
+    assert methods == ["proxy_split_source"]
 
 
 def test_pipeline_emits_residual_proxy_split_review_line_for_larger_transfer(
@@ -448,7 +448,7 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir)
+    _create_config(config_dir, trust_policy=RAISED_TRUST_POLICY)
 
     result = run_pipeline(
         tracker_path=tracker,
@@ -476,9 +476,669 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
         copied.close()
 
     assert result.mode == "commit"
-    assert result.output_workbook_path is not None
-    assert result.output_workbook_path.exists()
+    assert result.review_count == 0
     assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
+
+
+def test_commit_never_writes_partial_month(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_tracker(tracker)
+    _create_config(config_dir)
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=FIXTURE,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        commit=True,
+    )
+
+    salary = next(
+        item
+        for item in result.categorized_transactions
+        if item.suggested_category == "Full-time job (net)"
+    )
+    assert salary.review_required is True
+    assert {update.category: update.write_action for update in result.updates} == {
+        "Apple Cloud": "write",
+        "Full-time job (net)": "write",
+        "Traveling": "write",
+    }
+    assert result.review_count == 1
+    assert result.output_workbook_path is None
+    assert not (tmp_path / "data" / "processed").exists()
+    original = load_workbook(tracker)
+    try:
+        assert [original["Net worth"][cell].value for cell in ("C5", "C6", "C7")] == [
+            None,
+            None,
+            None,
+        ]
+    finally:
+        original.close()
+
+
+def test_commit_with_review_rows_writes_exception_sheet_instead_of_workbook(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester({"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9)})
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    assert result.output_workbook_path is None
+    assert not (tmp_path / "data" / "processed").exists()
+    assert not (tmp_path / "data" / "backups").exists()
+    assert result.review_count == 1
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        rows = _sheet_rows(workbook["Review Required"])
+    finally:
+        workbook.close()
+    assert [row["transaction_id"] for row in rows] == [
+        result.transactions[0].transaction_id
+    ]
+    assert rows[0]["suggested_category"] == "Traveling"
+    assert rows[0]["manual_category"] is None
+    assert "Workbook not written: 1 row(s) in review." in result.report_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_exception_sheet_dropdown_offers_suggester_alternatives(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester(
+        {"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9, alternatives=("Apple Cloud",))}
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    assert result.categorized_transactions[0].alternatives == ("Apple Cloud",)
+    workbook = load_workbook(result.review_xlsx_path)
+    try:
+        options = _dropdown_options(workbook, "E2")
+    finally:
+        workbook.close()
+    assert options[:3] == ["Traveling", "Apple Cloud", "NONE"]
+
+
+def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    output_dir = tmp_path / "reports"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/01;-40,00;960,00;DKK;SHOP ONE;Card purchase;1111;2222;Yes\n"
+        "2026/04/02;-15,00;945,00;DKK;SHOP TWO;Card purchase;1111;2222;Yes\n"
+        "2026/04/03;-7,50;937,50;DKK;SHOP THREE;Card purchase;1111;2222;Yes\n",
+    )
+    suggester = FakeSuggester(
+        {
+            merchant: ScriptedVote("Traveling", 0.9)
+            for merchant in ("SHOP ONE", "SHOP TWO", "SHOP THREE")
+        }
+    )
+    pipeline_args = {
+        "tracker_path": tracker,
+        "statement_path": statement,
+        "config_dir": config_dir,
+        "year": 2026,
+        "month": "Apr",
+        "output_dir": output_dir,
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": suggester,
+    }
+    first = run_pipeline(**pipeline_args)
+    assert first.output_workbook_path is None
+    decisions = {"SHOP ONE": None, "SHOP TWO": "NONE", "SHOP THREE": "Apple Cloud"}
+    workbook = load_workbook(first.review_xlsx_path)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            description = sheet.cell(row=row, column=headers["description"]).value
+            sheet.cell(row=row, column=headers["manual_category"]).value = next(
+                decision for merchant, decision in decisions.items() if merchant in description
+            )
+        workbook.save(first.review_xlsx_path)
+    finally:
+        workbook.close()
+
+    result = run_pipeline(**pipeline_args, review_decisions_path=first.review_xlsx_path)
+
+    assert result.review_count == 0
+    rejected = next(
+        item for item in result.categorized_transactions if "SHOP TWO" in item.transaction.description
+    )
+    assert rejected.suggested_category is None
+    assert rejected.review_required is False
+    original = load_workbook(tracker)
+    copied = load_workbook(result.output_workbook_path)
+    try:
+        assert original["Net worth"]["C5"].value is None
+        assert original["Net worth"]["C7"].value is None
+        assert copied["Net worth"]["C5"].value == 7.5
+        assert copied["Net worth"]["C7"].value == 40
+    finally:
+        original.close()
+        copied.close()
+    assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
+
+
+def test_audit_sheet_lists_auto_rows_with_source_votes_and_reason(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    with (config_dir / "settings.yaml").open("a", encoding="utf-8") as handle:
+        handle.write("trust_policy:\n  min_agreement: 1\n")
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1111;2222;Yes\n"
+        "2026/04/02;-2500,00;-1542,50;DKK;BIG SHOP;Card purchase;1111;2222;Yes\n",
+    )
+    suggester = FakeSuggester(
+        {merchant: ScriptedVote("Traveling", 0.9) for merchant in ("UNKNOWN SHOP", "BIG SHOP")}
+    )
+
+    result = run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    workbook = load_workbook(result.review_xlsx_path, data_only=True)
+    try:
+        audit_rows = _sheet_rows(workbook["Audit"])
+    finally:
+        workbook.close()
+    assert len(audit_rows) == 1
+    audit_row = audit_rows[0]
+    assert "UNKNOWN SHOP" in audit_row["description"]
+    assert audit_row["category"] == "Traveling"
+    assert audit_row["source"] == "local_llm_gemma"
+    assert audit_row["votes"] == "Traveling (fake, 0.90)"
+    assert audit_row["reason"] == "1 model votes agree."
+
+
+def test_committed_human_decision_is_auto_next_month_via_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["COFFEE HUT"], commit=True)
+    assert first.output_workbook_path is None
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "Traveling"})
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["COFFEE HUT"],
+        commit=True,
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert committed.output_workbook_path is not None
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["COFFEE HUT"])
+
+    row = next_month.categorized_transactions[0]
+    assert row.suggested_category == "Traveling"
+    assert row.categorization_method == "category_memory"
+    assert row.authority is Authority.auto
+
+
+def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_only(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    suggester = ConsensusSuggester(
+        FakeSuggester({"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}),
+        FakeSuggester({"CLAUDE.AI": ScriptedVote(None, 0.8, new_subscription="claude")}),
+    )
+    month_args = {"commit": True, "local_llm_suggestions": True, "suggester": suggester}
+    categories_yaml = config_dir / "categories.yaml"
+    registry_before = categories_yaml.read_text(encoding="utf-8")
+
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["CLAUDE.AI"], **month_args)
+
+    assert first.output_workbook_path is None
+    workbook = load_workbook(first.review_xlsx_path)
+    try:
+        sheet = workbook["Review Required"]
+        (row,) = _sheet_rows(sheet)
+        options = _dropdown_options(workbook, "F2")
+    finally:
+        workbook.close()
+    assert list(row)[3:6] == ["suggested_category", "suggested_parent_category", "manual_category"]
+    assert row["suggested_category"] == "Claude subscription"
+    assert row["suggested_parent_category"] == "Services"
+    assert row["manual_category"] is None
+    assert options == ["NONE", "Disney+"]
+    assert "- New-leaf proposals: 1" in first.report_path.read_text(encoding="utf-8")
+    assert '"new_leaf_proposal_count": 1' in first.audit_path.read_text(encoding="utf-8")
+
+    preview = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert preview.category_registry_additions[0].leaf_category == "Claude subscription"
+    assert categories_yaml.read_text(encoding="utf-8") == registry_before
+
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert committed.output_workbook_path is not None
+    assert _added_lines(registry_before, categories_yaml.read_text(encoding="utf-8")) == [
+        "      - label: Claude subscription",
+        '        description: "Claude subscription billing."',
+    ]
+    registry = load_config(config_dir).category_registry
+    assert registry.children_by_parent["Services"] == ("Disney+", "Claude subscription")
+    assert registry.leaf_glossary["Claude subscription"] == "Claude subscription billing."
+    copied = load_workbook(committed.output_workbook_path)
+    try:
+        assert copied["Net worth"]["B7"].value == "Claude subscription"
+        assert copied["Net worth"]["C7"].value == 40
+    finally:
+        copied.close()
+
+    registry_after_commit = categories_yaml.read_bytes()
+    rerun = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert rerun.output_workbook_path is not None
+    assert rerun.category_registry_additions == ()
+    assert categories_yaml.read_bytes() == registry_after_commit
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["CLAUDE.AI"])
+
+    assert next_month.categorized_transactions[0].suggested_category == "Claude subscription"
+    assert next_month.categorized_transactions[0].authority is Authority.auto
+
+
+def test_blocked_commit_with_accepted_proposal_leaves_category_registry_untouched(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    categories_yaml = config_dir / "categories.yaml"
+    registry_before = categories_yaml.read_bytes()
+    month_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": FakeSuggester(
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}
+        ),
+    }
+    merchants = ["CLAUDE.AI", "UNKNOWN SHOP"]
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", merchants, **month_args)
+
+    blocked = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        merchants,
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert blocked.review_count == 1
+    assert blocked.output_workbook_path is None
+    assert [addition.leaf_category for addition in blocked.category_registry_additions] == [
+        "Claude subscription"
+    ]
+    assert "Claude subscription" in {update.category for update in blocked.updates}
+    assert categories_yaml.read_bytes() == registry_before
+
+
+def test_subscription_proposal_can_be_accepted_explicitly_with_edited_name(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    month_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": FakeSuggester(
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}
+        ),
+    }
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["CLAUDE.AI"], **month_args)
+    _fill_exception_sheet(first.review_xlsx_path, {"CLAUDE.AI": "Services"}, "new_parent_category")
+    _fill_exception_sheet(
+        first.review_xlsx_path, {"CLAUDE.AI": "Claude Pro subscription"}, "new_leaf_category"
+    )
+
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert committed.output_workbook_path is not None
+    registry = load_config(config_dir).category_registry
+    assert registry.children_by_parent["Services"] == ("Disney+", "Claude Pro subscription")
+    assert registry.leaf_glossary["Claude Pro subscription"] == (
+        "Added in monthly review Apr 2026."
+    )
+
+
+def test_subscription_proposal_can_be_overridden_with_existing_leaf(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    month_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": FakeSuggester(
+            {"DISNEYPLUS": ScriptedVote(None, 0.9, new_subscription="Disney Plus")}
+        ),
+    }
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["DISNEYPLUS"], **month_args)
+    _fill_exception_sheet(first.review_xlsx_path, {"DISNEYPLUS": "Disney+"})
+
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["DISNEYPLUS"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert committed.categorized_transactions[0].suggested_category == "Disney+"
+    assert committed.category_registry_additions == ()
+    assert load_config(config_dir).category_registry.children_by_parent["Services"] == (
+        "Disney+",
+    )
+
+
+def test_exception_sheet_learn_to_memory_no_keeps_decision_out_of_memory(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["COFFEE HUT"], commit=True)
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "Traveling"})
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "no"}, "learn_to_memory")
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["COFFEE HUT"],
+        commit=True,
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert committed.output_workbook_path is not None
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["COFFEE HUT"])
+
+    assert next_month.categorized_transactions[0].categorization_method == "unmatched"
+
+
+def test_dry_run_writes_no_category_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr",))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["COFFEE HUT"])
+    _fill_exception_sheet(first.review_xlsx_path, {"COFFEE HUT": "Traveling"})
+
+    result = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["COFFEE HUT"],
+        review_decisions_path=first.review_xlsx_path,
+    )
+
+    assert result.review_count == 0
+    assert not (tmp_path / "data" / "category_memory").exists()
+
+
+def test_consensus_result_is_hint_after_one_month_and_memory_after_two(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May", "Jun"))
+    _create_category_registry_config(config_dir)
+
+    def consensus():
+        votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+        return ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b"))
+
+    april = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["NOODLE BAR"],
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=consensus(),
+    )
+    assert april.output_workbook_path is not None
+    policy = tmp_path / "data" / "category_memory" / "reviewed_policy.local.md"
+    assert "NOODLE BAR" not in policy.read_text(encoding="utf-8")
+    hint_probe = FakeSuggester({})
+
+    may_dry_run = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "May",
+        ["NOODLE BAR"],
+        local_llm_suggestions=True,
+        suggester=hint_probe,
+    )
+
+    assert may_dry_run.categorized_transactions[0].categorization_method != "category_memory"
+    _, context = hint_probe.calls[0]
+    assert context.memory_neighbours("NOODLE BAR") == (("NOODLE BAR", "Traveling"),)
+
+    _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "May",
+        ["NOODLE BAR"],
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=consensus(),
+    )
+    june = _run_month(tmp_path, tracker, config_dir, "Jun", ["NOODLE BAR"])
+
+    row = june.categorized_transactions[0]
+    assert row.suggested_category == "Traveling"
+    assert row.categorization_method == "category_memory"
+
+
+def test_recommitting_same_month_does_not_trust_auto_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+    for _ in range(2):
+        _run_month(
+            tmp_path,
+            tracker,
+            config_dir,
+            "Apr",
+            ["NOODLE BAR"],
+            commit=True,
+            local_llm_suggestions=True,
+            suggester=ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b")),
+        )
+
+    may = _run_month(tmp_path, tracker, config_dir, "May", ["NOODLE BAR"])
+
+    assert may.categorized_transactions[0].categorization_method == "unmatched"
+
+
+def test_audit_correction_reverses_learned_memory_and_records_corrected_category(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+    april_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b")),
+    }
+    april = _run_month(tmp_path, tracker, config_dir, "Apr", ["NOODLE BAR"], **april_args)
+    _fill_audit_corrections(april.review_xlsx_path, {"NOODLE BAR": "Apple Cloud"})
+
+    corrected = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["NOODLE BAR"],
+        review_decisions_path=april.review_xlsx_path,
+        **april_args,
+    )
+
+    copied = load_workbook(corrected.output_workbook_path)
+    try:
+        assert copied["Net worth"]["C5"].value == 40
+        assert copied["Net worth"]["C7"].value is None
+    finally:
+        copied.close()
+    may = _run_month(tmp_path, tracker, config_dir, "May", ["NOODLE BAR"])
+    row = may.categorized_transactions[0]
+    assert row.suggested_category == "Apple Cloud"
+    assert row.categorization_method == "category_memory"
+
+
+def test_audit_correction_to_none_forgets_learned_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+
+    def commit_month(month: str, **options):
+        return _run_month(
+            tmp_path,
+            tracker,
+            config_dir,
+            month,
+            ["NOODLE BAR"],
+            commit=True,
+            local_llm_suggestions=True,
+            suggester=ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b")),
+            **options,
+        )
+
+    april = commit_month("Apr")
+    _fill_audit_corrections(april.review_xlsx_path, {"NOODLE BAR": "NONE"})
+    commit_month("Apr", review_decisions_path=april.review_xlsx_path)
+    commit_month("May")
+
+    probe = _run_month(tmp_path, tracker, config_dir, "May", ["NOODLE BAR"])
+    assert probe.categorized_transactions[0].categorization_method != "category_memory"
 
 
 def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkeypatch):
@@ -486,7 +1146,7 @@ def test_monthly_commit_does_not_perform_currency_label_cleanup(tmp_path, monkey
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir)
+    _create_config(config_dir, trust_policy=RAISED_TRUST_POLICY)
     _set_workbook_label(tracker, "A1", "Tracker currency: EUR")
 
     result = run_pipeline(
@@ -517,7 +1177,7 @@ def test_pipeline_review_csv_includes_skipped_derived_workbook_rows(tmp_path, mo
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
     _create_tracker(tracker)
-    _create_config(config_dir, salary_category="Income (net)")
+    _create_config(config_dir, salary_category="Income (net)", trust_policy=RAISED_TRUST_POLICY)
 
     result = run_pipeline(
         tracker_path=tracker,
@@ -884,11 +1544,8 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    client = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.68,
-        rationale="Merchant looks travel related.",
+    suggester = FakeSuggester(
+        {"UNKNOWN SHOP": ScriptedVote("Traveling", 0.68, "Merchant looks travel related.")}
     )
 
     result = run_pipeline(
@@ -899,20 +1556,19 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
         month="Apr",
         output_dir=tmp_path / "reports",
         local_llm_suggestions=True,
-        local_llm_client=client,
+        suggester=suggester,
     )
 
     item = result.categorized_transactions[0]
     assert item.suggested_category == "Traveling"
     assert item.categorization_method == "local_llm_gemma"
     assert item.review_required is True
-    assert result.updates[0].category == "Traveling"
-    assert result.updates[0].write_action == "review"
-    assert result.updates[0].reason == "One or more source transactions require review."
+    assert result.review_count == 1
 
     report = result.report_path.read_text(encoding="utf-8")
     assert "## Local LLM Mode" in report
     assert "- Status: enabled" in report
+    assert "- Second model: gemma4:12b" in report
     assert "- Eligible rows: 1" in report
     assert "- Provider calls attempted: 1" in report
     assert "- Existing-leaf suggestions: 1" in report
@@ -921,6 +1577,7 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
     audit = result.audit_path.read_text(encoding="utf-8")
     assert '"record_type": "local_llm_summary"' in audit
     assert '"existing_leaf_suggestions": 1' in audit
+    assert '"second_model": "gemma4:12b"' in audit
     assert '"categorization_method": "local_llm_gemma"' in audit
 
     workbook = load_workbook(result.review_xlsx_path, data_only=True)
@@ -930,10 +1587,9 @@ def test_pipeline_local_llm_suggestion_is_review_only_and_reuses_review_fields(
         assert "llm_suggested_category" not in headers
         assert "llm_reason" not in headers
         assert review_sheet.cell(row=2, column=headers["suggested_category"]).value == "Traveling"
-        assert review_sheet.cell(row=2, column=headers["method"]).value == "local_llm_gemma"
-        assert "Merchant looks travel related." in review_sheet.cell(
-            row=2, column=headers["reason"]
-        ).value
+        reason = review_sheet.cell(row=2, column=headers["reason"]).value
+        assert "Merchant looks travel related." in reason
+        assert reason.endswith("(local_llm_gemma)")
     finally:
         workbook.close()
 
@@ -965,12 +1621,7 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
     _create_tracker(tracker)
     _create_category_registry_config(config_dir)
     _write_unknown_shop_statement(statement)
-    client = _LocalLLMClient(
-        status="category",
-        suggested_category="Traveling",
-        confidence=0.68,
-        rationale="Merchant looks travel related.",
-    )
+    suggester = FakeSuggester({})
 
     run_pipeline(
         tracker_path=tracker,
@@ -981,15 +1632,42 @@ def test_pipeline_includes_reviewed_policy_in_local_llm_prompt(tmp_path, monkeyp
         output_dir=tmp_path / "reports",
         category_memory_dir=memory_dir,
         local_llm_suggestions=True,
-        local_llm_client=client,
+        suggester=suggester,
     )
 
-    prompt = json.loads(client.prompts[0])
-    assert "MOBILEPAY REJSEKORT" in prompt["reviewed_policy"]
-    assert "unknown private transfers" in prompt["reviewed_policy"]
+    _, context = suggester.calls[0]
+    assert "MOBILEPAY REJSEKORT" in context.reviewed_policy
+    assert "unknown private transfers" in context.reviewed_policy
+    assert set(context.leaf_glossary) == {"Apple Cloud", "Traveling", "Full-time job (net)"}
 
 
-def test_pipeline_registers_new_leaf_category_from_review_decisions(
+def test_pipeline_passes_guidance_aliases_to_suggester_context(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    statement = tmp_path / "statement.csv"
+    _create_tracker(tracker)
+    _create_category_registry_config(config_dir)
+    _write(config_dir / "guidance_aliases.local.yaml", '"TRAIN EXAMPLE": "Traveling"\n')
+    _write_unknown_shop_statement(statement)
+    suggester = FakeSuggester({})
+
+    run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month="Apr",
+        output_dir=tmp_path / "reports",
+        local_llm_suggestions=True,
+        suggester=suggester,
+    )
+
+    _, context = suggester.calls[0]
+    assert context.guidance_aliases == {"TRAIN EXAMPLE": "Traveling"}
+
+
+def test_pipeline_dry_run_plans_new_leaf_category_without_writing_registry(
     tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -1027,6 +1705,8 @@ def test_pipeline_registers_new_leaf_category_from_review_decisions(
         ],
     )
 
+    registry_before = (config_dir / "categories.yaml").read_bytes()
+
     result = run_pipeline(
         tracker_path=tracker,
         statement_path=statement,
@@ -1047,12 +1727,9 @@ def test_pipeline_registers_new_leaf_category_from_review_decisions(
     assert update.write_action == "review"
     assert update.reason == "Target category row not found."
 
-    config = load_config(config_dir)
-    assert "Pet Supplies" in config.category_registry.leaf_categories
-    assert config.category_registry.children_by_parent["Living expenses"] == (
-        "Apple Cloud",
-        "Traveling",
-        "Pet Supplies",
+    assert (config_dir / "categories.yaml").read_bytes() == registry_before
+    assert result.category_registry_additions[0].description == (
+        "Added in monthly review Apr 2026."
     )
     report = result.report_path.read_text(encoding="utf-8")
     assert "## Category Registry Updates" in report
@@ -1309,37 +1986,6 @@ def _write_revolut_statement(path: Path, amount: str) -> None:
     )
 
 
-class _LocalLLMClient:
-    def __init__(
-        self,
-        status: str,
-        suggested_category: str,
-        confidence: float,
-        rationale: str,
-    ):
-        self.status = status
-        self.suggested_category = suggested_category
-        self.confidence = confidence
-        self.rationale = rationale
-        self.prompts: list[str] = []
-
-    def check_availability(self, config):
-        return LocalLLMAvailability(available=True, model=config.model)
-
-    def generate(self, config, model, prompt):
-        self.prompts.append(prompt)
-        transaction_id = json.loads(prompt)["transaction"]["transaction_id"]
-        return json.dumps(
-            {
-                "transaction_id": transaction_id,
-                "status": self.status,
-                "suggested_category": self.suggested_category,
-                "confidence": self.confidence,
-                "rationale": self.rationale,
-            }
-        )
-
-
 def _create_tracker(path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -1354,7 +2000,18 @@ def _create_tracker(path: Path) -> None:
     workbook.close()
 
 
-def _create_config(config_dir: Path, salary_category: str = "Full-time job (net)") -> None:
+RAISED_TRUST_POLICY = """
+trust_policy:
+  auto_max_amount: 20000
+  never_auto_categories: []
+"""
+
+
+def _create_config(
+    config_dir: Path,
+    salary_category: str = "Full-time job (net)",
+    trust_policy: str = "",
+) -> None:
     config_dir.mkdir(parents=True)
     _write(
         config_dir / "settings.yaml",
@@ -1374,7 +2031,8 @@ confidence_thresholds:
 writer:
   overwrite_fixed_rows: false
   highlight_auto_filled_cells: false
-""",
+"""
+        + trust_policy,
     )
     _write(
         config_dir / "categories.yaml",
@@ -1461,6 +2119,25 @@ def _write_unknown_shop_statement(path: Path) -> None:
     )
 
 
+def _sheet_rows(sheet) -> list[dict[str, object]]:
+    headers = [cell.value for cell in sheet[1]]
+    return [
+        dict(zip(headers, (cell.value for cell in row)))
+        for row in sheet.iter_rows(min_row=2)
+    ]
+
+
+def _dropdown_options(workbook, cell: str) -> list[object]:
+    (validation,) = [
+        validation
+        for validation in workbook["Review Required"].data_validations.dataValidation
+        if cell in validation.sqref
+    ]
+    sheet_name, cells = validation.formula1.rsplit("!", 1)
+    sheet = workbook[sheet_name.strip("'")]
+    return [row[0].value for row in sheet[cells.replace("$", "")]]
+
+
 def _write(path: Path, content: str) -> None:
     path.write_text(content.lstrip(), encoding="utf-8")
 
@@ -1531,3 +2208,122 @@ def _write_review_decisions(
         metadata_sheet.append([key, value])
     workbook.save(path)
     workbook.close()
+
+
+MONTH_NUMBER = {"Apr": 4, "May": 5, "Jun": 6}
+
+
+def _create_multi_month_tracker(path: Path, months: tuple[str, ...]) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    for column, month in enumerate(months, start=3):
+        sheet.cell(row=2, column=column, value=2026)
+        sheet.cell(row=3, column=column, value=month)
+    sheet["B5"] = "Apple Cloud"
+    sheet["B6"] = "Full-time job (net)"
+    sheet["B7"] = "Traveling"
+    sheet["B8"] = "Income (net)"
+    workbook.save(path)
+    workbook.close()
+
+
+def _create_services_tracker(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Net worth"
+    for column, month in enumerate(("Apr", "May"), start=3):
+        sheet.cell(row=2, column=column, value=2026)
+        sheet.cell(row=3, column=column, value=month)
+    sheet["B5"] = "Services"
+    sheet["B6"] = "Disney+"
+    sheet["B7"] = "Insurance"
+    workbook.save(path)
+    workbook.close()
+
+
+def _create_services_config(config_dir: Path) -> None:
+    _create_category_registry_config(config_dir)
+    _write(
+        config_dir / "categories.yaml",
+        """
+category_registry:
+  - label: "Services"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Disney+"
+  - label: "Insurance"
+    type: "parent"
+    children: []
+aliases: {}
+""",
+    )
+
+
+def _added_lines(before: str, after: str) -> list[str]:
+    """Lines `after` adds to `before`; fails if any line of `before` changed or moved."""
+    diff = list(difflib.ndiff(before.splitlines(), after.splitlines()))
+    assert [line for line in diff if line.startswith("- ")] == []
+    return [line[2:] for line in diff if line.startswith("+ ")]
+
+
+def _run_month(
+    tmp_path: Path,
+    tracker: Path,
+    config_dir: Path,
+    month: str,
+    merchants: list[str],
+    **options,
+):
+    statement = tmp_path / f"statement_{month}.csv"
+    _write(
+        statement,
+        "\ufeffBooking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled\n"
+        + "".join(
+            f"2026/{MONTH_NUMBER[month]:02d}/{day:02d};-40,00;900,00;DKK;{merchant};"
+            "Card purchase;1111;2222;Yes\n"
+            for day, merchant in enumerate(merchants, start=1)
+        ),
+    )
+    return run_pipeline(
+        tracker_path=tracker,
+        statement_path=statement,
+        config_dir=config_dir,
+        year=2026,
+        month=month,
+        output_dir=tmp_path / "reports",
+        **options,
+    )
+
+
+def _fill_exception_sheet(
+    path: Path, decisions: dict[str, str | None], column: str = "manual_category"
+) -> None:
+    workbook = load_workbook(path)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            description = sheet.cell(row=row, column=headers["description"]).value
+            for merchant, decision in decisions.items():
+                if merchant in description:
+                    sheet.cell(row=row, column=headers[column]).value = decision
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+
+def _fill_audit_corrections(path: Path, corrections: dict[str, str]) -> None:
+    workbook = load_workbook(path)
+    try:
+        sheet = workbook["Audit"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            description = sheet.cell(row=row, column=headers["description"]).value
+            for merchant, correction in corrections.items():
+                if merchant in description:
+                    sheet.cell(row=row, column=headers["corrected_category"]).value = correction
+        workbook.save(path)
+    finally:
+        workbook.close()
