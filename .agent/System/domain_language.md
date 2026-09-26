@@ -33,8 +33,12 @@ The per-row decision, `auto` or `review`, of whether a categorized transaction m
 _Avoid_: Cell blocking
 
 **Exception Sheet**:
-The `Review Required` sheet listing only rows in review, suggestion prefilled. Blank accepts the suggestion; `NONE` rejects it.
+The `Review Required` sheet listing rows in review, suggestion prefilled, then rows already decided with the decision prefilled; one per month, rewritten by each `monthly` run. Blank accepts the suggestion; `NONE` rejects it.
 _Avoid_: Whole-month review workbook
+
+**Carried Decision**:
+A Monthly Review Decision or Audit correction read from the Exception Sheet and written back, prefilled, when `monthly` rewrites it, so it keeps applying without another save (ADR 0003).
+_Avoid_: Replayed decision
 
 **Atomic Month Commit**:
 Commit mode writes the copied Tracker Workbook only when zero rows remain in review, so it never holds a partial month.

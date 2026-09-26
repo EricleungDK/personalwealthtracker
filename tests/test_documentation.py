@@ -31,7 +31,7 @@ def test_monthly_workflow_documents_operator_checklist():
         "uv run wealth-tracker monthly",
         "--dry-run",
         "review_required_<year>_<mon>.xlsx",
-        "_after_decisions.xlsx",
+        "one Exception Sheet per month",
         "Blank `manual_category` accepts",
         "`NONE` rejects",
         "Atomic Month Commit",

@@ -30,7 +30,9 @@ EXPECTED_DECISIONS = {
         accepted_subscription_proposal=True,
     ),
     RESIDUAL_ID: MonthlyReviewDecision(RESIDUAL_ID, manual_category="Traveling"),
-    "tx-auto": MonthlyReviewDecision("tx-auto", manual_category="Apple Cloud"),
+    "tx-auto": MonthlyReviewDecision(
+        "tx-auto", manual_category="Apple Cloud", audit_correction=True
+    ),
 }
 
 

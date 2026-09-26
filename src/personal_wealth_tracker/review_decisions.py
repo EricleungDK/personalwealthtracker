@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,7 @@ class MonthlyReviewDecision:
     new_leaf_category: str = ""
     learn_to_memory: bool = True
     accepted_subscription_proposal: bool = False
+    audit_correction: bool = False
 
     @property
     def rejected(self) -> bool:
@@ -34,7 +36,9 @@ def load_monthly_review_decisions(
     path: Path,
     year: int,
     month: str,
+    blank_accepts: bool = True,
 ) -> dict[str, MonthlyReviewDecision]:
+    """`blank_accepts=False` reads only filled cells: blank rows are not accepted."""
     workbook = _load_workbook_without_extension_warning(path)
     try:
         if "Run Metadata" not in workbook.sheetnames:
@@ -44,7 +48,7 @@ def load_monthly_review_decisions(
 
         metadata = _metadata(workbook["Run Metadata"])
         _validate_metadata(metadata, year, month)
-        decisions = _decisions(workbook["Review Required"])
+        decisions = _decisions(workbook["Review Required"], blank_accepts)
         if "Audit" in workbook.sheetnames:
             for transaction_id, decision in _audit_corrections(workbook["Audit"]).items():
                 if transaction_id in decisions:
@@ -60,6 +64,7 @@ def load_monthly_review_decisions(
 def _load_workbook_without_extension_warning(path: Path):
     try:
         from openpyxl import load_workbook
+        from openpyxl.utils.exceptions import InvalidFileException
     except ImportError as exc:
         raise RuntimeError("openpyxl is required for review decision import.") from exc
 
@@ -69,7 +74,13 @@ def _load_workbook_without_extension_warning(path: Path):
             message="Data Validation extension is not supported and will be removed",
             category=UserWarning,
         )
-        return load_workbook(path, data_only=True)
+        try:
+            return load_workbook(path, data_only=True)
+        except (OSError, KeyError, zipfile.BadZipFile, InvalidFileException) as exc:
+            raise ValueError(
+                f"Cannot read {path.name} ({exc}). "
+                "Close it in Excel or restore a saved copy, then re-run."
+            ) from exc
 
 
 def apply_monthly_review_decisions(
@@ -142,7 +153,7 @@ def _validate_metadata(metadata: dict[str, object], year: int, month: str) -> No
         )
 
 
-def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
+def _decisions(sheet, blank_accepts: bool) -> dict[str, MonthlyReviewDecision]:
     headers = {
         str(cell.value): index
         for index, cell in enumerate(sheet[1], start=1)
@@ -171,12 +182,14 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
                 f"Review decision row {row} with new_leaf_category must include "
                 "new_parent_category."
             )
-        accepted_subscription_proposal = False
-        if not manual_category and not new_leaf_category:
-            suggested_category = _optional_stripped_cell(sheet, row, suggested_category_column)
-            suggested_parent = _optional_stripped_cell(
-                sheet, row, suggested_parent_category_column
-            )
+        suggested_category = _optional_stripped_cell(sheet, row, suggested_category_column)
+        suggested_parent = _optional_stripped_cell(sheet, row, suggested_parent_category_column)
+        # New-leaf cells matching the proposal accept it; a rewritten sheet carries it that way.
+        accepted_subscription_proposal = bool(suggested_parent) and (
+            new_parent_category,
+            new_leaf_category,
+        ) == (suggested_parent, suggested_category)
+        if blank_accepts and not manual_category and not new_leaf_category:
             if suggested_parent:
                 new_parent_category, new_leaf_category = suggested_parent, suggested_category
                 accepted_subscription_proposal = True
@@ -221,7 +234,7 @@ def _audit_corrections(sheet) -> dict[str, MonthlyReviewDecision]:
         if not transaction_id:
             raise ValueError(f"Audit correction row {row} is missing transaction_id.")
         corrections[transaction_id] = MonthlyReviewDecision(
-            transaction_id=transaction_id, manual_category=category
+            transaction_id=transaction_id, manual_category=category, audit_correction=True
         )
     return corrections
 

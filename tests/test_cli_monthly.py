@@ -302,6 +302,195 @@ def test_monthly_rerun_after_filling_exception_sheet_commits_month(
     assert list((tmp_path / "data" / "backups").glob("*.xlsx"))
 
 
+def test_monthly_rewrites_exception_sheet_with_decisions_and_remaining_rows_first(
+    tmp_path, monkeypatch, capsys
+):
+    exception_sheet = _partly_filled_exception_sheet(tmp_path, monkeypatch)
+
+    exit_code = main(["monthly"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Rows in review: 1" in output
+    assert (
+        f"Next action: fill {Path('reports/review_required_2026_apr.xlsx')} "
+        "(blank accepts, NONE rejects), then re-run `wealth-tracker monthly`."
+    ) in output
+    assert not list((tmp_path / "reports").glob("*_after_decisions.xlsx"))
+    assert _decision_cells(exception_sheet) == [
+        ("ODD SHOP", None, None),
+        ("BIG SHOP", "Traveling", None),
+        ("MYSTERY SHOP", "Apple Cloud", "no"),
+    ]
+    workbook = load_workbook(exception_sheet)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        manual_column = sheet.cell(row=1, column=headers["manual_category"]).column_letter
+        validated = {
+            str(cell_range)
+            for validation in sheet.data_validations.dataValidation
+            for cell_range in validation.sqref.ranges
+        }
+    finally:
+        workbook.close()
+    assert {f"{manual_column}{row}" for row in (2, 3, 4)} <= validated
+
+
+def test_monthly_commits_after_filling_rest_of_rewritten_exception_sheet(
+    tmp_path, monkeypatch, capsys
+):
+    exception_sheet = _partly_filled_exception_sheet(tmp_path, monkeypatch)
+    assert main(["monthly"]) == 0
+    _fill(exception_sheet, "ODD SHOP", manual_category="Traveling")
+    capsys.readouterr()
+
+    exit_code = main(["monthly"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Next action: none; month committed." in output
+    (copied_path,) = (tmp_path / "data" / "processed").glob("*.xlsx")
+    copied = load_workbook(copied_path)
+    try:
+        assert copied["Net worth"]["C5"].value == 7.5
+        assert copied["Net worth"]["C6"].value == 4042.5
+    finally:
+        copied.close()
+    memory = "".join(
+        path.read_text(encoding="utf-8")
+        for path in (tmp_path / "data" / "category_memory").rglob("*")
+        if path.is_file()
+    )
+    assert "ODD" in memory
+    assert "MYSTERY" not in memory
+
+
+def test_monthly_rerun_of_unsaved_rewrite_keeps_carried_decisions_and_accepts_nothing_new(
+    tmp_path, monkeypatch, capsys
+):
+    exception_sheet = _partly_filled_exception_sheet(tmp_path, monkeypatch)
+    assert main(["monthly"]) == 0
+    _use_suggester(
+        monkeypatch,
+        FakeSuggester(
+            {
+                merchant: ScriptedVote("Traveling", 0.9)
+                for merchant in ("UNKNOWN SHOP", "BIG SHOP", "ODD SHOP")
+            }
+        ),
+    )
+    assert main(["monthly"]) == 0
+    capsys.readouterr()
+
+    exit_code = main(["monthly"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Rows in review: 1" in output
+    assert (
+        "Next action: Exception sheet not reviewed yet: "
+        f"{Path('reports/review_required_2026_apr.xlsx')}"
+    ) in output
+    assert not (tmp_path / "data" / "processed").exists()
+    assert _decision_cells(exception_sheet) == [
+        ("ODD SHOP", None, None),
+        ("BIG SHOP", "Traveling", None),
+        ("MYSTERY SHOP", "Apple Cloud", "no"),
+    ]
+    assert _sheet_value(exception_sheet, "ODD SHOP", "suggested_category") == "Traveling"
+    _save_unchanged(exception_sheet)
+
+    assert main(["monthly"]) == 0
+
+    assert "Next action: none; month committed." in capsys.readouterr().out
+
+
+def test_monthly_stops_on_unreadable_exception_sheet_and_leaves_it_untouched(
+    tmp_path, monkeypatch, capsys
+):
+    exception_sheet = _partly_filled_exception_sheet(tmp_path, monkeypatch)
+    exception_sheet.write_bytes(b"not an xlsx workbook")
+    capsys.readouterr()
+
+    exit_code = main(["monthly"])
+
+    assert exit_code == 1
+    assert f"Cannot read {exception_sheet.name}" in capsys.readouterr().err
+    assert exception_sheet.read_bytes() == b"not an xlsx workbook"
+
+
+def test_monthly_rewrite_keeps_audit_correction_on_audit_sheet(tmp_path, monkeypatch, capsys):
+    _workspace(tmp_path, monkeypatch, trust_policy=ONE_VOTE_TRUST_POLICY)
+    _statement(
+        tmp_path,
+        "april.csv",
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1;2;Yes\n",
+    )
+    _use_suggester(monkeypatch, FakeSuggester({"UNKNOWN SHOP": ScriptedVote("Traveling", 0.9)}))
+    assert main(["monthly"]) == 0
+    exception_sheet = tmp_path / "reports" / "review_required_2026_apr.xlsx"
+    workbook = load_workbook(exception_sheet)
+    try:
+        sheet = workbook["Audit"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        sheet.cell(row=2, column=headers["corrected_category"]).value = "Apple Cloud"
+        workbook.save(exception_sheet)
+    finally:
+        workbook.close()
+    assert main(["monthly"]) == 0
+    capsys.readouterr()
+
+    assert main(["monthly"]) == 0
+
+    assert "Next action: none; month committed." in capsys.readouterr().out
+    rewritten = load_workbook(exception_sheet)
+    try:
+        assert _sheet_rows(rewritten["Review Required"]) == []
+        (audit_row,) = _sheet_rows(rewritten["Audit"])
+    finally:
+        rewritten.close()
+    assert audit_row["corrected_category"] == "Apple Cloud"
+    newest = max((tmp_path / "data" / "processed").glob("*.xlsx"), key=os.path.getmtime)
+    copied = load_workbook(newest)
+    try:
+        assert copied["Net worth"]["C5"].value == 42.5
+    finally:
+        copied.close()
+
+
+def test_monthly_clearing_a_carried_decision_puts_the_row_back_in_review(
+    tmp_path, monkeypatch, capsys
+):
+    exception_sheet = _partly_filled_exception_sheet(tmp_path, monkeypatch)
+    assert main(["monthly"]) == 0
+    _fill(exception_sheet, "BIG SHOP", manual_category=None)
+    capsys.readouterr()
+
+    assert main(["monthly"]) == 0
+
+    assert "Rows in review: 2" in capsys.readouterr().out
+
+
+def test_monthly_stops_before_commit_when_exception_sheet_cannot_be_rewritten(
+    tmp_path, monkeypatch, capsys
+):
+    exception_sheet = _partly_filled_exception_sheet(tmp_path, monkeypatch)
+    _fill(exception_sheet, "ODD SHOP", manual_category="Traveling")
+    before = exception_sheet.read_bytes()
+    exception_sheet.chmod(0o444)
+    capsys.readouterr()
+    try:
+        exit_code = main(["monthly"])
+    finally:
+        exception_sheet.chmod(0o644)
+
+    assert exit_code == 1
+    assert f"Cannot write {exception_sheet.name}" in capsys.readouterr().err
+    assert exception_sheet.read_bytes() == before
+    assert not (tmp_path / "data" / "processed").exists()
+
+
 ONE_VOTE_TRUST_POLICY = """
 trust_policy:
   min_agreement: 1
@@ -377,6 +566,68 @@ def _use_suggester(monkeypatch, suggester: FakeSuggester) -> None:
     monkeypatch.setattr(
         "personal_wealth_tracker.pipeline.local_consensus", lambda _settings: suggester
     )
+
+
+def _partly_filled_exception_sheet(tmp_path: Path, monkeypatch) -> Path:
+    """First run lists BIG (suggested), MYSTERY and ODD (no suggestion); MYSTERY is filled."""
+    _workspace(tmp_path, monkeypatch, trust_policy=ONE_VOTE_TRUST_POLICY)
+    _statement(
+        tmp_path,
+        "april.csv",
+        "2026/04/01;-42,50;957,50;DKK;UNKNOWN SHOP;Card purchase;1;2;Yes\n"
+        "2026/04/02;-2500,00;-1542,50;DKK;BIG SHOP;Card purchase;1;2;Yes\n"
+        "2026/04/03;-7,50;-1550,00;DKK;MYSTERY SHOP;Card purchase;1;2;Yes\n"
+        "2026/04/04;-1500,00;-3050,00;DKK;ODD SHOP;Card purchase;1;2;Yes\n",
+    )
+    _use_suggester(
+        monkeypatch,
+        FakeSuggester(
+            {merchant: ScriptedVote("Traveling", 0.9) for merchant in ("UNKNOWN SHOP", "BIG SHOP")}
+        ),
+    )
+    assert main(["monthly"]) == 0
+    exception_sheet = tmp_path / "reports" / "review_required_2026_apr.xlsx"
+    _fill(exception_sheet, "MYSTERY SHOP", manual_category="Apple Cloud", learn_to_memory="no")
+    return exception_sheet
+
+
+def _fill(exception_sheet: Path, merchant: str, **values: str) -> None:
+    workbook = load_workbook(exception_sheet)
+    try:
+        sheet = workbook["Review Required"]
+        headers = {cell.value: index for index, cell in enumerate(sheet[1], start=1)}
+        for row in range(2, sheet.max_row + 1):
+            if merchant in sheet.cell(row=row, column=headers["description"]).value:
+                for header, value in values.items():
+                    sheet.cell(row=row, column=headers[header]).value = value
+        workbook.save(exception_sheet)
+    finally:
+        workbook.close()
+
+
+def _sheet_value(exception_sheet: Path, merchant: str, header: str) -> object:
+    workbook = load_workbook(exception_sheet)
+    try:
+        (row,) = (
+            row
+            for row in _sheet_rows(workbook["Review Required"])
+            if merchant in row["description"]
+        )
+    finally:
+        workbook.close()
+    return row[header]
+
+
+def _decision_cells(exception_sheet: Path) -> list[tuple[str, object, object]]:
+    workbook = load_workbook(exception_sheet)
+    try:
+        rows = _sheet_rows(workbook["Review Required"])
+    finally:
+        workbook.close()
+    return [
+        (row["description"].split()[0] + " SHOP", row["manual_category"], row["learn_to_memory"])
+        for row in rows
+    ]
 
 
 def _save_unchanged(path: Path) -> None:
