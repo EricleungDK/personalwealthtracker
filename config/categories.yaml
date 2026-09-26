@@ -85,6 +85,10 @@ category_registry:
     description: "Bank account and card fees (gebyr, kortgebyr)."
   - label: healthcare
     description: "Doctor, dentist, pharmacy and other health costs, e.g. Apotek, tandlæge, læge, fysioterapi, clinic."
+  - label: ChatGPT subscription
+    description: "ChatGPT subscription billing."
+  - label: Cloudflare subscription
+    description: "Cloudflare subscription billing."
 - label: Insurance
   type: parent
   allow_new_children: true
