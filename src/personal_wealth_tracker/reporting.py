@@ -722,7 +722,7 @@ def _review_row(item: CategorizedTransaction, update: TrackerUpdate | None) -> d
         "suggested_parent_category": item.new_leaf_parent,
         "reason": f"{item.reason} ({item.categorization_method})",
         "confidence": f"{item.confidence:.2f}",
-        "blocked": _blocked_note(update),
+        "blocked": _blocked_note(item, update),
         "transaction_id": transaction.transaction_id,
         **_split_values(item),
     }
@@ -739,10 +739,15 @@ def _split_values(item: CategorizedTransaction) -> dict[str, str | None]:
     return dict(zip(SPLIT_HEADERS, values, strict=True))
 
 
-def _blocked_note(update: TrackerUpdate | None) -> str | None:
-    """Only a `review` workbook update blocks the commit; `write` and `skip` do not."""
+def _blocked_note(item: CategorizedTransaction, update: TrackerUpdate | None) -> str | None:
+    """Only a `review` workbook update blocks the commit; `write` and `skip` do not.
+
+    A proposed new leaf has no row until accepted; commit registers it and inserts the row.
+    """
     if update is None or update.write_action != "review":
         return None
+    if item.new_leaf_parent:
+        return f"New category: row added under {item.new_leaf_parent} when you commit."
     return f"{update.target_cell}: {update.reason}" if update.target_cell else update.reason
 
 
