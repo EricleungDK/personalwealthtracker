@@ -1,6 +1,6 @@
 # PersonalWorthTracker Context
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
 ## Project State
 
@@ -372,3 +372,4 @@ These backlog items are not active tasks yet.
 - 2026-09-25: Implemented issue #12: ADR 0005 hosted judgment deferred (0004 was taken by #9), ADRs 0001-0005 cross-linked, glossary Hosted Judgment term and flow relationships, security doc hosted-off lines, `docs/monthly_workflow.md` rewritten for `wealth-tracker monthly`. Removed dead `pipeline._validate_target_period`; period checks covered by trusted import tests (month-end/December boundary test added). Private benchmark rerun: port invalid rate 0%, consensus gate 62/111 rows at 90% precision.
 - 2026-09-26: Implemented issue #13: `monthly` reads the Exception Sheet only after the operator saved it. Every tool write of the default sheet records SHA-256 + mtime in `review_required_<year>_<mon>.xlsx.written`; while both match the sheet is ignored and the next action says `Exception sheet not reviewed yet: <path>`. Exit code stays 0; `--review-decisions` unchanged. ADR 0003 updated.
 - 2026-09-26: Implemented issue #14: generic `Subscriptions` leaf removed. Suggester may propose `<Service> subscription` under Services (`NEW_SUBSCRIPTION` + `new_subscription_service` in the Ollama schema; `ScriptedVote(new_subscription=...)` in Fake); a service naming an existing leaf returns that leaf. Consensus prefers any existing leaf over a proposal and folds same-name proposals into one vote. Trust Policy keeps proposals `review`. Exception Sheet adds `suggested_parent_category`; blank accepts the proposal through the existing new-leaf flow (registered on commit only), then memory makes the merchant `auto`. Report/audit count new-leaf proposals.
+- 2026-09-26: Implemented issue #17: Ollama row prompt shows raw statement merchant text (`merchant`, via `row_merchant_text`) instead of normalised identity, so digits/case/diacritics survive (`7-ELEVEN 7060`). Normalised identity still keys Category Memory, memory-neighbour lookup, aliases and review validation. Opt-in `raw_description` sent only when it differs from the merchant text. Local-only; `outbound_redaction` unchanged (test added). No new persistence.

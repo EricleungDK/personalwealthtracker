@@ -49,9 +49,48 @@ def test_ollama_request_uses_chat_schema_glossary_and_warm_deterministic_options
     assert "NEW_SUBSCRIPTION" in system["content"]
     assert user["role"] == "user"
     row = json.loads(user["content"])
-    assert row["merchant_identity"] == "UNKNOWN TRAIN"
+    assert row["merchant"] == "UNKNOWN TRAIN"
     assert row["amount"] == "-42.50"
     assert "RAW NORDEA" not in user["content"]
+
+
+def test_ollama_prompt_shows_raw_merchant_but_looks_up_neighbours_by_normalised_identity():
+    transport = _Transport(chat=[_chat_reply("Convenience store.", "Traveling", 0.9)])
+    context = _context(memory_examples=(("-ELEVEN PALEET", "Traveling"),))
+
+    OllamaSuggester(_settings(), transport=transport).suggest(
+        [_categorized("tx1", description="7-ELEVEN 7060 Paleet", merchant="7-ELEVEN 7060 Paleet")],
+        context,
+    )
+
+    _, payload, _ = transport.requests[-1]
+    row = json.loads(payload["messages"][1]["content"])
+    assert row["merchant"] == "7-ELEVEN 7060 Paleet"
+    assert "merchant_identity" not in row
+    assert row["memory_neighbours"] == [
+        {"merchant_identity": "-ELEVEN PALEET", "category": "Traveling"}
+    ]
+
+
+def test_opt_in_raw_description_is_sent_only_when_it_adds_to_the_merchant():
+    transport = _Transport(
+        chat=[_chat_reply("Train.", "Traveling", 0.9), _chat_reply("Train.", "Traveling", 0.9)]
+    )
+    rows = [
+        _categorized("tx1", description="DSB 4410 KOBENHAVN", merchant="DSB 4410 KOBENHAVN"),
+        _categorized("tx2", description="Visa DSB 4410 ref 99", merchant="DSB 4410"),
+    ]
+
+    OllamaSuggester(_settings(include_raw_description=True), transport=transport).suggest(
+        rows, _context()
+    )
+
+    same, extra = (
+        json.loads(payload["messages"][1]["content"]) for _, payload, _ in transport.requests[-2:]
+    )
+    assert same["merchant"] == "DSB 4410 KOBENHAVN"
+    assert "raw_description" not in same
+    assert (extra["merchant"], extra["raw_description"]) == ("DSB 4410", "Visa DSB 4410 ref 99")
 
 
 def test_ollama_prompt_carries_memory_neighbours_and_reviewed_policy():

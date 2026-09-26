@@ -92,3 +92,11 @@ def test_describe_outbound_is_a_readable_table():
     assert "NETTO" in text and "MOBILEPAY <PERSON>" in text
     assert "4102" not in text and "Bo" not in text
     assert text.splitlines()[0].startswith("merchant")
+
+
+def test_hosted_payload_never_carries_the_raw_merchant_the_local_prompt_shows():
+    raw = "7-ELEVEN 7060 Paleet"
+    payload = str(redact_for_hosted_judgment(_tx(raw)).as_state())
+    assert "PALEET" in payload
+    for secret in (raw, "7060", "Paleet"):
+        assert secret not in payload

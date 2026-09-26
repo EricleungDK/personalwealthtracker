@@ -197,7 +197,7 @@ The current YAML-validated leaf categories supplied as the only valid category c
 _Avoid_: Free-form category list, workbook section rows, invented categories
 
 **LLM Prompt Context**:
-The minimized transaction and category data passed to a local model for review-only categorization, defaulting to merchant identity, amount, date, direction, and the allowed category set.
+The minimized transaction and category data passed to a local model for review-only categorization, defaulting to the raw statement merchant text, amount, date, direction, and the allowed category set. Memory neighbours are matched and shown by normalised merchant identity.
 _Avoid_: Full raw bank statement, account numbers, audit log dump
 
 **Confirmed Review Decision**:
