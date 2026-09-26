@@ -21,7 +21,7 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - Generate Markdown reports, JSONL audit logs, categorized transaction CSV files, review-required CSV files, and review-required XLSX workbooks.
 - Use the review workbook for `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory` decisions.
 - Apply Monthly Review Decisions only when the operator explicitly supplies `--review-decisions`.
-- Register validated new leaf categories from reviewed runs before workbook planning.
+- Register validated new leaf categories from reviewed runs in memory before workbook planning; persist them to `config/categories.yaml` only on a successful month commit.
 - Learn Category Memory when a month commits: decisions as `human`, consensus results as `auto` trusted after two committed months; targets must be valid leaf categories.
 - Keep Category Memory in ignored private local data under `data/category_memory/`.
 - Support private local rule overlays in ignored `config/rules.local.yaml`.

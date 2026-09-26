@@ -1,3 +1,4 @@
+import difflib
 from pathlib import Path
 from decimal import Decimal
 
@@ -750,6 +751,8 @@ def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_
         FakeSuggester({"CLAUDE.AI": ScriptedVote(None, 0.8, new_subscription="claude")}),
     )
     month_args = {"commit": True, "local_llm_suggestions": True, "suggester": suggester}
+    categories_yaml = config_dir / "categories.yaml"
+    registry_before = categories_yaml.read_text(encoding="utf-8")
 
     first = _run_month(tmp_path, tracker, config_dir, "Apr", ["CLAUDE.AI"], **month_args)
 
@@ -776,10 +779,9 @@ def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_
         "Apr",
         ["CLAUDE.AI"],
         review_decisions_path=first.review_xlsx_path,
-        register_new_leaves=False,
     )
     assert preview.category_registry_additions[0].leaf_category == "Claude subscription"
-    assert "Claude subscription" not in load_config(config_dir).category_registry.leaf_categories
+    assert categories_yaml.read_text(encoding="utf-8") == registry_before
 
     committed = _run_month(
         tmp_path,
@@ -792,10 +794,13 @@ def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_
     )
 
     assert committed.output_workbook_path is not None
-    assert load_config(config_dir).category_registry.children_by_parent["Services"] == (
-        "Disney+",
-        "Claude subscription",
-    )
+    assert _added_lines(registry_before, categories_yaml.read_text(encoding="utf-8")) == [
+        "      - label: Claude subscription",
+        '        description: "Claude subscription billing."',
+    ]
+    registry = load_config(config_dir).category_registry
+    assert registry.children_by_parent["Services"] == ("Disney+", "Claude subscription")
+    assert registry.leaf_glossary["Claude subscription"] == "Claude subscription billing."
     copied = load_workbook(committed.output_workbook_path)
     try:
         assert copied["Net worth"]["B7"].value == "Claude subscription"
@@ -803,10 +808,64 @@ def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_
     finally:
         copied.close()
 
+    registry_after_commit = categories_yaml.read_bytes()
+    rerun = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["CLAUDE.AI"],
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert rerun.output_workbook_path is not None
+    assert rerun.category_registry_additions == ()
+    assert categories_yaml.read_bytes() == registry_after_commit
+
     next_month = _run_month(tmp_path, tracker, config_dir, "May", ["CLAUDE.AI"])
 
     assert next_month.categorized_transactions[0].suggested_category == "Claude subscription"
     assert next_month.categorized_transactions[0].authority is Authority.auto
+
+
+def test_blocked_commit_with_accepted_proposal_leaves_category_registry_untouched(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_services_tracker(tracker)
+    _create_services_config(config_dir)
+    categories_yaml = config_dir / "categories.yaml"
+    registry_before = categories_yaml.read_bytes()
+    month_args = {
+        "commit": True,
+        "local_llm_suggestions": True,
+        "suggester": FakeSuggester(
+            {"CLAUDE.AI": ScriptedVote(None, 0.9, new_subscription="Claude")}
+        ),
+    }
+    merchants = ["CLAUDE.AI", "UNKNOWN SHOP"]
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", merchants, **month_args)
+
+    blocked = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        merchants,
+        review_decisions_path=first.review_xlsx_path,
+        **month_args,
+    )
+
+    assert blocked.review_count == 1
+    assert blocked.output_workbook_path is None
+    assert [addition.leaf_category for addition in blocked.category_registry_additions] == [
+        "Claude subscription"
+    ]
+    assert "Claude subscription" in {update.category for update in blocked.updates}
+    assert categories_yaml.read_bytes() == registry_before
 
 
 def test_subscription_proposal_can_be_accepted_explicitly_with_edited_name(
@@ -841,9 +900,10 @@ def test_subscription_proposal_can_be_accepted_explicitly_with_edited_name(
     )
 
     assert committed.output_workbook_path is not None
-    assert load_config(config_dir).category_registry.children_by_parent["Services"] == (
-        "Disney+",
-        "Claude Pro subscription",
+    registry = load_config(config_dir).category_registry
+    assert registry.children_by_parent["Services"] == ("Disney+", "Claude Pro subscription")
+    assert registry.leaf_glossary["Claude Pro subscription"] == (
+        "Added in monthly review Apr 2026."
     )
 
 
@@ -1607,7 +1667,7 @@ def test_pipeline_passes_guidance_aliases_to_suggester_context(tmp_path, monkeyp
     assert context.guidance_aliases == {"TRAIN EXAMPLE": "Traveling"}
 
 
-def test_pipeline_registers_new_leaf_category_from_review_decisions(
+def test_pipeline_dry_run_plans_new_leaf_category_without_writing_registry(
     tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -1645,6 +1705,8 @@ def test_pipeline_registers_new_leaf_category_from_review_decisions(
         ],
     )
 
+    registry_before = (config_dir / "categories.yaml").read_bytes()
+
     result = run_pipeline(
         tracker_path=tracker,
         statement_path=statement,
@@ -1665,12 +1727,9 @@ def test_pipeline_registers_new_leaf_category_from_review_decisions(
     assert update.write_action == "review"
     assert update.reason == "Target category row not found."
 
-    config = load_config(config_dir)
-    assert "Pet Supplies" in config.category_registry.leaf_categories
-    assert config.category_registry.children_by_parent["Living expenses"] == (
-        "Apple Cloud",
-        "Traveling",
-        "Pet Supplies",
+    assert (config_dir / "categories.yaml").read_bytes() == registry_before
+    assert result.category_registry_additions[0].description == (
+        "Added in monthly review Apr 2026."
     )
     report = result.report_path.read_text(encoding="utf-8")
     assert "## Category Registry Updates" in report
@@ -2200,6 +2259,13 @@ category_registry:
 aliases: {}
 """,
     )
+
+
+def _added_lines(before: str, after: str) -> list[str]:
+    """Lines `after` adds to `before`; fails if any line of `before` changed or moved."""
+    diff = list(difflib.ndiff(before.splitlines(), after.splitlines()))
+    assert [line for line in diff if line.startswith("- ")] == []
+    return [line[2:] for line in diff if line.startswith("+ ")]
 
 
 def _run_month(

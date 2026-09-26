@@ -6,7 +6,11 @@ from pathlib import Path
 
 from .categorizer import categorize_transactions
 from .category_memory import learn_committed_month, load_category_memory, load_reviewed_policy
-from .config import load_config, register_category_registry_additions
+from .config import (
+    load_config,
+    pending_category_registry_additions,
+    persist_category_registry_additions,
+)
 from .local_llm import apply_suggestions, disabled_diagnostics, local_consensus
 from .models import CategoryRegistryAddition, RunResult
 from .reporting import write_outputs
@@ -42,7 +46,6 @@ def run_pipeline(
     review_decisions_path: Path | None = None,
     local_llm_suggestions: bool = False,
     suggester: Suggester | None = None,
-    register_new_leaves: bool = True,
 ) -> RunResult:
     month = normalize_month(month)
     config = load_config(config_dir)
@@ -72,14 +75,11 @@ def run_pipeline(
     review_decisions: dict[str, MonthlyReviewDecision] = {}
     if review_decisions_path is not None:
         review_decisions = load_monthly_review_decisions(review_decisions_path, year, month)
-        category_registry_additions = _category_registry_additions(review_decisions)
+        category_registry_additions = pending_category_registry_additions(
+            config_dir, _category_registry_additions(review_decisions, year, month)
+        )
         if category_registry_additions:
-            category_registry_additions = register_category_registry_additions(
-                config_dir,
-                category_registry_additions,
-                write=register_new_leaves,
-            )
-            config = load_config(config_dir)
+            config = load_config(config_dir, category_registry_additions)
         valid_categories = {
             option.category
             for option in workbook_category_options(tracker_path, year, month, config)
@@ -117,6 +117,7 @@ def run_pipeline(
             Path("data/processed"),
             structure_changes=structure_changes,
         )
+        persist_category_registry_additions(config_dir, category_registry_additions)
         learn_committed_month(
             category_memory_dir,
             categorized,
@@ -209,7 +210,6 @@ def run_monthly(
             exception_sheet if exception_sheet.exists() and not unreviewed else None
         ),
         local_llm_suggestions=True,
-        register_new_leaves=not dry_run,
     )
     return replace(result, exception_sheet_unreviewed=unreviewed)
 
@@ -234,20 +234,27 @@ def _fingerprint(path: Path) -> str:
     return f"{hashlib.sha256(path.read_bytes()).hexdigest()} {path.stat().st_mtime_ns}"
 
 
-def _category_registry_additions(review_decisions) -> tuple[CategoryRegistryAddition, ...]:
-    additions_by_category: dict[tuple[str, str], list[str]] = {}
+def _category_registry_additions(
+    review_decisions: dict[str, MonthlyReviewDecision], year: int, month: str
+) -> tuple[CategoryRegistryAddition, ...]:
+    additions_by_category: dict[tuple[str, str], list[MonthlyReviewDecision]] = {}
     for decision in review_decisions.values():
         if not decision.new_leaf_category:
             continue
         key = (decision.new_parent_category, decision.new_leaf_category)
-        additions_by_category.setdefault(key, []).append(decision.transaction_id)
+        additions_by_category.setdefault(key, []).append(decision)
     return tuple(
         CategoryRegistryAddition(
             parent_category=parent_category,
             leaf_category=leaf_category,
-            source_transaction_ids=tuple(transaction_ids),
+            source_transaction_ids=tuple(decision.transaction_id for decision in decisions),
+            description=(
+                f"{leaf_category} billing."
+                if any(decision.accepted_subscription_proposal for decision in decisions)
+                else f"Added in monthly review {month} {year}."
+            ),
         )
-        for (parent_category, leaf_category), transaction_ids in additions_by_category.items()
+        for (parent_category, leaf_category), decisions in additions_by_category.items()
     )
 
 

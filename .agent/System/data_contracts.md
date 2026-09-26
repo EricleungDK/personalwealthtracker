@@ -228,6 +228,8 @@ The registry rejects duplicate labels using case-insensitive trimmed matching wh
 
 Category Memory learning validates against leaf categories. Learning skips Parent/Section Row labels, derived rows, missing categories, fixed rows, and other non-leaf targets. A reviewed `new_leaf_category` can be learned only after the reviewed second run has added it to the YAML registry, even before the new row has been inserted into the tracker workbook.
 
+New leaf registration (issue #19): a reviewed run registers requested leaves in memory only, so workbook planning, decision validation and row insertion see them. `config/categories.yaml` is written only after the atomic month commit succeeds; a dry run or a run blocked by rows in review leaves it byte-identical. The write is a minimal text edit: `- label: <leaf>` and `description: "..."` are inserted after the last child under the parent's `children:` (an empty `children: []` becomes a block list), keeping every other line and the file's line endings. The description is `<Service> subscription billing.` for an accepted Subscription Leaf Proposal and `Added in monthly review <Mon YYYY>.` for an operator-typed leaf. A leaf already registered under the same parent is skipped, so re-running with the same Exception Sheet adds no duplicate.
+
 ## Future Proxy Split Rules
 
 Proxy split rules should live in private local config when they contain personal intermediary names, family labels, or fixed amounts. A proxy split rule should define the transaction trigger, direction, conversion rate, fixed allocations, and whether residual review is required.

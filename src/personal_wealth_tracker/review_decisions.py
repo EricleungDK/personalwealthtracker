@@ -17,6 +17,7 @@ class MonthlyReviewDecision:
     new_parent_category: str = ""
     new_leaf_category: str = ""
     learn_to_memory: bool = True
+    accepted_subscription_proposal: bool = False
 
     @property
     def rejected(self) -> bool:
@@ -170,6 +171,7 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
                 f"Review decision row {row} with new_leaf_category must include "
                 "new_parent_category."
             )
+        accepted_subscription_proposal = False
         if not manual_category and not new_leaf_category:
             suggested_category = _optional_stripped_cell(sheet, row, suggested_category_column)
             suggested_parent = _optional_stripped_cell(
@@ -177,6 +179,7 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
             )
             if suggested_parent:
                 new_parent_category, new_leaf_category = suggested_parent, suggested_category
+                accepted_subscription_proposal = True
             else:
                 manual_category = suggested_category
         if not manual_category and not new_leaf_category:
@@ -191,6 +194,7 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
             manual_category=manual_category,
             new_parent_category=new_parent_category,
             new_leaf_category=new_leaf_category,
+            accepted_subscription_proposal=accepted_subscription_proposal,
             learn_to_memory=normalize_text(
                 _optional_stripped_cell(sheet, row, learn_to_memory_column)
             )

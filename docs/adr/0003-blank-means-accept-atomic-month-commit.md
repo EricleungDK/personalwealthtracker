@@ -25,7 +25,8 @@ blocked on its own (ADR 0001 left this in place).
   is written empty; the suggestion is prefilled in `suggested_category`. A
   blank row without a suggestion stays in review.
 - Commit mode writes the backup and copied Tracker Workbook only when zero
-  rows remain in review. Otherwise it writes the Exception Sheet, reports
+  rows remain in review. New leaves from the sheet reach
+  `config/categories.yaml` in the same step, never earlier (issue #19). Otherwise it writes the Exception Sheet, reports
   `Workbook not written: N row(s) in review.` and stops. Re-running with the
   filled sheet as `--review-decisions` commits.
 - `monthly` reads the Exception Sheet as decisions only after the operator

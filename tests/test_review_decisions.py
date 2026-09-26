@@ -24,7 +24,10 @@ EXPECTED_DECISIONS = {
         "tx-one-off", manual_category="Traveling", learn_to_memory=False
     ),
     "tx-proposal": MonthlyReviewDecision(
-        "tx-proposal", new_parent_category="Services", new_leaf_category="Claude subscription"
+        "tx-proposal",
+        new_parent_category="Services",
+        new_leaf_category="Claude subscription",
+        accepted_subscription_proposal=True,
     ),
     RESIDUAL_ID: MonthlyReviewDecision(RESIDUAL_ID, manual_category="Traveling"),
     "tx-auto": MonthlyReviewDecision("tx-auto", manual_category="Apple Cloud"),

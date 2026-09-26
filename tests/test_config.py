@@ -1,10 +1,18 @@
 from pathlib import Path
 from decimal import Decimal
+import difflib
+import shutil
 import subprocess
 
 import pytest
 
-from personal_wealth_tracker.config import TrustPolicySettings, load_config
+from personal_wealth_tracker.config import (
+    TrustPolicySettings,
+    load_config,
+    pending_category_registry_additions,
+    persist_category_registry_additions,
+)
+from personal_wealth_tracker.models import CategoryRegistryAddition
 
 
 def test_load_config_merges_ignored_local_rules(tmp_path):
@@ -357,6 +365,69 @@ def test_project_config_describes_every_leaf_category():
 
     assert set(glossary) == set(config.category_registry.leaf_categories)
     assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
+
+
+def test_project_config_stays_described_after_registering_new_leaves(tmp_path):
+    config_dir = tmp_path / "config"
+    shutil.copytree(Path("config"), config_dir)
+    categories_yaml = config_dir / "categories.yaml"
+    before = categories_yaml.read_text(encoding="utf-8")
+    additions = (
+        CategoryRegistryAddition(
+            "Services", "Claude subscription", ("tx-1",), "Claude subscription billing."
+        ),
+        CategoryRegistryAddition(
+            "Living expenses", "Pet: supplies", ("tx-2",), "Added in monthly review Aug 2026."
+        ),
+    )
+
+    persist_category_registry_additions(
+        config_dir, pending_category_registry_additions(config_dir, additions)
+    )
+
+    after = categories_yaml.read_text(encoding="utf-8")
+    diff = list(difflib.ndiff(before.splitlines(), after.splitlines()))
+    assert [line for line in diff if line.startswith("- ")] == []
+    assert [line[2:] for line in diff if line.startswith("+ ")] == [
+        '  - label: "Pet: supplies"',
+        '    description: "Added in monthly review Aug 2026."',
+        "  - label: Claude subscription",
+        '    description: "Claude subscription billing."',
+    ]
+    config = load_config(config_dir)
+    glossary = config.category_registry.leaf_glossary
+    assert set(glossary) == set(config.category_registry.leaf_categories)
+    assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
+    assert config.category_registry.children_by_parent["Services"][-1] == "Claude subscription"
+    assert pending_category_registry_additions(config_dir, additions) == ()
+
+
+def test_registering_new_leaf_keeps_crlf_line_endings_and_fills_empty_children(tmp_path):
+    categories_yaml = tmp_path / "categories.yaml"
+    categories_yaml.write_bytes(
+        b"category_registry:\r\n"
+        b'  - label: "Plan #1"  # comment\r\n'
+        b"  - label: Services\r\n"
+        b"    allow_new_children: true\r\n"
+        b"    children: []\r\n"
+        b"aliases: {}\r\n"
+    )
+
+    persist_category_registry_additions(
+        tmp_path,
+        (CategoryRegistryAddition("Services", "Claude subscription", ("tx-1",), "Billing."),),
+    )
+
+    assert categories_yaml.read_bytes() == (
+        b"category_registry:\r\n"
+        b'  - label: "Plan #1"  # comment\r\n'
+        b"  - label: Services\r\n"
+        b"    allow_new_children: true\r\n"
+        b"    children:\r\n"
+        b"    - label: Claude subscription\r\n"
+        b'      description: "Billing."\r\n'
+        b"aliases: {}\r\n"
+    )
 
 
 def test_project_config_adds_restaurants_entertainment_and_no_generic_subscriptions_leaf():
