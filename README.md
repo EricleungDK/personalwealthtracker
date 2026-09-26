@@ -1,258 +1,135 @@
-# PersonalWorthTracker
+<div align="center">
 
-Local-first automation for a personal wealth tracker workbook. The MVP reads a Nordea bank statement, categorizes transactions with deterministic rules, maps category totals into the existing Excel tracker structure, and produces review/audit outputs before anything is written.
+# 💰 PersonalWorthTracker
 
-## Status
+**Turn your monthly bank export into an up-to-date Excel net-worth tracker — without your data ever leaving your machine.**
 
-MVP 1 is scaffolded as a Python project. It is intentionally local-only:
+![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![Local first](https://img.shields.io/badge/local--first-no%20cloud-3fb950)
+![LLM](https://img.shields.io/badge/LLM-optional%2C%20local%20Ollama-8957e5)
+![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)
 
-- Preferred bank cashflow input: Nordea CSV export.
-- Fallback/legacy bank cashflow input: Nordea `Kontoudskrift` PDF with embedded text.
-- Tracker workbook: existing Excel file with sheet `Net worth`.
-- Currency policy: DKK.
-- Default mode: dry-run.
-- Commit mode: writes only to a copied workbook under `data/processed/`.
-- Optional: local Ollama/Gemma review suggestions with explicit `--local-llm-suggestions`.
-- Deferred: Google Drive, bank APIs, scheduler, notifications, budget alerts, and remote or auto-write LLM categorization.
+<a href="docs/assets/demo.mp4">
+  <img src="docs/assets/demo.gif" alt="wealth-tracker demo: setup, monthly run, exception sheet, commit" width="900">
+</a>
 
-Nordea CSV is the preferred bank cashflow input because it includes merchant-rich fields that improve deterministic categorization. PDF remains supported as a fallback/legacy input for older statement workflows.
+<sub>30-second demo on synthetic data · <a href="docs/assets/demo.mp4">MP4</a> · regenerate with <code>scripts/record_demo.py</code></sub>
+
+</div>
+
+---
+
+## Why
+
+Keeping a personal net-worth spreadsheet is great. Updating it every month is not: export the statement, sort 80 transactions into categories, type totals into the right cells, don't break the formulas.
+
+`wealth-tracker` does the boring 95% and hands you **only the rows it isn't sure about**.
+
+```text
+Nordea CSV ──▶ rules + memory + local LLMs ──▶ Trust Policy ──┬─▶ auto-accepted ──▶ copy of your workbook ✅
+                                                               └─▶ Exception Sheet ─▶ you decide ─▶ re-run
+```
+
+## Features
+
+- 🔒 **Local-first.** No cloud, no bank API, no telemetry. Statements, workbooks and reports are git-ignored by default.
+- 🧾 **Your workbook, never overwritten.** Writes go to a timestamped copy in `data/processed/`, after a backup. Formulas and fixed rows are skipped.
+- 🧠 **Learns from you.** Committed decisions become Category Memory, so next month's repeat merchants categorise themselves.
+- 🤝 **Two-model consensus (optional).** Two local Ollama models vote; a row is auto-accepted only when both agree, the amount is small, and the category isn't flagged never-auto. Prompts are minimised (merchant, amount, date) and never leave your machine.
+- 📋 **One Exception Sheet.** Uncertain rows land in a single `.xlsx`: leave blank to accept the suggestion, type `NONE` to reject, or pick a category from the dropdown.
+- ⚛️ **Atomic month commit.** Nothing is written while any row is still in review. All or nothing.
+- 🔍 **Full audit trail.** Markdown report, categorised CSV and JSONL audit log for every run.
+
+## Quick start
+
+```bash
+git clone https://github.com/EricleungDK/personalwealthtracker.git
+cd personalwealthtracker
+uv sync --extra dev
+
+# 1. create a workspace with a synthetic template + sample statement
+uv run wealth-tracker setup --workspace my-wealth
+cd my-wealth
+cp templates/local-wealth-tracker-template.xlsx "Net Worth Tracker.xlsx"
+cp examples/synthetic-nordea-transactions.csv data/raw_statements/
+
+# 2. run the month
+uv run wealth-tracker monthly            # add --dry-run to preview only
+```
+
+If anything needs you, open `reports/review_required_<year>_<mon>.xlsx`, save it, and run `monthly` again. When `Rows in review: 0`, the month is committed.
+
+> **Using your own data:** swap in your real tracker as `Net Worth Tracker.xlsx` and drop the Nordea CSV export into `data/raw_statements/`. Both paths are git-ignored.
+
+### Optional: local LLM suggestions
+
+Install [Ollama](https://ollama.com) and pull the models in [`config/settings.yaml`](config/settings.yaml) (`gemma4:26b`, `gemma4:12b`, fallback `qwen3:14b`). `monthly` uses them automatically when running; on single-statement runs pass `--local-llm-suggestions` for local Ollama/Gemma review suggestions. No model running? Everything still works; unmatched rows simply go to the Exception Sheet.
+
+## How it works
+
+```mermaid
+flowchart LR
+  CSV[Nordea CSV / PDF] --> P[Parser]
+  P --> C[Categorizer<br/>rules · Category Memory]
+  C --> S[Suggester<br/>2 local models]
+  S --> T{Trust Policy}
+  T -->|confident| W[Workbook planner]
+  T -->|unsure| X[Exception Sheet]
+  X -->|your decisions| T
+  W --> O[Copied workbook<br/>+ backup + audit]
+  O --> M[(Category Memory)]
+```
+
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) — e.g. [blank means accept](docs/adr/0003-blank-means-accept-atomic-month-commit.md) and [local two-model consensus](docs/adr/0002-local-two-model-consensus.md).
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `wealth-tracker setup` | Create a workspace: config, synthetic Template Workbook, sample statement |
+| `wealth-tracker monthly` | Categorise the newest statement; commit or write the Exception Sheet |
+| `wealth-tracker --statement … --year … --month …` | Single-statement dry run (`--commit` to write) |
+| `wealth-tracker import-statement` | Turn an unknown bank format into a review-only import |
+| `wealth-tracker importer-profile learn` | Learn a private Importer Profile from a reviewed import |
+| `wealth-tracker template-workbook customize` | Rename labels / currency in the Template Workbook |
+
+Every flag and output: **[docs/cli_reference.md](docs/cli_reference.md)**.
 
 ## Privacy
 
-This project handles sensitive personal finance data. Real statements, tracker workbooks, generated reports, backups, logs, credentials, PDFs, CSVs, and XLSX files are ignored by `.gitignore`.
+This handles real finances, so the defaults are paranoid:
 
-The public/private boundary is documented in [docs/public_private_boundary.md](docs/public_private_boundary.md). Public package artifacts are reusable code, synthetic fixtures, sample config, and docs. Private profile artifacts are real statements, tracker workbooks, generated outputs, Category Memory, Importer Profiles, local rules, proxy split rules, and local profile paths.
+- Real statements, workbooks, reports, backups, memory and `*.local.yaml` rules are all in `.gitignore`.
+- Tests use only synthetic or redacted fixtures.
+- Private merchant rules live in ignored `config/rules.local.yaml` (start from `rules.local.example.yaml`).
 
-`bank-statement.pdf`, local Nordea CSV exports, and `Net Worth Tracker.xlsx` are local reference files and should not be committed. Parser tests should use only redacted or synthetic fixtures, named like `tests/fixtures/nordea_account_statement.redacted.pdf` or `tests/fixtures/nordea_transactions.redacted.csv`.
+The full public/private boundary: [docs/public_private_boundary.md](docs/public_private_boundary.md).
 
-Real CSV exports are ignored by Git and must not be committed. Keep them under an ignored local path such as `data/raw_statements/` or pass any other ignored local path to `--statement`.
+## Docs
 
-Private merchant-specific categorization belongs in `config/rules.local.yaml`, which is ignored by Git. Start from `config/rules.local.example.yaml` when adding local historical mappings, keyword rules, or recurring amount/date rules. Guidance Aliases for merchants whose names vary (merchant pattern → leaf category) belong in ignored `config/guidance_aliases.local.yaml`; start from `config/guidance_aliases.local.example.yaml`.
+| | |
+| --- | --- |
+| [Monthly workflow](docs/monthly_workflow.md) | Month-end operator checklist |
+| [CLI reference](docs/cli_reference.md) | All commands, flags and outputs |
+| [Project overview](docs/project_overview.md) | Plain-language map with diagrams |
+| [Public Package Workflow](docs/public_package_workflow.md) | Setup, imports, learning, commit-to-copy |
+| [Template Workbook](docs/template_workbook.md) | The synthetic workbook contract |
+| [ADRs](docs/adr/) | Why things are the way they are |
 
-Local profile files belong under ignored paths such as `profiles/default.local.yaml`. Start from `config/profile.example.yaml` when documenting local tracker workbook paths, statement folders, report folders, Category Memory, Importer Profiles, and local rule overlays.
+## Roadmap
 
-The committed Nordea PDF fixture is synthetic and redacted. Regenerate it with:
+- [x] Nordea CSV + PDF parsing
+- [x] Category Memory, Exception Sheet, atomic month commit
+- [x] Local two-model consensus
+- [ ] Investment statements as month-end asset evidence
+- [ ] More banks via Importer Profiles
+- [ ] Scheduler / watched folder
 
-```bash
-.venv/bin/python scripts/generate_redacted_nordea_fixture.py
-```
-
-## Setup
-
-This workspace is pinned to Python 3.12 through `.python-version`.
-
-```bash
-uv sync --extra dev
-```
-
-Initialize a local public-template workspace:
-
-```bash
-uv run wealth-tracker setup \
-  --workspace "local-wealth-workspace" \
-  --tracker-currency DKK \
-  --start-year 2026
-```
-
-Setup creates local `config/`, `profiles/`, `templates/`, `examples/`, `data/`, `reports/`, and `logs/` paths; generates `templates/local-wealth-tracker-template.xlsx`; writes generic sample config/profile files; and adds a synthetic Nordea CSV example. Existing setup-managed files are preserved unless `--force` is supplied.
-
-## Documentation
-
-- [docs/project_overview.md](docs/project_overview.md) is the plain-language project map with Mermaid diagrams for structure, monthly flow, components, outputs, scripts, and terms.
-- [docs/public_package_workflow.md](docs/public_package_workflow.md) is the Public Package Workflow for setup, synthetic examples, trusted imports, unknown-format review, learning, and commit-to-copy runs.
-- [docs/monthly_workflow.md](docs/monthly_workflow.md) is the monthly operator checklist.
-- [docs/public_private_boundary.md](docs/public_private_boundary.md) defines the public/private boundary for future package work.
-- [docs/template_workbook.md](docs/template_workbook.md) documents the versioned synthetic Template Workbook contract.
-- `.agent/System/` contains deeper architecture and data-contract notes for coding agents.
-
-## Template Workbook
-
-Generate the public synthetic Template Workbook locally:
+## Development
 
 ```bash
-uv run wealth-tracker template-workbook create \
-  --output "templates/local-wealth-tracker-template.xlsx" \
-  --tracker-currency DKK \
-  --start-year 2026
+uv run pytest                              # full suite
+.venv/bin/python scripts/record_demo.py    # re-render the demo from a real synthetic run
 ```
 
-The generated workbook contains a hidden `Template Metadata` sheet with `template_id`, `template_version`, `workbook_kind`, `tracker_currency`, and `template_schema`. It uses generic rows and formulas only; do not replace it with a private tracker workbook or committed real financial values.
-
-Customize supported v1 labels and currency only through the template command:
-
-```bash
-uv run wealth-tracker template-workbook customize \
-  --template "templates/local-wealth-tracker-template.xlsx" \
-  --output "templates/local-wealth-tracker-template-custom.xlsx" \
-  --tracker-currency EUR \
-  --rename "Groceries (monthly)=Groceries"
-```
-
-Unsupported formula changes, arbitrary layout edits, missing metadata, and unsupported template versions are rejected instead of repaired automatically.
-
-## Monthly Command
-
-```bash
-uv run wealth-tracker monthly
-uv run wealth-tracker monthly --dry-run
-```
-
-`monthly` takes the newest CSV in `data/raw_statements/`, infers the month from its row dates, and runs categorisation, the two local model voters and the Trust Policy against `Net Worth Tracker.xlsx`. With zero rows in review it commits the month to a copied workbook; otherwise it writes the Exception Sheet `reports/review_required_<year>_<mon>.xlsx` and stops. Fill and save that sheet (blank accepts the suggestion, `NONE` rejects; a row without a suggestion needs a category or `NONE`) and re-run `monthly`; each run rewrites that one sheet with your decisions kept and the rows still open listed first, until the month commits. Blank rows in a sheet unchanged since the tool wrote it are not accepted. The summary prints auto rows, rows in review, pending amount and the next action. `--dry-run` writes the Exception Sheet and Audit preview but never the workbook, backup, Category Memory or category registry (new leaf requests are only listed in the report). Without a running local model the run still completes; unmatched rows become exceptions. Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-dir` and `--category-memory-dir`.
-
-## CSV-First Dry Run
-
-For the full monthly operator checklist, see [docs/monthly_workflow.md](docs/monthly_workflow.md).
-
-Use Nordea CSV for normal bank cashflow categorization. In `auto` mode the CLI routes `.csv` statements to the Nordea CSV parser:
-
-```bash
-uv run wealth-tracker \
-  --tracker "Net Worth Tracker.xlsx" \
-  --statement "data/raw_statements/ignored-nordea-export.csv" \
-  --statement-format auto \
-  --year 2026 \
-  --month Apr
-```
-
-You can also choose CSV parsing explicitly:
-
-```bash
-uv run wealth-tracker \
-  --tracker "Net Worth Tracker.xlsx" \
-  --statement "data/raw_statements/ignored-nordea-export.csv" \
-  --statement-format nordea-csv \
-  --year 2026 \
-  --month Apr
-```
-
-For local smoke validation, run one dry-run against a real ignored CSV export and inspect the generated report, categorized CSV, review CSV, and audit log under `reports/`. The command must not require moving the real CSV into a committed fixture path. Do not commit real CSV input or generated report/audit outputs.
-
-Investment statements remain separate future PDF evidence. Bank CSV and PDF inputs prove cashflow; future investment account statements should prove month-end asset values or holdings through a separate evidence contract and are not routed through the bank cashflow parser.
-
-## Local LLM Review Suggestions
-
-Local LLM Mode is optional; a single model answer is review-only. Add `--local-llm-suggestions` to ask two local models for local Ollama/Gemma review suggestions on unmatched transactions and low-confidence review rows:
-
-```bash
-uv run wealth-tracker \
-  --tracker "Net Worth Tracker.xlsx" \
-  --statement "data/raw_statements/ignored-nordea-export.csv" \
-  --statement-format auto \
-  --year 2026 \
-  --month Apr \
-  --local-llm-suggestions
-```
-
-Two local models vote on each row: `gemma4:26b` then `gemma4:12b`, with installed `qwen3:14b` as fallback and a 180-second cold-start provider timeout. When both pick the same leaf, the amount is at most 1000 DKK and the leaf is not never-auto, the row is `auto`; otherwise it stays in review with the suggestion and alternatives. Suggestions reuse the existing review workbook fields and never create categories or learn Category Memory unless you confirm the row in the reviewed workbook. Low-confidence category responses are ignored and reported so weak guesses stay in ordinary manual review.
-
-Committing a month learns Category Memory: decisions as `human`, consensus results as `auto` (used only after two consistent committed months, a Suggester hint before that). Learning also updates the private editable policy file `data/category_memory/reviewed_policy.local.md`. Future Local LLM prompts can use that file as review guidance, while exact repeated merchant matches still come from deterministic Category Memory first.
-
-## Unknown Statement Import Review
-
-Unknown statement formats can be turned into an untrusted review artifact without feeding monthly planning:
-
-```bash
-uv run wealth-tracker import-statement \
-  --statement "data/raw_statements/unknown-export.txt" \
-  --year 2026 \
-  --month Apr
-```
-
-This writes `untrusted_import_review_<year>_<month>.csv` under `reports/`. Every row is review-required and ineligible for workbook writes until a later confirmed-import workflow promotes reviewed data.
-
-After manually confirming rows in the review CSV, a private Importer Profile can be learned locally:
-
-```bash
-uv run wealth-tracker importer-profile learn \
-  --reviewed-import "reports/untrusted_import_review_2026_apr.csv" \
-  --profile-name synthetic-bank
-```
-
-Importer Profiles live under ignored `data/importer_profiles/` by default. Export one only by explicit command:
-
-```bash
-uv run wealth-tracker importer-profile export \
-  --profile-name synthetic-bank \
-  --output "exports/synthetic-bank.importer_profile.json"
-```
-
-Use a local Importer Profile during a later unknown import to surface Educated Import Guesses:
-
-```bash
-uv run wealth-tracker import-statement \
-  --statement "data/raw_statements/unknown-export.txt" \
-  --year 2026 \
-  --month Apr \
-  --importer-profile synthetic-bank
-```
-
-Guesses appear in the review CSV as `suggested_category`, `guess_state`, `guess_confidence`, `guess_reason`, and `guess_profile`. They remain review-only; use `confirmed` and `confirmed_category` to accept or correct rows later.
-
-## PDF Fallback Dry Run
-
-```bash
-uv run wealth-tracker \
-  --tracker "Net Worth Tracker.xlsx" \
-  --statement "bank-statement.pdf" \
-  --statement-format nordea-pdf \
-  --year 2026 \
-  --month Apr
-```
-
-Dry-run parses the statement, categorizes transactions, resolves workbook target cells, and writes local outputs under `reports/`. It does not modify the workbook.
-
-The run fails before categorization if the Nordea statement currency is not DKK or if any parsed transaction falls outside the requested `--year`/`--month`.
-
-## Commit Mode
-
-```bash
-uv run wealth-tracker \
-  --tracker "Net Worth Tracker.xlsx" \
-  --statement "data/raw_statements/ignored-nordea-export.csv" \
-  --statement-format auto \
-  --year 2026 \
-  --month Apr \
-  --commit
-```
-
-Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the exception sheet (`review_required_<year>_<month>.xlsx`); fill it and re-run with `--review-decisions` to commit. With zero rows in review it creates a backup under `data/backups/` and writes the month only to a copied workbook under `data/processed/`, skipping formulas and fixed rows.
-
-## Project Structure
-
-```text
-.
-├── config/                 - Category, rule, and runtime configuration
-├── docs/                   - User-facing workflow and project overview docs
-├── src/personal_wealth_tracker/
-│   ├── cli.py              - Command-line interface
-│   ├── pipeline.py         - End-to-end orchestration
-│   ├── nordea_csv.py       - Preferred Nordea CSV statement parser
-│   ├── nordea_pdf.py       - Nordea PDF statement parser
-│   ├── categorizer.py      - Historical and keyword categorization
-│   ├── category_memory.py  - Private learned category decisions
-│   ├── review_decisions.py - Reviewed XLSX/CSV monthly decision import
-│   ├── workbook.py         - Excel planning and safe commit writer
-│   ├── reporting.py        - Markdown, CSV, JSONL, and XLSX outputs
-│   └── cleanup.py          - Separate workbook maintenance commands
-├── scripts/                - Helper utilities for safe test fixtures
-├── tests/                  - Unit and integration tests
-└── .agent/System/          - Durable project architecture and contracts
-```
-
-## Validation
-
-```bash
-uv run pytest
-```
-
-If dependencies are not installed yet, static compilation can still be checked with:
-
-```bash
-python3 -m compileall src tests
-```
-
-In sandboxed shells where `uv run` cannot access its global cache, use the project virtualenv directly after `uv sync`:
-
-```bash
-.venv/bin/pytest
-```
+Built test-first. Contributions welcome — keep fixtures synthetic.

@@ -4,8 +4,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_readme_documents_csv_first_local_validation_workflow():
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+def test_cli_reference_documents_csv_first_local_validation_workflow():
+    reference = (REPO_ROOT / "docs" / "cli_reference.md").read_text(encoding="utf-8")
 
     required_phrases = [
         "Nordea CSV is the preferred bank cashflow input",
@@ -19,7 +19,21 @@ def test_readme_documents_csv_first_local_validation_workflow():
     ]
 
     for phrase in required_phrases:
+        assert phrase in reference
+
+
+def test_readme_links_reference_docs_and_demo():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for phrase in [
+        "docs/cli_reference.md",
+        "docs/monthly_workflow.md",
+        "docs/assets/demo.gif",
+        "scripts/record_demo.py",
+    ]:
         assert phrase in readme
+    assert (REPO_ROOT / "docs" / "assets" / "demo.gif").exists()
+    assert (REPO_ROOT / "docs" / "assets" / "demo.mp4").exists()
 
 
 def test_monthly_workflow_documents_operator_checklist():
