@@ -30,7 +30,7 @@ Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-d
 Outputs under `reports/`:
 
 - `report_<year>_<mon>.md` - run summary, `Categorization Quality` (classification rate, no-review rate, method counts), `Local LLM Mode` diagnostics, planned workbook and structure changes.
-- `review_required_<year>_<mon>.xlsx` - the Exception Sheet workbook: `Review Required`, `Audit` and `Category Options` sheets.
+- `review_required_<year>_<mon>.xlsx` - the Exception Sheet workbook: `Review Required` and `Audit` sheets, plus hidden `Category Options` and `Run Metadata` helper sheets (dropdown sources and run period; leave them in place).
 - `review_required_<year>_<mon>.xlsx.written` - fingerprint of the sheet as the tool last wrote it; do not edit.
 - `review_required_<year>_<mon>.csv`, `categorized_transactions_<year>_<mon>.csv`, `audit_<year>_<mon>.jsonl` - plain inspection and machine-readable audit.
 
@@ -46,7 +46,17 @@ Dry run writes the report, Exception Sheet and Audit preview, but never the work
 
 ## 4. Work The Exception Sheet
 
-The `Review Required` sheet lists only rows in review: `review`-authority transactions and sources of a blocked workbook update (see `target_cell` and `workbook_reason`). Each row shows `suggested_category`; the `manual_category` dropdown offers the suggestion, model alternatives, and `NONE`.
+The `Review Required` sheet lists only rows in review: `review`-authority transactions and sources of a blocked workbook update. Rows without a suggestion come first (they need a decision), then by date.
+
+How to fill the sheet:
+
+1. Read `date`, `description`, `amount`, `suggested_category`, `reason` (ends with the method in brackets) and `confidence`.
+2. `manual_category` is the only column most rows need. Blank accepts `suggested_category`. A row with no suggestion must get a category or `NONE`; blank leaves it in review. The header note says the same.
+3. `new_parent_category`, `new_leaf_category` and `learn_to_memory` are optional, see below.
+4. `blocked` is filled only when the target workbook cell blocks the commit (`<cell>: <reason>`, e.g. a manual value); pick another category, `NONE`, or fix the workbook.
+5. Save the file.
+
+`suggested_parent_category` appears only when a row proposes a new leaf; split columns (`split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount`) only when the month has proxy split rows. `transaction_id` is a hidden last column that ties each row to the statement; do not edit it.
 
 - Blank `manual_category` accepts `suggested_category`. A blank row without a suggestion stays in review. Save the sheet even when every row stays blank; an unsaved sheet is not read.
 - `NONE` rejects the suggestion: the row is resolved but written to no category.
@@ -118,7 +128,7 @@ For the Revolut family-transfer pattern, the configured fixed allocation is `800
 
 Residual decisions apply only to the current month and are not learned into Category Memory.
 
-Review Required column order keeps transaction context first, then `manual_category`, `new_parent_category`, `new_leaf_category` and `learn_to_memory`, with split metadata (`split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount`) farther right.
+Review Required column order keeps transaction context and the decision first, with split metadata (`split_role`, `split_rule`, `source_transaction_id`, `allocated_amount`, `residual_amount`) after `blocked`, shown only when split rows exist (the `Audit` sheet does the same).
 
 ## 10. Manual Memory Import (Escape Hatch)
 

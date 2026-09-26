@@ -192,54 +192,46 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "Category Options",
             "Run Metadata",
         ]
+        assert [sheet.sheet_state for sheet in workbook.worksheets] == [
+            "visible",
+            "visible",
+            "hidden",
+            "hidden",
+        ]
 
         review_sheet = workbook["Review Required"]
         assert [cell.value for cell in review_sheet[1]] == [
-            "transaction_id",
             "date",
             "description",
             "amount",
+            "suggested_category",
             "manual_category",
+            "reason",
+            "confidence",
             "new_parent_category",
             "new_leaf_category",
             "learn_to_memory",
-            "split_role",
-            "split_rule",
-            "source_transaction_id",
-            "allocated_amount",
-            "residual_amount",
-            "suggested_category",
-            "suggested_parent_category",
-            "method",
-            "reason",
-            "workbook_action",
-            "target_cell",
-            "workbook_reason",
-            "merchant_identity",
-            "confidence",
-            "direction",
+            "blocked",
+            "transaction_id",
         ]
-        assert [review_sheet.cell(row=2, column=column).value for column in range(1, 9)] == [
-            "tx-review",
+        assert _hidden_columns(review_sheet) == {"L"}
+        assert [cell.value for cell in review_sheet[2]] == [
             "2026-05-15",
             "UNKNOWN SHOP",
             "-42.50",
             None,
             None,
+            "No historical or keyword rule matched. (unmatched)",
+            "0.00",
             None,
             None,
+            None,
+            None,
+            "tx-review",
         ]
-        assert [review_sheet.cell(row=2, column=column).value for column in range(9, 14)] == [
-            None,
-            None,
-            None,
-            None,
-            None,
-        ]
-        assert review_sheet["N2"].value is None
-        assert review_sheet["O2"].value is None
-        assert review_sheet["P2"].value == "unmatched"
-        assert review_sheet["Q2"].value == "No historical or keyword rule matched."
+        note = review_sheet["E1"].comment.text
+        assert "Blank accepts suggested_category" in note
+        assert "No suggestion: pick a category or NONE" in note
 
         audit_sheet = workbook["Audit"]
         assert [cell.value for cell in audit_sheet[1]] == [
@@ -257,11 +249,6 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "votes",
             "reason",
             "evidence",
-            "split_role",
-            "split_rule",
-            "source_transaction_id",
-            "allocated_amount",
-            "residual_amount",
         ]
         assert audit_sheet.max_row == 2
         assert audit_sheet["A2"].value == "tx-food"
@@ -318,7 +305,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         assert any(
             validation.formula1 == '"yes,no"'
             and validation.allow_blank
-            and "H2" in validation.sqref
+            and "J2" in validation.sqref
             for validation in validations
         )
 
@@ -374,17 +361,56 @@ def test_exception_sheet_offers_suggestion_alternatives_and_none_as_dropdown(tmp
     workbook = load_workbook(review_xlsx_path)
     try:
         review_sheet = workbook["Review Required"]
-        assert review_sheet["A2"].value == "tx-disputed"
-        assert review_sheet["N2"].value == "Food& Drinks (monthly)"
+        assert [review_sheet["L2"].value, review_sheet["L3"].value] == [
+            "tx-unmatched",
+            "tx-disputed",
+        ]
+        assert review_sheet["D3"].value == "Food& Drinks (monthly)"
         validations = {
             str(validation.sqref): validation
             for validation in review_sheet.data_validations.dataValidation
         }
-        assert validations["E2"].formula1 == '"Food& Drinks (monthly),Manual Category,NONE"'
-        assert validations["E3"].formula1 == "'Category Options'!$G$2:$G$5"
+        assert validations["E2"].formula1 == "'Category Options'!$G$2:$G$5"
+        assert validations["E3"].formula1 == '"Food& Drinks (monthly),Manual Category,NONE"'
         assert workbook["Category Options"]["G2"].value == "NONE"
     finally:
         workbook.close()
+
+
+def test_exception_sheet_lists_rows_needing_a_decision_first_then_by_date(tmp_path):
+    def review_row(transaction_id, category, day):
+        item = _categorized(
+            transaction_id, "SHOP", "-5.00", category, "Model.", authority=Authority.review
+        )
+        return replace(item, transaction=replace(item.transaction, date=date(2026, 5, day)))
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=[
+            review_row("tx-suggested-late", "Traveling", 20),
+            review_row("tx-suggested-early", "Traveling", 1),
+            review_row("tx-open-late", "", 25),
+            review_row("tx-open-early", "", 3),
+        ],
+        updates=[],
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        rows = _sheet_rows(workbook["Review Required"])
+    finally:
+        workbook.close()
+    assert [row["transaction_id"] for row in rows] == [
+        "tx-open-early",
+        "tx-open-late",
+        "tx-suggested-early",
+        "tx-suggested-late",
+    ]
 
 
 def test_exception_sheet_offers_alternatives_when_suggester_answered_none(tmp_path):
@@ -567,7 +593,7 @@ def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path
         )
         assert any(
             validation.formula1 == "'Category Options'!$H$2:$H$3"
-            and "F2" in validation.sqref
+            and "H2" in validation.sqref
             for validation in validations
         )
         assert not any("G2" in validation.sqref for validation in validations)
@@ -601,6 +627,18 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
             split_role="residual",
             residual_amount=Decimal("2160.00"),
         ),
+        _categorized(
+            "tx-source:split:revolut_family_transfer:dad",
+            "REVOLUT [revolut_family_transfer:dad]",
+            "-6560.00",
+            "Dad",
+            "Proxy split allocation.",
+            method="proxy_split_allocation",
+            source_transaction_id="tx-source",
+            split_rule="revolut_family_transfer",
+            split_role="dad",
+            allocated_amount=Decimal("6560.00"),
+        ),
     ]
 
     _, _, _, _, review_xlsx_path = write_outputs(
@@ -618,6 +656,14 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
     try:
         review_sheet = workbook["Review Required"]
         headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        assert list(headers)[-6:] == [
+            "split_role",
+            "split_rule",
+            "source_transaction_id",
+            "allocated_amount",
+            "residual_amount",
+            "transaction_id",
+        ]
         normal = {
             header: review_sheet.cell(row=2, column=column).value
             for header, column in headers.items()
@@ -635,6 +681,9 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
         assert residual["split_rule"] == "revolut_family_transfer"
         assert residual["source_transaction_id"] == "tx-source"
         assert residual["residual_amount"] == "2160.00"
+        (allocation,) = _sheet_rows(workbook["Audit"])
+        assert allocation["split_role"] == "dad"
+        assert allocation["allocated_amount"] == "6560.00"
     finally:
         workbook.close()
 
@@ -670,6 +719,14 @@ def test_exception_sheet_lists_blocked_workbook_updates_but_not_skipped_rows(tmp
             authority=Authority.auto,
             method="rule",
             confidence=0.95,
+        ),        _categorized(
+            "tx-review-writable",
+            "CAFE",
+            "-12.00",
+            "Food& Drinks (monthly)",
+            "Model suggestion.",
+            authority=Authority.review,
+            method="local_llm_gemma",
         ),
     ]
     updates = [
@@ -692,7 +749,7 @@ def test_exception_sheet_lists_blocked_workbook_updates_but_not_skipped_rows(tmp
         _update(
             "Food& Drinks (monthly)",
             Decimal("40.00"),
-            ("tx-write",),
+            ("tx-write", "tx-review-writable"),
             "D5",
         ),
     ]
@@ -721,12 +778,9 @@ def test_exception_sheet_lists_blocked_workbook_updates_but_not_skipped_rows(tmp
             for row in range(2, review_sheet.max_row + 1)
         }
 
-        assert set(rows) == {"tx-manual-cell"}
-        assert rows["tx-manual-cell"]["workbook_action"] == "review"
-        assert rows["tx-manual-cell"]["target_cell"] == "D8"
-        assert rows["tx-manual-cell"]["workbook_reason"] == (
-            "Target cell already contains a manual value."
-        )
+        assert set(rows) == {"tx-manual-cell", "tx-review-writable"}
+        assert rows["tx-manual-cell"]["blocked"] == "D8: Target cell already contains a manual value."
+        assert rows["tx-review-writable"]["blocked"] is None
     finally:
         workbook.close()
 
@@ -828,6 +882,15 @@ def _categorized(
         allocated_amount=allocated_amount,
         residual_amount=residual_amount,
     )
+
+
+def _sheet_rows(sheet) -> list[dict[str, object]]:
+    headers = [cell.value for cell in sheet[1]]
+    return [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True)]
+
+
+def _hidden_columns(sheet) -> set[str]:
+    return {letter for letter, dimension in sheet.column_dimensions.items() if dimension.hidden}
 
 
 def _update(

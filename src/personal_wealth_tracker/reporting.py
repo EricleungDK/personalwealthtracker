@@ -19,6 +19,18 @@ from .review_decisions import REJECT_SUGGESTION
 from .utils import TRANSACTION_ID_SCHEME_VERSION
 from .workbook import WorkbookCategoryOption, rows_in_review, workbook_category_options
 
+SPLIT_HEADERS = (
+    "split_role",
+    "split_rule",
+    "source_transaction_id",
+    "allocated_amount",
+    "residual_amount",
+)
+MANUAL_CATEGORY_NOTE = (
+    "Blank accepts suggested_category. No suggestion: pick a category or NONE; "
+    "a blank row without a suggestion stays in review. NONE rejects the suggestion."
+)
+
 
 def write_outputs(
     output_dir: Path,
@@ -493,6 +505,7 @@ def _write_review_workbook(
 ) -> None:
     try:
         from openpyxl import Workbook
+        from openpyxl.comments import Comment
         from openpyxl.utils import get_column_letter
         from openpyxl.worksheet.datavalidation import DataValidation
     except ImportError as exc:
@@ -510,31 +523,7 @@ def _write_review_workbook(
     options_sheet = workbook.create_sheet("Category Options")
     metadata_sheet = workbook.create_sheet("Run Metadata")
 
-    review_headers = [
-        "transaction_id",
-        "date",
-        "description",
-        "amount",
-        "manual_category",
-        "new_parent_category",
-        "new_leaf_category",
-        "learn_to_memory",
-        "split_role",
-        "split_rule",
-        "source_transaction_id",
-        "allocated_amount",
-        "residual_amount",
-        "suggested_category",
-        "suggested_parent_category",
-        "method",
-        "reason",
-        "workbook_action",
-        "target_cell",
-        "workbook_reason",
-        "merchant_identity",
-        "confidence",
-        "direction",
-    ]
+    audit_items = [item for item in categorized if not item.review_required]
     audit_headers = [
         "transaction_id",
         "date",
@@ -550,11 +539,7 @@ def _write_review_workbook(
         "votes",
         "reason",
         "evidence",
-        "split_role",
-        "split_rule",
-        "source_transaction_id",
-        "allocated_amount",
-        "residual_amount",
+        *(SPLIT_HEADERS if any(item.split_role for item in audit_items) else ()),
     ]
     options_headers = [
         "row_number",
@@ -566,69 +551,48 @@ def _write_review_workbook(
         "manual_category_option",
         "new_parent_category_option",
     ]
-    review_sheet.append(review_headers)
     audit_sheet.append(audit_headers)
     options_sheet.append(options_headers)
 
-    for item in categorized:
-        if item.review_required:
-            continue
-        transaction = item.transaction
-        audit_sheet.append(
-            [
-                transaction.transaction_id,
-                transaction.date.isoformat(),
-                transaction.description,
-                _format_amount(transaction.amount),
-                transaction.currency,
-                transaction.direction,
-                _merchant_identity(transaction),
-                item.suggested_category or "",
-                None,
-                f"{item.confidence:.2f}",
-                item.categorization_method,
-                _format_votes(item),
-                item.authority_reason,
-                item.reason,
-                item.split_role,
-                item.split_rule,
-                item.source_transaction_id,
-                _format_optional_amount(item.allocated_amount),
-                _format_optional_amount(item.residual_amount),
-            ]
-        )
+    for item in audit_items:
+        row = _audit_row(item)
+        audit_sheet.append([row.get(header) for header in audit_headers])
 
-    review_items = rows_in_review(categorized, updates)
+    review_items = sorted(
+        rows_in_review(categorized, updates),
+        key=lambda item: (item.suggested_category is not None, item.transaction.date),
+    )
+    review_headers = [
+        "date",
+        "description",
+        "amount",
+        "suggested_category",
+        *(
+            ("suggested_parent_category",)
+            if any(item.new_leaf_parent for item in review_items)
+            else ()
+        ),
+        "manual_category",
+        "reason",
+        "confidence",
+        "new_parent_category",
+        "new_leaf_category",
+        "learn_to_memory",
+        "blocked",
+        *(SPLIT_HEADERS if any(item.split_role for item in review_items) else ()),
+        "transaction_id",
+    ]
+    review_sheet.append(review_headers)
     for item in review_items:
-        transaction = item.transaction
-        update = update_by_transaction.get(transaction.transaction_id)
-        review_sheet.append(
-            [
-                transaction.transaction_id,
-                transaction.date.isoformat(),
-                transaction.description,
-                _format_amount(transaction.amount),
-                None,
-                None,
-                None,
-                None,
-                item.split_role,
-                item.split_rule,
-                item.source_transaction_id,
-                _format_optional_amount(item.allocated_amount),
-                _format_optional_amount(item.residual_amount),
-                item.suggested_category or "",
-                item.new_leaf_parent,
-                item.categorization_method,
-                item.reason,
-                update.write_action if update else None,
-                update.target_cell if update else None,
-                update.reason if update else None,
-                _merchant_identity(transaction),
-                f"{item.confidence:.2f}",
-                transaction.direction,
-            ]
-        )
+        row = _review_row(item, update_by_transaction.get(item.transaction.transaction_id))
+        review_sheet.append([row.get(header) for header in review_headers])
+    review_sheet.column_dimensions[
+        get_column_letter(review_headers.index("transaction_id") + 1)
+    ].hidden = True
+    manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
+    review_sheet[f"{manual_category_column}1"].comment = Comment(
+        MANUAL_CATEGORY_NOTE, "wealth-tracker"
+    )
 
     manual_category_options = [
         REJECT_SUGGESTION,
@@ -665,7 +629,6 @@ def _write_review_workbook(
             ]
         )
 
-    manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
     option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
     option_end_row = len(manual_category_options) + 1
     leaf_list_formula = f"'Category Options'!${option_column}$2:${option_column}${option_end_row}"
@@ -716,8 +679,63 @@ def _write_review_workbook(
     ]:
         metadata_sheet.append([key, value])
 
+    options_sheet.sheet_state = "hidden"
+    metadata_sheet.sheet_state = "hidden"
     workbook.save(path)
     workbook.close()
+
+
+def _audit_row(item: CategorizedTransaction) -> dict[str, object]:
+    transaction = item.transaction
+    return {
+        "transaction_id": transaction.transaction_id,
+        "date": transaction.date.isoformat(),
+        "description": transaction.description,
+        "amount": _format_amount(transaction.amount),
+        "currency": transaction.currency,
+        "direction": transaction.direction,
+        "merchant_identity": _merchant_identity(transaction),
+        "category": item.suggested_category or "",
+        "confidence": f"{item.confidence:.2f}",
+        "source": item.categorization_method,
+        "votes": _format_votes(item),
+        "reason": item.authority_reason,
+        "evidence": item.reason,
+        **_split_values(item),
+    }
+
+
+def _review_row(item: CategorizedTransaction, update: TrackerUpdate | None) -> dict[str, object]:
+    transaction = item.transaction
+    return {
+        "date": transaction.date.isoformat(),
+        "description": transaction.description,
+        "amount": _format_amount(transaction.amount),
+        "suggested_category": item.suggested_category,
+        "suggested_parent_category": item.new_leaf_parent,
+        "reason": f"{item.reason} ({item.categorization_method})",
+        "confidence": f"{item.confidence:.2f}",
+        "blocked": _blocked_note(update),
+        "transaction_id": transaction.transaction_id,
+        **_split_values(item),
+    }
+
+
+def _split_values(item: CategorizedTransaction) -> dict[str, str | None]:
+    return {
+        "split_role": item.split_role,
+        "split_rule": item.split_rule,
+        "source_transaction_id": item.source_transaction_id,
+        "allocated_amount": _format_optional_amount(item.allocated_amount),
+        "residual_amount": _format_optional_amount(item.residual_amount),
+    }
+
+
+def _blocked_note(update: TrackerUpdate | None) -> str | None:
+    """Only a `review` workbook update blocks the commit; `write` and `skip` do not."""
+    if update is None or update.write_action != "review":
+        return None
+    return f"{update.target_cell}: {update.reason}" if update.target_cell else update.reason
 
 
 def _format_votes(item: CategorizedTransaction) -> str:
