@@ -30,7 +30,7 @@ Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-d
 Outputs under `reports/`:
 
 - `report_<year>_<mon>.md` - run summary, `Categorization Quality` (classification rate, no-review rate, method counts), `Local LLM Mode` diagnostics, planned workbook and structure changes.
-- `review_required_<year>_<mon>.xlsx` - the Exception Sheet workbook: `Review Required` and `Audit` sheets, plus hidden `Category Options` and `Run Metadata` helper sheets (dropdown sources and run period; leave them in place).
+- `review_required_<year>_<mon>.xlsx` - the Exception Sheet workbook: `Review Required` and `Audit` sheets, plus hidden `Category Options`, `Decision Options` and `Run Metadata` helper sheets (dropdown sources and run period; leave them in place).
 - `review_required_<year>_<mon>.xlsx.written` - fingerprint of the sheet as the tool last wrote it; do not edit.
 - `review_required_<year>_<mon>.csv`, `categorized_transactions_<year>_<mon>.csv`, `audit_<year>_<mon>.jsonl` - plain inspection and machine-readable audit.
 
@@ -51,7 +51,7 @@ The `Review Required` sheet lists only rows in review: `review`-authority transa
 How to fill the sheet:
 
 1. Read `date`, `description`, `amount`, `suggested_category`, `reason` (ends with the method in brackets) and `confidence`.
-2. `manual_category` is the only column most rows need. Blank accepts `suggested_category`. A row with no suggestion must get a category or `NONE`; blank leaves it in review. The header note says the same.
+2. `manual_category` is the only column most rows need. Its dropdown lists the row's suggestion and model alternatives first, then `NONE`, then every leaf. Blank accepts `suggested_category`. A row with no suggestion must get a category or `NONE`; blank leaves it in review. The header note says the same.
 3. `new_parent_category`, `new_leaf_category` and `learn_to_memory` are optional, see below.
 4. `blocked` is filled only when the target workbook cell blocks the commit (`<cell>: <reason>`, e.g. a manual value); pick another category, `NONE`, or fix the workbook.
 5. Save the file.
@@ -65,7 +65,7 @@ How to fill the sheet:
 - For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The commit run registers it in `config/categories.yaml` (reported under `Category Registry Updates`) and inserts the row at the end of its parent section in the copied workbook, shifting every formula and expanding the parent SUM in all month columns. If the parent formula is not a simple SUM or the before/after safety check fails, the rows stay in review with the reason and nothing is written.
 - `learn_to_memory`: leave blank to learn the decision on commit; `no` for a one-off.
 - Use `Category Options` to avoid derived, fixed, or formula-owned rows.
-- Use `Audit` to spot-check every `auto` row with its `source`, `votes` and `reason`.
+- Use `Audit` to spot-check every `auto` row not in review with its `source`, `votes` and `reason`.
 
 Salary, rent and other `never_auto_categories` rows, rows above `trust_policy.auto_max_amount` (default 1000 DKK), and rows whose cell is blocked (manual value, missing row, several salary deposits) appear every month. Blank accepts them in one pass; a blocked cell needs a different category, `NONE`, or a workbook fix.
 

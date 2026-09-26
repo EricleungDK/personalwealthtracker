@@ -16,8 +16,9 @@ blocked on its own (ADR 0001 left this in place).
 - The `Review Required` sheet is the Exception Sheet: only rows in review
   (`review` authority, or the source of a workbook update planned as
   `review`), with `suggested_category` shown and a `manual_category`
-  dropdown of the suggestion, Suggester alternatives, voted categories
-  and `NONE`.
+  dropdown of the suggestion, Suggester alternatives and voted categories
+  first, then `NONE`, then every leaf (issue #18: per-row list in the hidden
+  `Decision Options` sheet, so no inline-list length cap).
 - Blank `manual_category` accepts `suggested_category`. `NONE` rejects it:
   the row becomes a Monthly Review Decision with no category and is written
   nowhere. Any other value is an explicit category. `manual_category` itself
@@ -43,7 +44,8 @@ blocked on its own (ADR 0001 left this in place).
   `Category Options` and `Run Metadata` are hidden. Decisions are read by
   header name, so earlier layouts still load.
 - Cell-level blocking is removed. There is no "Unreviewed" pseudo-leaf.
-- The `Audit` sheet lists every `auto` row with source, votes and reason.
+- The `Audit` sheet lists every `auto` row not in review with source, votes
+  and reason.
 
 ## Consequences
 

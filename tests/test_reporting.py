@@ -190,11 +190,13 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "Review Required",
             "Audit",
             "Category Options",
+            "Decision Options",
             "Run Metadata",
         ]
         assert [sheet.sheet_state for sheet in workbook.worksheets] == [
             "visible",
             "visible",
+            "hidden",
             "hidden",
             "hidden",
         ]
@@ -295,12 +297,13 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         assert "manual value" in options["Manual Category"][2]
         assert options["Manual Category"][1] is True
 
+        assert _dropdown_options(workbook, "E2") == [
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Fixed Category",
+            "Manual Category",
+        ]
         validations = tuple(review_sheet.data_validations.dataValidation)
-        assert any(
-            validation.formula1 == "'Category Options'!$G$2:$G$5"
-            and "E2" in validation.sqref
-            for validation in validations
-        )
         assert not any("G2" in validation.sqref for validation in validations)
         assert any(
             validation.formula1 == '"yes,no"'
@@ -324,7 +327,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         workbook.close()
 
 
-def test_exception_sheet_offers_suggestion_alternatives_and_none_as_dropdown(tmp_path):
+def test_exception_sheet_dropdown_offers_suggestion_first_then_none_then_every_leaf(tmp_path):
     tracker = tmp_path / "tracker.xlsx"
     _create_review_tracker(tracker)
     disputed = replace(
@@ -366,13 +369,23 @@ def test_exception_sheet_offers_suggestion_alternatives_and_none_as_dropdown(tmp
             "tx-disputed",
         ]
         assert review_sheet["D3"].value == "Food& Drinks (monthly)"
-        validations = {
-            str(validation.sqref): validation
+        assert _dropdown_options(workbook, "E2") == [
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Fixed Category",
+            "Manual Category",
+        ]
+        assert _dropdown_options(workbook, "E3") == [
+            "Food& Drinks (monthly)",
+            "Manual Category",
+            "NONE",
+            "Fixed Category",
+        ]
+        assert workbook["Decision Options"].sheet_state == "hidden"
+        assert not any(
+            validation.showErrorMessage
             for validation in review_sheet.data_validations.dataValidation
-        }
-        assert validations["E2"].formula1 == "'Category Options'!$G$2:$G$5"
-        assert validations["E3"].formula1 == '"Food& Drinks (monthly),Manual Category,NONE"'
-        assert workbook["Category Options"]["G2"].value == "NONE"
+        )
     finally:
         workbook.close()
 
@@ -444,14 +457,17 @@ def test_exception_sheet_offers_alternatives_when_suggester_answered_none(tmp_pa
 
     workbook = load_workbook(review_xlsx_path)
     try:
-        (validation,) = workbook["Review Required"].data_validations.dataValidation[:1]
-        assert "E2" in validation.sqref
-        assert validation.formula1 == '"Manual Category,NONE"'
+        assert _dropdown_options(workbook, "E2") == [
+            "Manual Category",
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Fixed Category",
+        ]
     finally:
         workbook.close()
 
 
-def test_exception_sheet_falls_back_to_leaf_list_when_choices_cannot_be_inlined(tmp_path):
+def test_exception_sheet_dropdown_keeps_labels_with_commas_intact(tmp_path):
     tracker = tmp_path / "tracker.xlsx"
     _create_review_tracker(tracker)
     comma_label = _categorized(
@@ -478,12 +494,7 @@ def test_exception_sheet_falls_back_to_leaf_list_when_choices_cannot_be_inlined(
 
     workbook = load_workbook(review_xlsx_path)
     try:
-        (validation,) = [
-            validation
-            for validation in workbook["Review Required"].data_validations.dataValidation
-            if "E2" in validation.sqref
-        ]
-        assert validation.formula1 == "'Category Options'!$G$2:$G$5"
+        assert _dropdown_options(workbook, "E2")[:2] == ["Books, Games", "NONE"]
     finally:
         workbook.close()
 
@@ -585,12 +596,12 @@ def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path
         assert manual_options == ["NONE", "Food& Drinks (monthly)", "Apple Cloud"]
         assert parent_options == ["Living expenses", "Services"]
 
+        assert _dropdown_options(workbook, "E2") == [
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Apple Cloud",
+        ]
         validations = tuple(review_sheet.data_validations.dataValidation)
-        assert any(
-            validation.formula1 == "'Category Options'!$G$2:$G$4"
-            and "E2" in validation.sqref
-            for validation in validations
-        )
         assert any(
             validation.formula1 == "'Category Options'!$H$2:$H$3"
             and "H2" in validation.sqref
@@ -719,7 +730,8 @@ def test_exception_sheet_lists_blocked_workbook_updates_but_not_skipped_rows(tmp
             authority=Authority.auto,
             method="rule",
             confidence=0.95,
-        ),        _categorized(
+        ),
+        _categorized(
             "tx-review-writable",
             "CAFE",
             "-12.00",
@@ -781,6 +793,8 @@ def test_exception_sheet_lists_blocked_workbook_updates_but_not_skipped_rows(tmp
         assert set(rows) == {"tx-manual-cell", "tx-review-writable"}
         assert rows["tx-manual-cell"]["blocked"] == "D8: Target cell already contains a manual value."
         assert rows["tx-review-writable"]["blocked"] is None
+        audit_ids = [row["transaction_id"] for row in _sheet_rows(workbook["Audit"])]
+        assert audit_ids == ["tx-fixed", "tx-write"]
     finally:
         workbook.close()
 
@@ -887,6 +901,17 @@ def _categorized(
 def _sheet_rows(sheet) -> list[dict[str, object]]:
     headers = [cell.value for cell in sheet[1]]
     return [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True)]
+
+
+def _dropdown_options(workbook, cell: str) -> list[object]:
+    (validation,) = [
+        validation
+        for validation in workbook["Review Required"].data_validations.dataValidation
+        if cell in validation.sqref
+    ]
+    sheet_name, cells = validation.formula1.rsplit("!", 1)
+    sheet = workbook[sheet_name.strip("'")]
+    return [row[0].value for row in sheet[cells.replace("$", "")]]
 
 
 def _hidden_columns(sheet) -> set[str]:
