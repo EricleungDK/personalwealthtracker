@@ -74,9 +74,14 @@ def build_suggester_context(
     )
 
 
-def row_merchant_identity(item: CategorizedTransaction) -> str:
+def row_merchant_text(item: CategorizedTransaction) -> str:
+    """Merchant as it appears on the statement: parsed merchant, else the description."""
     transaction = item.transaction
-    return normalize_merchant_identity(transaction.merchant or transaction.description)
+    return transaction.merchant or transaction.description
+
+
+def row_merchant_identity(item: CategorizedTransaction) -> str:
+    return normalize_merchant_identity(row_merchant_text(item))
 
 
 def subscription_proposal(service: str, leaves: Sequence[str]) -> tuple[str, str | None]:

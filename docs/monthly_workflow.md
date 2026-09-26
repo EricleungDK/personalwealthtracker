@@ -83,7 +83,7 @@ Two local models vote on each row through Ollama's local HTTP API (Consensus): `
 
 A model suggestion reaches `auto` only when both voters pick the same leaf (`trust_policy.min_agreement`, default 2 distinct models), the amount is within `trust_policy.auto_max_amount`, and the leaf is not in `trust_policy.never_auto_categories`. Otherwise it stays review-only, suggesting the primary model's leaf with the other answers as alternatives. The same cap and never-auto list apply to deterministic and memory matches.
 
-Prompt context is minimized: merchant identity, amount, date, direction, YAML leaf choices with descriptions, Guidance Aliases, and up to five nearest Category Memory neighbours. raw Nordea descriptions are excluded unless `include_raw_description: true` is deliberately configured. Nothing is sent to a hosted model.
+Prompt context is minimized: the statement merchant text (raw, so digits like `7-ELEVEN 7060` survive), amount, date, direction, YAML leaf choices with descriptions, Guidance Aliases, and up to five nearest Category Memory neighbours (looked up and shown by normalised merchant identity). raw Nordea descriptions are excluded beyond that merchant text (for Nordea CSV the merchant text is the `Name`/`Title` value itself) unless `include_raw_description: true` is deliberately configured, and then only when they differ from the merchant text. Nothing is sent to a hosted model.
 
 Without a running local model the run still completes: provider failures, timeouts, and invalid or low-confidence answers are recorded in the report's `Local LLM Mode` section and audit log, and the affected rows become ordinary exceptions.
 

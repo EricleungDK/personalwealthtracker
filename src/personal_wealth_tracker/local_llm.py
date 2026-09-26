@@ -16,6 +16,7 @@ from .suggester import (
     SuggesterContext,
     Suggestion,
     row_merchant_identity,
+    row_merchant_text,
     subscription_proposal,
 )
 from .trust_policy import stamp_authority
@@ -189,15 +190,15 @@ def _row_prompt(
     item: CategorizedTransaction, context: SuggesterContext, include_raw_description: bool
 ) -> str:
     transaction = item.transaction
-    merchant_identity = row_merchant_identity(item)
+    merchant = row_merchant_text(item)
     row: dict = {
-        "merchant_identity": merchant_identity,
+        "merchant": merchant,
         "amount": str(transaction.amount),
         "date": transaction.date.isoformat(),
         "direction": transaction.direction,
         "memory_neighbours": [
             {"merchant_identity": identity, "category": category}
-            for identity, category in context.memory_neighbours(merchant_identity)
+            for identity, category in context.memory_neighbours(row_merchant_identity(item))
         ],
     }
     if item.suggested_category and item.categorization_method in {"rule", "recurring"}:
@@ -206,7 +207,7 @@ def _row_prompt(
             "method": item.categorization_method,
             "confidence": item.confidence,
         }
-    if include_raw_description:
+    if include_raw_description and transaction.description != merchant:
         row["raw_description"] = transaction.description
     return json.dumps(row, ensure_ascii=False)
 

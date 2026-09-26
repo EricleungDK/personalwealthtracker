@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-06-07
+Last updated: 2026-09-26
 
 ## Template Workbook Metadata
 
@@ -110,7 +110,7 @@ Future Local LLM Mode should reuse the existing suggestion fields rather than wi
 
 ## Local LLM Suggestion Contract
 
-Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. Adapters: `OllamaSuggester` (`local_llm.py`), `FakeSuggester` (scripted votes for tests), and `ConsensusSuggester` (two Suggesters; `local_consensus(settings)` wires `model` and `second_model`). Each suggestion carries:
+Category models sit behind the Suggester port (`suggester.py`): `suggest(rows, context) -> suggestions`. Context carries the leaf glossary (`description:` per leaf), guidance aliases, up to five Category Memory neighbours by normalised merchant identity, and reviewed policy text. The Ollama row prompt shows the raw statement merchant text (`merchant`); normalised identity stays the lookup key. Adapters: `OllamaSuggester` (`local_llm.py`), `FakeSuggester` (scripted votes for tests), and `ConsensusSuggester` (two Suggesters; `local_consensus(settings)` wires `model` and `second_model`). Each suggestion carries:
 
 - `transaction_id`: row the suggestion is for.
 - `category`: an existing YAML Leaf Category Row, a Subscription Leaf Proposal `<Service> subscription`, or NONE (no suggestion).
