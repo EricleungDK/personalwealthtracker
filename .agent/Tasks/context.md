@@ -145,6 +145,7 @@ Last updated: 2026-09-26
 | 2026-09-25 | Local two-model Consensus with amount cap is write authority for model suggestions (issue #7, ADR 0002). | `gemma4:26b` + `gemma4:12b` must agree as distinct models; `qwen3:14b` is the installed fallback because `gemma4:e4b` is not installed and a gemma4:12b fallback would let one model vote twice. |
 | 2026-09-25 | Per-row Authority from one Trust Policy replaces scattered review checks (issue #5, ADR 0001). | Categorizer thresholds, LLM always-review, and workbook cell scan now read `authority`; amount cap 1000 DKK and a never-auto list apply to every automatic tier. |
 | 2026-09-25 | Guidance Aliases in ignored `config/guidance_aliases.local.yaml` match directly after Category Memory (issue #10). | Hand-written merchant pattern → leaf for names that vary; unknown leaf fails config load; aliases also go into Suggester context. Example `config/guidance_aliases.local.example.yaml` is synthetic. |
+| 2026-09-26 | Missing leaf rows insert at the end of the parent SUM section with formula-aware shifting and a fail-closed before/after check (issue #16, ADR 0006). | Config tree differs from workbook sections, so sibling-based placement crossed sections; `insert_rows` left ~600 formulas pointing at old rows. |
 
 ## Open Questions
 
