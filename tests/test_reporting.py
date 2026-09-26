@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -5,12 +6,19 @@ from openpyxl import Workbook, load_workbook
 
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry
 from personal_wealth_tracker.models import (
+    Authority,
     CategorizedTransaction,
     TrackerUpdate,
     Transaction,
+    Vote,
     WorkbookStructureChange,
 )
 from personal_wealth_tracker.reporting import write_outputs
+from personal_wealth_tracker.review_decisions import (
+    MonthlyReviewDecision,
+    apply_monthly_review_decisions,
+    load_monthly_review_decisions,
+)
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
@@ -147,7 +155,8 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "-42.50",
             "",
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
+            authority_reason="No category suggested.",
             method="unmatched",
             confidence=0.0,
             merchant="UNKNOWN SHOP",
@@ -158,7 +167,7 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "-125.00",
             "Food& Drinks (monthly)",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
             merchant="NETTO",
@@ -184,58 +193,54 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
     try:
         assert workbook.sheetnames == [
             "Review Required",
-            "All Transactions",
+            "Audit",
             "Category Options",
+            "Decision Options",
             "Run Metadata",
+        ]
+        assert [sheet.sheet_state for sheet in workbook.worksheets] == [
+            "visible",
+            "visible",
+            "hidden",
+            "hidden",
+            "hidden",
         ]
 
         review_sheet = workbook["Review Required"]
         assert [cell.value for cell in review_sheet[1]] == [
-            "transaction_id",
             "date",
             "description",
             "amount",
+            "suggested_category",
             "manual_category",
+            "reason",
+            "confidence",
             "new_parent_category",
             "new_leaf_category",
             "learn_to_memory",
-            "split_role",
-            "split_rule",
-            "source_transaction_id",
-            "allocated_amount",
-            "residual_amount",
-            "suggested_category",
-            "method",
-            "reason",
-            "workbook_action",
-            "target_cell",
-            "workbook_reason",
-            "merchant_identity",
-            "confidence",
-            "direction",
+            "blocked",
+            "transaction_id",
         ]
-        assert [review_sheet.cell(row=2, column=column).value for column in range(1, 9)] == [
-            "tx-review",
+        assert _hidden_columns(review_sheet) == {"L"}
+        assert [cell.value for cell in review_sheet[2]] == [
             "2026-05-15",
             "UNKNOWN SHOP",
             "-42.50",
             None,
             None,
+            "No historical or keyword rule matched. (unmatched)",
+            "0.00",
             None,
             None,
+            None,
+            None,
+            "tx-review",
         ]
-        assert [review_sheet.cell(row=2, column=column).value for column in range(9, 14)] == [
-            None,
-            None,
-            None,
-            None,
-            None,
-        ]
-        assert review_sheet["N2"].value is None
-        assert review_sheet["O2"].value == "unmatched"
-        assert review_sheet["P2"].value == "No historical or keyword rule matched."
+        note = review_sheet["E1"].comment.text
+        assert "Blank accepts suggested_category" in note
+        assert "No suggestion: pick a category or NONE" in note
 
-        audit_sheet = workbook["All Transactions"]
+        audit_sheet = workbook["Audit"]
         assert [cell.value for cell in audit_sheet[1]] == [
             "transaction_id",
             "date",
@@ -244,22 +249,23 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
             "currency",
             "direction",
             "merchant_identity",
-            "suggested_category",
+            "category",
+            "corrected_category",
             "confidence",
-            "method",
-            "review_required",
+            "source",
+            "votes",
             "reason",
-            "split_role",
-            "split_rule",
-            "source_transaction_id",
-            "allocated_amount",
-            "residual_amount",
+            "evidence",
         ]
-        assert audit_sheet.max_row == 3
-        assert audit_sheet["A2"].value == "tx-review"
-        assert audit_sheet["K2"].value is True
-        assert audit_sheet["A3"].value == "tx-food"
-        assert audit_sheet["K3"].value is False
+        assert audit_sheet.max_row == 2
+        assert audit_sheet["A2"].value == "tx-food"
+        assert audit_sheet["K2"].value == "rule"
+        assert any(
+            validation.formula1 == "'Category Options'!$G$2:$G$5"
+            and validation.allow_blank
+            and "I2" in validation.sqref
+            for validation in audit_sheet.data_validations.dataValidation
+        )
 
         options_sheet = workbook["Category Options"]
         assert [cell.value for cell in options_sheet[1]] == [
@@ -296,17 +302,18 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         assert "manual value" in options["Manual Category"][2]
         assert options["Manual Category"][1] is True
 
+        assert _dropdown_options(workbook, "E2") == [
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Fixed Category",
+            "Manual Category",
+        ]
         validations = tuple(review_sheet.data_validations.dataValidation)
-        assert any(
-            validation.formula1 == "'Category Options'!$G$2:$G$4"
-            and "E2" in validation.sqref
-            for validation in validations
-        )
         assert not any("G2" in validation.sqref for validation in validations)
         assert any(
             validation.formula1 == '"yes,no"'
             and validation.allow_blank
-            and "H2" in validation.sqref
+            and "J2" in validation.sqref
             for validation in validations
         )
 
@@ -325,6 +332,178 @@ def test_review_workbook_contains_review_queue_audit_options_dropdowns_and_metad
         workbook.close()
 
 
+def test_exception_sheet_dropdown_offers_suggestion_first_then_none_then_every_leaf(tmp_path):
+    tracker = tmp_path / "tracker.xlsx"
+    _create_review_tracker(tracker)
+    disputed = replace(
+        _categorized(
+            "tx-disputed",
+            "CAFE",
+            "-60.00",
+            "Food& Drinks (monthly)",
+            "Model suggestion.",
+            authority=Authority.review,
+            method="local_llm_gemma",
+        ),
+        votes=(
+            Vote("Food& Drinks (monthly)", 0.9, "gemma4:26b"),
+            Vote("Manual Category", 0.8, "gemma4:12b"),
+        ),
+    )
+    unmatched = _categorized(
+        "tx-unmatched", "UNKNOWN", "-5.00", "", "No match.", authority=Authority.review
+    )
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tracker,
+        categorized=[disputed, unmatched],
+        updates=[],
+        workbook_config=_config(),
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        review_sheet = workbook["Review Required"]
+        assert [review_sheet["L2"].value, review_sheet["L3"].value] == [
+            "tx-unmatched",
+            "tx-disputed",
+        ]
+        assert review_sheet["D3"].value == "Food& Drinks (monthly)"
+        assert _dropdown_options(workbook, "E2") == [
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Fixed Category",
+            "Manual Category",
+        ]
+        assert _dropdown_options(workbook, "E3") == [
+            "Food& Drinks (monthly)",
+            "Manual Category",
+            "NONE",
+            "Fixed Category",
+        ]
+        assert workbook["Decision Options"].sheet_state == "hidden"
+        assert not any(
+            validation.showErrorMessage
+            for validation in review_sheet.data_validations.dataValidation
+        )
+    finally:
+        workbook.close()
+
+
+def test_exception_sheet_lists_rows_needing_a_decision_first_then_by_date(tmp_path):
+    def review_row(transaction_id, category, day):
+        item = _categorized(
+            transaction_id, "SHOP", "-5.00", category, "Model.", authority=Authority.review
+        )
+        return replace(item, transaction=replace(item.transaction, date=date(2026, 5, day)))
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=[
+            review_row("tx-suggested-late", "Traveling", 20),
+            review_row("tx-suggested-early", "Traveling", 1),
+            review_row("tx-open-late", "", 25),
+            review_row("tx-open-early", "", 3),
+        ],
+        updates=[],
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        rows = _sheet_rows(workbook["Review Required"])
+    finally:
+        workbook.close()
+    assert [row["transaction_id"] for row in rows] == [
+        "tx-open-early",
+        "tx-open-late",
+        "tx-suggested-early",
+        "tx-suggested-late",
+    ]
+
+
+def test_exception_sheet_offers_alternatives_when_suggester_answered_none(tmp_path):
+    tracker = tmp_path / "tracker.xlsx"
+    _create_review_tracker(tracker)
+    none_answer = replace(
+        _categorized(
+            "tx-none",
+            "CAFE",
+            "-60.00",
+            "",
+            "Local model answered NONE.",
+            authority=Authority.review,
+            method="local_llm_gemma_no_suggestion",
+        ),
+        votes=(Vote(None, 0.4, "fake"),),
+        alternatives=("Manual Category",),
+    )
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tracker,
+        categorized=[none_answer],
+        updates=[],
+        workbook_config=_config(),
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        assert _dropdown_options(workbook, "E2") == [
+            "Manual Category",
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Fixed Category",
+        ]
+    finally:
+        workbook.close()
+
+
+def test_exception_sheet_dropdown_keeps_labels_with_commas_intact(tmp_path):
+    tracker = tmp_path / "tracker.xlsx"
+    _create_review_tracker(tracker)
+    comma_label = _categorized(
+        "tx-comma",
+        "SHOP",
+        "-9.00",
+        "Books, Games",
+        "Model suggestion.",
+        authority=Authority.review,
+        method="local_llm_gemma",
+    )
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tracker,
+        categorized=[comma_label],
+        updates=[],
+        workbook_config=_config(),
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        assert _dropdown_options(workbook, "E2")[:2] == ["Books, Games", "NONE"]
+    finally:
+        workbook.close()
+
+
 def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path):
     tracker = tmp_path / "tracker.xlsx"
     _create_registry_review_tracker(tracker)
@@ -336,7 +515,7 @@ def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path
             "-42.50",
             None,
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
             method="unmatched",
             confidence=0.0,
         )
@@ -419,18 +598,18 @@ def test_review_workbook_uses_registry_leaf_and_parent_dropdown_sources(tmp_path
             for row in range(2, options_sheet.max_row + 1)
             if options_sheet.cell(row=row, column=option_headers["new_parent_category_option"]).value
         ]
-        assert manual_options == ["Food& Drinks (monthly)", "Apple Cloud"]
+        assert manual_options == ["NONE", "Food& Drinks (monthly)", "Apple Cloud"]
         assert parent_options == ["Living expenses", "Services"]
 
+        assert _dropdown_options(workbook, "E2") == [
+            "NONE",
+            "Food& Drinks (monthly)",
+            "Apple Cloud",
+        ]
         validations = tuple(review_sheet.data_validations.dataValidation)
         assert any(
-            validation.formula1 == "'Category Options'!$G$2:$G$3"
-            and "E2" in validation.sqref
-            for validation in validations
-        )
-        assert any(
             validation.formula1 == "'Category Options'!$H$2:$H$3"
-            and "F2" in validation.sqref
+            and "H2" in validation.sqref
             for validation in validations
         )
         assert not any("G2" in validation.sqref for validation in validations)
@@ -446,7 +625,7 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
             "-42.50",
             "",
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
             method="unmatched",
             confidence=0.0,
         ),
@@ -456,13 +635,25 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
             "-2160.00",
             "",
             "Proxy split residual needs current-month review.",
-            review_required=True,
+            authority=Authority.review,
             method="proxy_split_residual",
             confidence=0.0,
             source_transaction_id="tx-source",
             split_rule="revolut_family_transfer",
             split_role="residual",
             residual_amount=Decimal("2160.00"),
+        ),
+        _categorized(
+            "tx-source:split:revolut_family_transfer:dad",
+            "REVOLUT [revolut_family_transfer:dad]",
+            "-6560.00",
+            "Dad",
+            "Proxy split allocation.",
+            method="proxy_split_allocation",
+            source_transaction_id="tx-source",
+            split_rule="revolut_family_transfer",
+            split_role="dad",
+            allocated_amount=Decimal("6560.00"),
         ),
     ]
 
@@ -481,6 +672,14 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
     try:
         review_sheet = workbook["Review Required"]
         headers = {cell.value: index for index, cell in enumerate(review_sheet[1], start=1)}
+        assert list(headers)[-6:] == [
+            "split_role",
+            "split_rule",
+            "source_transaction_id",
+            "allocated_amount",
+            "residual_amount",
+            "transaction_id",
+        ]
         normal = {
             header: review_sheet.cell(row=2, column=column).value
             for header, column in headers.items()
@@ -498,18 +697,14 @@ def test_review_workbook_exposes_proxy_split_metadata_and_leaves_normal_rows_bla
         assert residual["split_rule"] == "revolut_family_transfer"
         assert residual["source_transaction_id"] == "tx-source"
         assert residual["residual_amount"] == "2160.00"
-
-        audit_sheet = workbook["All Transactions"]
-        audit_headers = {cell.value: index for index, cell in enumerate(audit_sheet[1], start=1)}
-        assert audit_sheet.cell(row=3, column=audit_headers["split_role"]).value == "residual"
-        assert audit_sheet.cell(row=3, column=audit_headers["split_rule"]).value == (
-            "revolut_family_transfer"
-        )
+        (allocation,) = _sheet_rows(workbook["Audit"])
+        assert allocation["split_role"] == "dad"
+        assert allocation["allocated_amount"] == "6560.00"
     finally:
         workbook.close()
 
 
-def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path):
+def test_exception_sheet_lists_blocked_workbook_updates_but_not_skipped_rows(tmp_path):
     categorized = [
         _categorized(
             "tx-manual-cell",
@@ -517,7 +712,7 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             "-25.00",
             "Manual Category",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
         ),
@@ -527,7 +722,7 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             "-30.00",
             "Fixed Category",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
         ),
@@ -537,9 +732,18 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             "-40.00",
             "Food& Drinks (monthly)",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
             confidence=0.95,
+        ),
+        _categorized(
+            "tx-review-writable",
+            "CAFE",
+            "-12.00",
+            "Food& Drinks (monthly)",
+            "Model suggestion.",
+            authority=Authority.review,
+            method="local_llm_gemma",
         ),
     ]
     updates = [
@@ -562,7 +766,7 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
         _update(
             "Food& Drinks (monthly)",
             Decimal("40.00"),
-            ("tx-write",),
+            ("tx-write", "tx-review-writable"),
             "D5",
         ),
     ]
@@ -591,15 +795,11 @@ def test_review_workbook_includes_non_writable_workbook_update_sources(tmp_path)
             for row in range(2, review_sheet.max_row + 1)
         }
 
-        assert set(rows) == {"tx-manual-cell", "tx-fixed"}
-        assert rows["tx-manual-cell"]["workbook_action"] == "review"
-        assert rows["tx-manual-cell"]["target_cell"] == "D8"
-        assert rows["tx-manual-cell"]["workbook_reason"] == (
-            "Target cell already contains a manual value."
-        )
-        assert rows["tx-fixed"]["workbook_action"] == "skip"
-        assert rows["tx-fixed"]["target_cell"] == "D7"
-        assert rows["tx-fixed"]["workbook_reason"] == "Fixed row is protected by config."
+        assert set(rows) == {"tx-manual-cell", "tx-review-writable"}
+        assert rows["tx-manual-cell"]["blocked"] == "D8: Target cell already contains a manual value."
+        assert rows["tx-review-writable"]["blocked"] is None
+        audit_ids = [row["transaction_id"] for row in _sheet_rows(workbook["Audit"])]
+        assert audit_ids == ["tx-fixed", "tx-write"]
     finally:
         workbook.close()
 
@@ -612,7 +812,7 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
             "-125.00",
             "Food& Drinks (monthly)",
             "Keyword rule match.",
-            review_required=False,
+            authority=Authority.auto,
             method="rule",
         ),
         _categorized(
@@ -621,7 +821,7 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
             "-250.00",
             "Fitness",
             "Recurring amount/date rule match.",
-            review_required=True,
+            authority=Authority.review,
             method="recurring",
             confidence=0.75,
         ),
@@ -631,7 +831,7 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
             "-42.50",
             "",
             "No historical or keyword rule matched.",
-            review_required=True,
+            authority=Authority.review,
             method="unmatched",
             confidence=0.0,
         ),
@@ -660,13 +860,84 @@ def test_report_includes_categorization_quality_diagnostics(tmp_path):
     assert "- unmatched: 1" in report
 
 
+def test_rewritten_exception_sheet_reads_back_every_carried_decision_without_blank_accept(
+    tmp_path,
+):
+    decisions = {
+        decision.transaction_id: decision
+        for decision in (
+            MonthlyReviewDecision("tx-manual", manual_category="Apple Cloud"),
+            MonthlyReviewDecision("tx-none", manual_category="NONE", learn_to_memory=False),
+            MonthlyReviewDecision(
+                "tx-typed-leaf", new_parent_category="Services", new_leaf_category="Pet Supplies"
+            ),
+            MonthlyReviewDecision(
+                "tx-proposal",
+                new_parent_category="Services",
+                new_leaf_category="ChatGPT subscription",
+                accepted_subscription_proposal=True,
+            ),
+            MonthlyReviewDecision("tx-audit", manual_category="NONE", audit_correction=True),
+        )
+    }
+    categorized = [
+        *(
+            _categorized(transaction_id, transaction_id.upper(), "-10.00", "", "Rows.")
+            for transaction_id in decisions
+        ),
+        _categorized(
+            "tx-open",
+            "OPEN",
+            "-10.00",
+            "Apple Cloud",
+            "Model.",
+            authority=Authority.review,
+        ),
+    ]
+    decided = [
+        replace(item, authority=Authority.auto) if item.transaction.transaction_id in decisions
+        else item
+        for item in apply_monthly_review_decisions(categorized, decisions)
+    ]
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=decided,
+        updates=[],
+        statement_parser="nordea-csv",
+        carried_decisions=decisions,
+    )
+
+    assert load_monthly_review_decisions(review_xlsx_path, 2026, "May", blank_accepts=False) == (
+        decisions
+    )
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        rows = {row["transaction_id"]: row for row in _sheet_rows(workbook["Review Required"])}
+    finally:
+        workbook.close()
+    assert next(iter(rows)) == "tx-open"
+    assert rows["tx-manual"]["suggested_category"] is None
+    assert rows["tx-typed-leaf"]["suggested_category"] is None
+    assert (
+        rows["tx-proposal"]["suggested_category"],
+        rows["tx-proposal"]["suggested_parent_category"],
+    ) == ("ChatGPT subscription", "Services")
+
+
 def _categorized(
     transaction_id: str,
     description: str,
     amount: str,
     category: str,
     reason: str,
-    review_required: bool = False,
+    authority: Authority = Authority.auto,
+    authority_reason: str = "",
     method: str = "rule",
     confidence: float = 0.95,
     merchant: str | None = None,
@@ -691,7 +962,8 @@ def _categorized(
         suggested_category=category or None,
         confidence=confidence,
         categorization_method=method,
-        review_required=review_required,
+        authority=authority,
+        authority_reason=authority_reason,
         reason=reason,
         source_transaction_id=source_transaction_id,
         split_rule=split_rule,
@@ -699,6 +971,26 @@ def _categorized(
         allocated_amount=allocated_amount,
         residual_amount=residual_amount,
     )
+
+
+def _sheet_rows(sheet) -> list[dict[str, object]]:
+    headers = [cell.value for cell in sheet[1]]
+    return [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True)]
+
+
+def _dropdown_options(workbook, cell: str) -> list[object]:
+    (validation,) = [
+        validation
+        for validation in workbook["Review Required"].data_validations.dataValidation
+        if cell in validation.sqref
+    ]
+    sheet_name, cells = validation.formula1.rsplit("!", 1)
+    sheet = workbook[sheet_name.strip("'")]
+    return [row[0].value for row in sheet[cells.replace("$", "")]]
+
+
+def _hidden_columns(sheet) -> set[str]:
+    return {letter for letter, dimension in sheet.column_dimensions.items() if dimension.hidden}
 
 
 def _update(
@@ -766,7 +1058,6 @@ def _config(
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -778,3 +1069,47 @@ def _config(
         fixed_rows=fixed_rows,
         category_registry=category_registry,
     )
+
+
+def test_exception_sheet_explains_proposed_leaf_row_is_added_on_commit(tmp_path):
+    proposal = replace(
+        _categorized(
+            "tx-proposal",
+            "CHATGPT",
+            "-150.00",
+            "ChatGPT subscription",
+            "Local model proposed new leaf.",
+            authority=Authority.review,
+            method="local_llm_gemma",
+        ),
+        new_leaf_parent="Services",
+    )
+    updates = [
+        _update(
+            "ChatGPT subscription",
+            Decimal("150.00"),
+            ("tx-proposal",),
+            None,
+            write_action="review",
+            reason="Target category row not found.",
+        )
+    ]
+
+    _, _, _, _, review_xlsx_path = write_outputs(
+        output_dir=tmp_path,
+        mode="dry-run",
+        year=2026,
+        month="May",
+        source_statement=tmp_path / "statement.csv",
+        tracker_path=tmp_path / "tracker.xlsx",
+        categorized=[proposal],
+        updates=updates,
+        statement_parser="nordea-csv",
+    )
+
+    workbook = load_workbook(review_xlsx_path)
+    try:
+        (row,) = _sheet_rows(workbook["Review Required"])
+        assert row["blocked"] == "New category: row added under Services when you commit."
+    finally:
+        workbook.close()

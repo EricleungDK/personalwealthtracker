@@ -73,7 +73,7 @@ Dry-run writes review artifacts under `reports/` and does not modify the workboo
 
 Use the generated `review_required_<year>_<month>.xlsx` or CSV to confirm rows that need human attention. Current-month decisions can be imported back into a later run, and future merchant choices can be learned only after review.
 
-Learn confirmed category decisions into private Category Memory:
+Committing a month learns its decisions into private Category Memory. To import confirmed decisions by hand instead:
 
 ```bash
 uv run wealth-tracker learn-category-memory \

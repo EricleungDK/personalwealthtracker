@@ -28,6 +28,26 @@ _Avoid_: Trusted parser, arbitrary bank support, direct workbook input
 A deterministic parser for a known statement format whose normalized transactions can enter monthly planning after validation.
 _Avoid_: LLM guess, unsupported statement format
 
+**Authority**:
+The per-row decision, `auto` or `review`, of whether a categorized transaction may reach the Tracker Workbook without the operator. Workbook cells derive from row authority.
+_Avoid_: Cell blocking
+
+**Exception Sheet**:
+The `Review Required` sheet listing rows in review, suggestion prefilled, then rows already decided with the decision prefilled; one per month, rewritten by each `monthly` run. Blank accepts the suggestion; `NONE` rejects it.
+_Avoid_: Whole-month review workbook
+
+**Carried Decision**:
+A Monthly Review Decision or Audit correction read from the Exception Sheet and written back, prefilled, when `monthly` rewrites it, so it keeps applying without another save (ADR 0003).
+_Avoid_: Replayed decision
+
+**Atomic Month Commit**:
+Commit mode writes the copied Tracker Workbook only when zero rows remain in review, so it never holds a partial month.
+_Avoid_: Unreviewed bucket, partial commit
+
+**Trust Policy**:
+The single pure module that decides Authority from evidence (tier, model votes, agreement), row facts (amount), and settings (`auto_max_amount`, `min_agreement`, `never_auto_categories`).
+_Avoid_: Confidence threshold check, scattered review rules
+
 **Untrusted Imported Transaction**:
 A transaction extracted from an unknown or model-assisted statement import that requires user review before it can affect monthly planning or workbook updates.
 _Avoid_: Parsed transaction, auto-write candidate
@@ -157,23 +177,31 @@ A transaction that may be reported with a suggestion but must not be written aut
 _Avoid_: Auto-write candidate
 
 **Local LLM Mode**:
-An optional on-device model-assisted categorization mode that processes minimized transaction context locally and returns review-only suggestions.
-_Avoid_: Remote API mode, deterministic rule, auto-write authority
+On-device model-assisted categorization (always on in `monthly`, opt-in in the per-month command) that processes minimized transaction context locally and returns suggestions that stay review-only unless Consensus and the Trust Policy grant `auto`.
+_Avoid_: Remote API mode, deterministic rule
+
+**Suggester**:
+The port every category model sits behind: `suggest(rows, context) -> suggestions`, with Ollama, Fake and Consensus adapters.
+_Avoid_: LLM client, provider
+
+**Consensus**:
+The Suggester adapter that asks two local models per row and records each answer as a vote; the Trust Policy grants `auto` only when enough distinct models agree.
+_Avoid_: Ensemble, majority vote, confidence threshold
+
+**Hosted Judgment**:
+A category answer from a model hosted off the machine (e.g. TypeSafe Jev), sent only through `outbound_redaction`.
+_Avoid_: Remote LLM Mode, cloud suggestion
 
 **LLM Category Suggestion**:
-A model-generated candidate category for a review-only transaction, limited to an existing leaf category, `no_suggestion`, or a new leaf candidate, and requiring user confirmation before it can affect workbook writes or Category Memory.
+A model-generated candidate category for a review-only transaction, limited to an existing leaf category, a **Subscription Leaf Proposal**, or NONE, and requiring user confirmation before it can affect workbook writes or Category Memory unless Consensus grants the row `auto`.
 _Avoid_: Deterministic Category Match, Confirmed Review Decision, automatic category
-
-**LLM New Leaf Candidate**:
-A model-generated hint that the transaction may need a category not yet present in the allowed category set; it can only become a New Leaf Category Request through user review.
-_Avoid_: Automatic category creation, registry update, invented write target
 
 **Allowed Category Set**:
 The current YAML-validated leaf categories supplied as the only valid category choices for an LLM category suggestion.
 _Avoid_: Free-form category list, workbook section rows, invented categories
 
 **LLM Prompt Context**:
-The minimized transaction and category data passed to a local model for review-only categorization, defaulting to merchant identity, amount, date, direction, and the allowed category set.
+The minimized transaction and category data passed to a local model for review-only categorization, defaulting to the raw statement merchant text, amount, date, direction, and the allowed category set. Memory neighbours are matched and shown by normalised merchant identity.
 _Avoid_: Full raw bank statement, account numbers, audit log dump
 
 **Confirmed Review Decision**:
@@ -196,8 +224,12 @@ _Avoid_: Workbook-only category truth, hidden category list
 A manual review row that fills `new_parent_category` and `new_leaf_category` to add a missing leaf category after registry validation.
 _Avoid_: Overloaded manual_category, automatic alias creation
 
+**Subscription Leaf Proposal**:
+A Suggester answer naming a new leaf `<Service> subscription` under `Services` for a recurring subscription with no leaf of its own; always `review`, and accepting it on the Exception Sheet becomes a **New Leaf Category Request**. Subscriptions get one leaf per service, never a generic bucket.
+_Avoid_: Subscriptions leaf, new_leaf_candidate
+
 **Category Memory**:
-Private local categorization knowledge learned from confirmed review decisions.
+Private local categorization knowledge learned when a month commits, each entry with provenance `human` (confirmed decision) or `auto` (consensus result, trusted after two committed months).
 _Avoid_: Public rule, self-trained guess
 
 **Reviewed Decision File**:
@@ -207,6 +239,10 @@ _Avoid_: Raw review report, automatic guess output
 **Local Rule**:
 A hand-written private categorization rule maintained by the user.
 _Avoid_: Learned mapping, generated memory
+
+**Guidance Alias**:
+A hand-written private merchant pattern mapped to a leaf category, matched directly after `human` **Category Memory** and shown to the **Suggester**; kept in ignored `config/guidance_aliases.local.yaml`.
+_Avoid_: Alias (tracker label alias), learned mapping
 
 **Merchant Identity**:
 A normalized merchant-like name used for repeat categorization without changing reference numbers or sensitive account details.
@@ -338,16 +374,21 @@ _Avoid_: Credit card settlement, liability payment
 - A **Leaf Category Row** is the normal target for `manual_category`, workbook value planning, and Category Memory learning.
 - The **Category Registry** is the durable source for deciding whether a category is parent, leaf, derived, or allowed to receive a **New Leaf Category Request**.
 - A **New Leaf Category Request** must provide an allowed **Parent/Section Row** and a unique **Leaf Category Row** label.
-- A reviewed second run may update the **Category Registry** with a valid **New Leaf Category Request** before planning workbook structure changes.
+- A reviewed second run registers a valid **New Leaf Category Request** in memory before planning workbook structure changes; the **Category Registry** file gains it only with the **Atomic Month Commit** (issue #19).
+- The **Trust Policy** decides one **Authority** per row; workbook cells derive from row **Authority** (ADR 0001).
+- Every category model is a **Suggester**; **Consensus** is the **Suggester** whose agreeing votes can earn `auto` under the **Trust Policy** (ADR 0002).
+- The **Exception Sheet** lists every `review` row; the **Atomic Month Commit** writes nothing until it is empty (ADR 0003).
+- A **Guidance Alias** matches after `human` **Category Memory** and before trusted `auto` **Category Memory** (ADR 0004).
+- **Hosted Judgment** is deferred and not enabled; it would be a **Suggester** adapter and needs its own ADR and opt-in before use (ADR 0005).
 - A **Confirmed Review Decision** can create or update **Category Memory**.
 - Rule: Category Memory can learn only Leaf Category Row targets that exist in the Category Registry.
-- **Category Memory** must not be learned from unconfirmed automatic matches.
+- Consensus results are learned as `auto` **Category Memory** that categorises only after two consistent committed months; before that it is a **Suggester** hint.
 - **Category Memory** is generated private data and remains separate from a hand-written **Local Rule**.
 - **Category Memory** uses **Merchant Identity** as its default matching key.
 - A recurring **Confirmed Review Decision** can add a **Recurring Match Hint** to narrow future matches.
 - A single **Confirmed Review Decision** can make future matching **Category Memory** review-free, but it does not bypass workbook safety checks.
-- A **Reviewed Decision File** is the input that promotes **Confirmed Review Decision** records into **Category Memory**.
-- Learning into **Category Memory** and writing to the **Tracker Workbook** are separate workflow steps.
+- Committing a month learns its **Confirmed Review Decision** records into **Category Memory**; a **Reviewed Decision File** import remains a manual escape hatch.
+- A dry run never writes **Category Memory**.
 - A **Bank Statement** can support **Cashflow Row** updates.
 - A **Bank Statement** can support **Net Salary Income** when a deterministic salary match exists.
 - **Net Salary Income** may update the `Full-time job (net)` row when workbook safety checks pass.
@@ -500,7 +541,7 @@ _Avoid_: Credit card settlement, liability payment
 - "fixed conversion rate" for a split transfer means a configured **Proxy Split Conversion Rate**, not a live or inferred rate.
 - "credit card payment" means **Credit Card Settlement**, not the underlying **Card Purchase** expenses.
 - "match" means a **Deterministic Category Match** when deciding whether an automatic write is allowed.
-- "auto-learning" means creating **Category Memory** from a **Confirmed Review Decision**, not self-training from automatic matches.
+- "auto-learning" means creating **Category Memory** on commit; consensus-only entries stay untrusted `auto` hints until two committed months agree.
 - "local rules" are manually curated **Local Rules**; generated **Category Memory** is a separate private store.
 - "merchant" in category memory means **Merchant Identity**, not the raw full statement description.
 - "review CSV" is raw output until the user confirms decisions; resolved term is **Reviewed Decision File** for importable decisions.

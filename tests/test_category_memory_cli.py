@@ -8,10 +8,14 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from personal_wealth_tracker.categorizer import categorize_transactions
-from personal_wealth_tracker.category_memory import import_reviewed_decisions, load_category_memory
+from personal_wealth_tracker.category_memory import (
+    import_reviewed_decisions,
+    learn_committed_month,
+    load_category_memory,
+)
 from personal_wealth_tracker.cli import main
 from personal_wealth_tracker.config import AppConfig
-from personal_wealth_tracker.models import Transaction
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction, Vote
 from personal_wealth_tracker.pipeline import run_pipeline
 from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
@@ -56,6 +60,7 @@ def test_import_confirmed_review_decision_into_category_memory(tmp_path):
             "merchant_identity": "NETTO KOBENHAVN",
             "category": "Food& Drinks (monthly)",
             "source_transaction_ids": ["tx-netto-1"],
+            "provenance": "human",
         }
     ]
 
@@ -123,6 +128,7 @@ def test_import_learns_opted_in_review_workbook_decisions(tmp_path, capsys):
             "merchant_identity": "NETTO KOBENHAVN",
             "category": "Food& Drinks (monthly)",
             "source_transaction_ids": ["tx-netto-1"],
+            "provenance": "human",
         }
     ]
 
@@ -749,6 +755,73 @@ def test_import_does_not_learn_from_unconfirmed_rows(tmp_path, capsys):
     assert payload["mappings"] == []
 
 
+def test_memory_entries_without_provenance_load_as_trusted_human(tmp_path):
+    memory_dir = tmp_path / "category_memory"
+    memory_dir.mkdir()
+    _write_text(
+        memory_dir / "category_memory.json",
+        json.dumps(
+            {
+                "mappings": [
+                    {
+                        "merchant_identity": "NETTO KOBENHAVN",
+                        "category": "Food& Drinks (monthly)",
+                        "source_transaction_ids": ["tx-netto-1"],
+                    }
+                ]
+            }
+        ),
+    )
+
+    (mapping,) = load_category_memory(memory_dir).mappings
+
+    assert mapping.provenance == "human"
+    assert mapping.trusted
+
+
+def test_commit_learning_leaves_merchant_with_human_memory_to_human(tmp_path):
+    memory_dir = tmp_path / "category_memory"
+    memory_dir.mkdir()
+    _write_text(
+        memory_dir / "category_memory.json",
+        json.dumps(
+            {
+                "mappings": [
+                    {
+                        "merchant_identity": "GYM CLUB",
+                        "category": "Fitness",
+                        "source_transaction_ids": ["tx-gym-1"],
+                        "recurring_hint": {
+                            "amount": "299.00",
+                            "amount_tolerance": "0.00",
+                            "day_min": None,
+                            "day_max": None,
+                        },
+                    }
+                ]
+            }
+        ),
+    )
+    consensus_row = CategorizedTransaction(
+        transaction=_transaction("GYM CLUB", "-45.00"),
+        suggested_category="Food& Drinks (monthly)",
+        confidence=0.9,
+        categorization_method="local_llm_gemma",
+        reason="Consensus.",
+        authority=Authority.auto,
+        votes=(Vote("Food& Drinks (monthly)", 0.9, "a"), Vote("Food& Drinks (monthly)", 0.9, "b")),
+    )
+
+    for month in ("2026-Apr", "2026-May"):
+        learn_committed_month(
+            memory_dir, [consensus_row], {}, month, frozenset({"Food& Drinks (monthly)"})
+        )
+
+    assert [mapping.category for mapping in load_category_memory(memory_dir).mappings] == [
+        "Fitness"
+    ]
+
+
 def test_import_preserves_existing_category_memory_mappings(tmp_path):
     memory_dir = tmp_path / "data" / "category_memory"
     first_decisions = tmp_path / "first_reviewed_decisions.csv"
@@ -950,7 +1023,6 @@ def _config(categories=("Food& Drinks (monthly)",)) -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,

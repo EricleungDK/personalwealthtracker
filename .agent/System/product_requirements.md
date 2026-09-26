@@ -21,8 +21,8 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - Generate Markdown reports, JSONL audit logs, categorized transaction CSV files, review-required CSV files, and review-required XLSX workbooks.
 - Use the review workbook for `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory` decisions.
 - Apply Monthly Review Decisions only when the operator explicitly supplies `--review-decisions`.
-- Register validated new leaf categories from reviewed runs before workbook planning.
-- Learn future Category Memory only from explicit `learn_to_memory=yes` decisions that target valid leaf categories.
+- Register validated new leaf categories from reviewed runs in memory before workbook planning; persist them to `config/categories.yaml` only on a successful month commit.
+- Learn Category Memory when a month commits: decisions as `human`, consensus results as `auto` trusted after two committed months; targets must be valid leaf categories.
 - Keep Category Memory in ignored private local data under `data/category_memory/`.
 - Support private local rule overlays in ignored `config/rules.local.yaml`.
 - Support private proxy split rules that split one intermediary transfer into allocation lines plus optional residual review lines.
@@ -46,7 +46,7 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - `manual_category` applies only to the current reporting month.
 - `new_parent_category` and `new_leaf_category` request a missing leaf row under an allowed parent.
 - `manual_category` and `new_leaf_category` are mutually exclusive for one review row.
-- `learn_to_memory` is opt-in; blank or non-yes values must not create future memory.
+- `learn_to_memory` `no` keeps a committed decision out of memory; the manual import still needs `yes`.
 - Category Memory must skip parent rows, derived rows, missing categories, residual proxy split rows, and other non-leaf targets.
 - Stale or unknown transaction IDs in reviewed artifacts must fail clearly instead of being guessed.
 

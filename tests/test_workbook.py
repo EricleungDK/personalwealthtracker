@@ -7,7 +7,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
 from personal_wealth_tracker.config import AppConfig, CategoryRegistry
-from personal_wealth_tracker.models import CategorizedTransaction, Transaction
+from personal_wealth_tracker.models import Authority, CategorizedTransaction, Transaction
 from personal_wealth_tracker.workbook import commit_updates, plan_updates, plan_workbook_changes
 
 
@@ -190,7 +190,7 @@ def test_later_month_refund_targets_selected_month_without_reopening_prior_perio
         copied.close()
 
 
-def test_plan_updates_protects_formula_manual_fixed_and_review_rows(tmp_path):
+def test_plan_updates_protects_formula_manual_and_fixed_rows(tmp_path):
     tracker = _workbook_path(tmp_path)
     _create_workbook(tracker)
 
@@ -202,7 +202,6 @@ def test_plan_updates_protects_formula_manual_fixed_and_review_rows(tmp_path):
                 _categorized("tx-formula", "Formula Category", "-1.00"),
                 _categorized("tx-manual", "Manual Category", "-2.00"),
                 _categorized("tx-fixed", "Fixed Category", "-3.00"),
-                _categorized("tx-review", "Review Category", "-4.00", review_required=True),
                 _categorized("tx-missing", "Missing Category", "-5.00"),
             ],
             2026,
@@ -217,8 +216,6 @@ def test_plan_updates_protects_formula_manual_fixed_and_review_rows(tmp_path):
     assert updates["Manual Category"].reason == "Target cell already contains a manual value."
     assert updates["Fixed Category"].write_action == "skip"
     assert updates["Fixed Category"].reason == "Fixed row is protected by config."
-    assert updates["Review Category"].write_action == "review"
-    assert updates["Review Category"].reason == "One or more source transactions require review."
     assert updates["Missing Category"].write_action == "review"
     assert updates["Missing Category"].reason == "Target category row not found."
 
@@ -639,10 +636,22 @@ def test_plan_workbook_changes_blocks_ambiguous_leaf_parent_formula(tmp_path):
     change = plan.structure_changes[0]
     assert change.change_type == "insert_leaf_category"
     assert change.write_action == "review"
-    assert change.target_range == "8:8"
+    assert change.target_range is None
     assert "Parent formula is not a simple SUM range" in change.reason
     assert plan.updates[0].write_action == "review"
     assert plan.updates[0].reason == "Target category row not found."
+
+    output_path = commit_updates(
+        tracker, plan.updates, config, tmp_path / "processed", structure_changes=plan.structure_changes
+    )
+    copied = load_workbook(output_path)
+    try:
+        sheet = copied["Net worth"]
+        assert sheet["B8"].value == "Services"
+        assert sheet["C5"].value == "=C6+C7"
+        assert "Pet Supplies" not in {cell.value for cell in sheet["B"]}
+    finally:
+        copied.close()
 
 
 def _create_workbook(path: Path) -> None:
@@ -728,7 +737,6 @@ def _config(
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -750,7 +758,6 @@ def _leaf_category_config() -> AppConfig:
         year_header_row=2,
         month_header_row=3,
         statement_currency="DKK",
-        auto_write_threshold=0.85,
         review_threshold=0.60,
         reject_threshold=0.60,
         overwrite_fixed_rows=False,
@@ -784,7 +791,7 @@ def _categorized(
     transaction_id: str,
     category: str,
     amount: str,
-    review_required: bool = False,
+    authority: Authority = Authority.auto,
 ) -> CategorizedTransaction:
     amount_value = Decimal(amount)
     return CategorizedTransaction(
@@ -800,6 +807,6 @@ def _categorized(
         suggested_category=category,
         confidence=0.9,
         categorization_method="rule",
-        review_required=review_required,
+        authority=authority,
         reason="Test transaction",
     )

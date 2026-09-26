@@ -59,11 +59,11 @@ flowchart LR
   DryRun --> Review["Manual review workbook<br/>choose manual_category, new_parent_category, new_leaf_category, and learn_to_memory"]
   Review --> Decisions["Monthly Review Decisions<br/>current-month overrides"]
   Review --> Registry["Category Registry<br/>validated new leaf registrations"]
-  Review --> Memory["Category Memory<br/>future learned merchant choices"]
   Registry --> Rules
   Decisions --> Planner
   Memory --> Rules
   Planner --> Commit["Commit mode<br/>writes only to a copied workbook"]
+  Commit --> Memory["Category Memory<br/>learned on commit: human now, auto after two months"]
 ```
 
 The important split is:
@@ -71,7 +71,7 @@ The important split is:
 - Dry run means plan and report only.
 - Monthly Review Decisions fix specific transactions for the selected month.
 - The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added.
-- Category Memory learns selected merchant choices for future months.
+- Category Memory learns committed decisions (`human`) and consensus results (`auto`, trusted after two committed months) for future months.
 - Proxy Split Transfer rules in ignored `rules.local.yaml` can split one intermediary transfer into fixed allocation lines plus an optional Residual Review Line.
 - Local LLM Mode: optional `--local-llm-suggestions` review assistance using local Ollama/Gemma; suggestions stay review-only and reuse existing review workbook suggestion fields.
 - Commit mode writes only safe values into a copied workbook under `data/processed/`.
@@ -131,8 +131,8 @@ Use the files this way:
 
 - Start with the Markdown report to understand the run quality and planned workbook changes.
 - Use `review_required_<period>.xlsx` when you need to manually classify transactions.
-- Use `All Transactions` inside the review workbook to debug a low classification rate or low no-review rate.
-- Use `Category Options` inside the review workbook to see workbook fields and safety notes.
+- Use `Audit` inside the review workbook to spot-check `auto` rows (source, votes, reason).
+- `Category Options`, `Decision Options` and `Run Metadata` are hidden helper sheets (dropdown lists, run period); unhide them only to inspect workbook fields and safety notes.
 - Use the audit log only when you need a detailed machine-readable trace.
 
 ## Scripts And Tests
@@ -174,7 +174,7 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
 - Category Memory: Private learned merchant/category choices for future runs.
 - Local LLM Mode: Explicit opt-in `--local-llm-suggestions` mode that can add review-only local Ollama/Gemma hints to unmatched or low-confidence rows.
-- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `method`, `confidence`, and `reason` fields; it is not a confirmed decision.
+- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `confidence`, and `reason` fields (the method is appended to `reason` in brackets); it is not a confirmed decision.
 - LLM New Leaf Candidate: A model hint that a missing leaf row may be needed. It does not fill `new_parent_category` or `new_leaf_category` for you.
 - Statement Import Assistant: A review-only path for unknown statement formats. It writes untrusted import review artifacts and does not feed monthly planning until a later confirmed-import workflow exists.
 - Importer Profile: Private local JSON learned from confirmed unknown-import review rows. It can produce filterable Educated Import Guesses for similar future sources and is exported only by explicit command.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from collections import Counter
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -15,8 +16,21 @@ from .models import (
     TrackerUpdate,
     WorkbookStructureChange,
 )
+from .review_decisions import REJECT_SUGGESTION, MonthlyReviewDecision
 from .utils import TRANSACTION_ID_SCHEME_VERSION
-from .workbook import WorkbookCategoryOption, workbook_category_options
+from .workbook import WorkbookCategoryOption, rows_in_review, workbook_category_options
+
+SPLIT_HEADERS = (
+    "split_role",
+    "split_rule",
+    "source_transaction_id",
+    "allocated_amount",
+    "residual_amount",
+)
+MANUAL_CATEGORY_NOTE = (
+    "Blank accepts suggested_category. No suggestion: pick a category or NONE; "
+    "a blank row without a suggestion stays in review. NONE rejects the suggestion."
+)
 
 
 def write_outputs(
@@ -34,7 +48,9 @@ def write_outputs(
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = (),
     local_llm_diagnostics: LocalLLMDiagnostics | None = None,
     review_xlsx_path: Path | None = None,
+    carried_decisions: dict[str, MonthlyReviewDecision] | None = None,
 ) -> tuple[Path, Path, Path, Path, Path]:
+    """`carried_decisions` are prefilled into the Exception Sheet so a rewrite keeps them."""
     structure_changes = structure_changes or []
     output_dir.mkdir(parents=True, exist_ok=True)
     period = f"{year}_{month.lower()}"
@@ -83,6 +99,7 @@ def write_outputs(
         categorized,
         updates,
         category_options,
+        carried_decisions or {},
     )
     return report_path, audit_path, categorized_path, review_path, review_xlsx_path
 
@@ -136,6 +153,7 @@ def _write_report(
         f"- Proposed workbook writes: {write_count}",
         f"- Skipped workbook updates: {skip_count}",
         "- Workbook cleanup tasks: not run during monthly update.",
+        *(_commit_block_lines(mode, categorized, updates)),
         "",
         "## Categorization Quality",
         "",
@@ -161,12 +179,13 @@ def _write_report(
                 f"- Provider: {local_llm_diagnostics.provider}",
                 f"- Endpoint: {local_llm_diagnostics.endpoint}",
                 f"- Model: {local_llm_diagnostics.active_model or local_llm_diagnostics.model}",
+                f"- Second model: {local_llm_diagnostics.second_model}",
                 f"- Fallback model: {local_llm_diagnostics.fallback_model}",
                 f"- Eligible rows: {local_llm_diagnostics.eligible_count}",
                 f"- Provider calls attempted: {local_llm_diagnostics.attempted_count}",
                 f"- Existing-leaf suggestions: {local_llm_diagnostics.existing_leaf_suggestions}",
+                f"- New-leaf proposals: {local_llm_diagnostics.new_leaf_proposal_count}",
                 f"- No-suggestion responses: {local_llm_diagnostics.no_suggestion_count}",
-                f"- New-leaf candidates: {local_llm_diagnostics.new_leaf_candidate_count}",
                 (
                     "- Low-confidence responses ignored: "
                     f"{local_llm_diagnostics.low_confidence_response_count}"
@@ -261,6 +280,15 @@ def _write_report(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _commit_block_lines(
+    mode: str, categorized: list[CategorizedTransaction], updates: list[TrackerUpdate]
+) -> list[str]:
+    review_count = len(rows_in_review(categorized, updates))
+    if mode != "commit" or not review_count:
+        return []
+    return [f"- Workbook not written: {review_count} row(s) in review."]
+
+
 def _currency_assumption_lines(workbook_config: AppConfig | None) -> list[str]:
     if workbook_config is None:
         return []
@@ -307,13 +335,14 @@ def _write_audit(
                 "provider": local_llm_diagnostics.provider,
                 "endpoint": local_llm_diagnostics.endpoint,
                 "model": local_llm_diagnostics.model,
+                "second_model": local_llm_diagnostics.second_model,
                 "fallback_model": local_llm_diagnostics.fallback_model,
                 "active_model": local_llm_diagnostics.active_model,
                 "eligible_count": local_llm_diagnostics.eligible_count,
                 "attempted_count": local_llm_diagnostics.attempted_count,
                 "existing_leaf_suggestions": local_llm_diagnostics.existing_leaf_suggestions,
+                "new_leaf_proposal_count": local_llm_diagnostics.new_leaf_proposal_count,
                 "no_suggestion_count": local_llm_diagnostics.no_suggestion_count,
-                "new_leaf_candidate_count": local_llm_diagnostics.new_leaf_candidate_count,
                 "low_confidence_response_count": (
                     local_llm_diagnostics.low_confidence_response_count
                 ),
@@ -477,9 +506,11 @@ def _write_review_workbook(
     categorized: list[CategorizedTransaction],
     updates: list[TrackerUpdate],
     category_options: list[WorkbookCategoryOption],
+    carried_decisions: dict[str, MonthlyReviewDecision],
 ) -> None:
     try:
         from openpyxl import Workbook
+        from openpyxl.comments import Comment
         from openpyxl.utils import get_column_letter
         from openpyxl.worksheet.datavalidation import DataValidation
     except ImportError as exc:
@@ -493,34 +524,32 @@ def _write_review_workbook(
     workbook = Workbook()
     review_sheet = workbook.active
     review_sheet.title = "Review Required"
-    audit_sheet = workbook.create_sheet("All Transactions")
+    audit_sheet = workbook.create_sheet("Audit")
     options_sheet = workbook.create_sheet("Category Options")
+    decision_options_sheet = workbook.create_sheet("Decision Options")
     metadata_sheet = workbook.create_sheet("Run Metadata")
 
-    review_headers = [
-        "transaction_id",
-        "date",
-        "description",
-        "amount",
-        "manual_category",
-        "new_parent_category",
-        "new_leaf_category",
-        "learn_to_memory",
-        "split_role",
-        "split_rule",
-        "source_transaction_id",
-        "allocated_amount",
-        "residual_amount",
-        "suggested_category",
-        "method",
-        "reason",
-        "workbook_action",
-        "target_cell",
-        "workbook_reason",
-        "merchant_identity",
-        "confidence",
-        "direction",
+    in_review = rows_in_review(categorized, updates)
+    in_review_ids = {item.transaction.transaction_id for item in in_review}
+    resolved_by_carried_decision = [
+        item
+        for item in categorized
+        if (decision := carried_decisions.get(item.transaction.transaction_id))
+        and not decision.audit_correction
+        and item.transaction.transaction_id not in in_review_ids
     ]
+    # Rows needing a decision first, then rows a carried decision resolves.
+    review_items = [
+        _as_carried(item, carried_decisions.get(item.transaction.transaction_id))
+        for item in (
+            *sorted(
+                in_review, key=lambda item: (bool(item.suggested_category), item.transaction.date)
+            ),
+            *sorted(resolved_by_carried_decision, key=lambda item: item.transaction.date),
+        )
+    ]
+    review_ids = {item.transaction.transaction_id for item in review_items}
+    audit_items = [item for item in categorized if item.transaction.transaction_id not in review_ids]
     audit_headers = [
         "transaction_id",
         "date",
@@ -529,16 +558,14 @@ def _write_review_workbook(
         "currency",
         "direction",
         "merchant_identity",
-        "suggested_category",
+        "category",
+        "corrected_category",
         "confidence",
-        "method",
-        "review_required",
+        "source",
+        "votes",
         "reason",
-        "split_role",
-        "split_rule",
-        "source_transaction_id",
-        "allocated_amount",
-        "residual_amount",
+        "evidence",
+        *(SPLIT_HEADERS if any(item.split_role for item in audit_items) else ()),
     ]
     options_headers = [
         "row_number",
@@ -550,65 +577,53 @@ def _write_review_workbook(
         "manual_category_option",
         "new_parent_category_option",
     ]
-    review_sheet.append(review_headers)
     audit_sheet.append(audit_headers)
     options_sheet.append(options_headers)
 
-    for item in categorized:
-        transaction = item.transaction
-        audit_sheet.append(
-            [
-                transaction.transaction_id,
-                transaction.date.isoformat(),
-                transaction.description,
-                _format_amount(transaction.amount),
-                transaction.currency,
-                transaction.direction,
-                _merchant_identity(transaction),
-                item.suggested_category or "",
-                f"{item.confidence:.2f}",
-                item.categorization_method,
-                item.review_required,
-                item.reason,
-                item.split_role,
-                item.split_rule,
-                item.source_transaction_id,
-                _format_optional_amount(item.allocated_amount),
-                _format_optional_amount(item.residual_amount),
-            ]
-        )
-        update = update_by_transaction.get(transaction.transaction_id)
-        if item.review_required or (update is not None and update.write_action != "write"):
-            review_sheet.append(
-                [
-                    transaction.transaction_id,
-                    transaction.date.isoformat(),
-                    transaction.description,
-                    _format_amount(transaction.amount),
-                    None,
-                    None,
-                    None,
-                    None,
-                    item.split_role,
-                    item.split_rule,
-                    item.source_transaction_id,
-                    _format_optional_amount(item.allocated_amount),
-                    _format_optional_amount(item.residual_amount),
-                    item.suggested_category or "",
-                    item.categorization_method,
-                    item.reason,
-                    update.write_action if update else None,
-                    update.target_cell if update else None,
-                    update.reason if update else None,
-                    _merchant_identity(transaction),
-                    f"{item.confidence:.2f}",
-                    transaction.direction,
-                ]
-            )
+    for item in audit_items:
+        row = _audit_row(item)
+        if decision := carried_decisions.get(item.transaction.transaction_id):
+            row["corrected_category"] = decision.manual_category
+        audit_sheet.append([row.get(header) for header in audit_headers])
 
-    manual_category_options = [
+    review_headers = [
+        "date",
+        "description",
+        "amount",
+        "suggested_category",
+        *(
+            ("suggested_parent_category",)
+            if any(item.new_leaf_parent for item in review_items)
+            else ()
+        ),
+        "manual_category",
+        "reason",
+        "confidence",
+        "new_parent_category",
+        "new_leaf_category",
+        "learn_to_memory",
+        "blocked",
+        *(SPLIT_HEADERS if any(item.split_role for item in review_items) else ()),
+        "transaction_id",
+    ]
+    review_sheet.append(review_headers)
+    for item in review_items:
+        row = _review_row(item, update_by_transaction.get(item.transaction.transaction_id))
+        if decision := carried_decisions.get(item.transaction.transaction_id):
+            row |= _carried_decision_cells(decision)
+        review_sheet.append([row.get(header) for header in review_headers])
+    review_sheet.column_dimensions[
+        get_column_letter(review_headers.index("transaction_id") + 1)
+    ].hidden = True
+    manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
+    review_sheet[f"{manual_category_column}1"].comment = Comment(
+        MANUAL_CATEGORY_NOTE, author="wealth-tracker"
+    )
+
+    leaf_categories = [
         option.category for option in category_options if option.category_type == "leaf"
     ]
+    manual_category_options = [REJECT_SUGGESTION, *leaf_categories]
     new_parent_category_options = [
         option.category for option in category_options if option.allows_new_children
     ]
@@ -640,17 +655,28 @@ def _write_review_workbook(
             ]
         )
 
-    if manual_category_options:
-        option_end_row = len(manual_category_options) + 1
-        option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
-        manual_category_validation = DataValidation(
+    option_column = get_column_letter(options_headers.index("manual_category_option") + 1)
+    option_end_row = len(manual_category_options) + 1
+    leaf_list_formula = f"'Category Options'!${option_column}$2:${option_column}${option_end_row}"
+    # One Decision Options column per review row: no 255-character inline-list cap.
+    for row, item in enumerate(review_items, start=2):
+        choices = _decision_choices(item, leaf_categories)
+        choice_column = get_column_letter(row - 1)
+        for choice_row, choice in enumerate(choices, start=1):
+            decision_options_sheet.cell(row=choice_row, column=row - 1, value=choice)
+        validation = DataValidation(
             type="list",
-            formula1=f"'Category Options'!${option_column}$2:${option_column}${option_end_row}",
+            formula1=f"'Decision Options'!${choice_column}$1:${choice_column}${len(choices)}",
         )
-        _allow_blank_validation(manual_category_validation)
-        review_sheet.add_data_validation(manual_category_validation)
-        manual_category_column = get_column_letter(review_headers.index("manual_category") + 1)
-        manual_category_validation.add(f"{manual_category_column}2:{manual_category_column}1048576")
+        _allow_blank_validation(validation)
+        review_sheet.add_data_validation(validation)
+        validation.add(f"{manual_category_column}{row}")
+
+    correction_validation = DataValidation(type="list", formula1=leaf_list_formula)
+    _allow_blank_validation(correction_validation)
+    audit_sheet.add_data_validation(correction_validation)
+    correction_column = get_column_letter(audit_headers.index("corrected_category") + 1)
+    correction_validation.add(f"{correction_column}2:{correction_column}1048576")
 
     if new_parent_category_options:
         option_end_row = len(new_parent_category_options) + 1
@@ -683,8 +709,114 @@ def _write_review_workbook(
     ]:
         metadata_sheet.append([key, value])
 
+    options_sheet.sheet_state = "hidden"
+    decision_options_sheet.sheet_state = "hidden"
+    metadata_sheet.sheet_state = "hidden"
     workbook.save(path)
     workbook.close()
+
+
+def _audit_row(item: CategorizedTransaction) -> dict[str, object]:
+    transaction = item.transaction
+    return {
+        "transaction_id": transaction.transaction_id,
+        "date": transaction.date.isoformat(),
+        "description": transaction.description,
+        "amount": _format_amount(transaction.amount),
+        "currency": transaction.currency,
+        "direction": transaction.direction,
+        "merchant_identity": _merchant_identity(transaction),
+        "category": item.suggested_category or "",
+        "confidence": f"{item.confidence:.2f}",
+        "source": item.categorization_method,
+        "votes": _format_votes(item),
+        "reason": item.authority_reason,
+        "evidence": item.reason,
+        **_split_values(item),
+    }
+
+
+def _review_row(item: CategorizedTransaction, update: TrackerUpdate | None) -> dict[str, object]:
+    transaction = item.transaction
+    return {
+        "date": transaction.date.isoformat(),
+        "description": transaction.description,
+        "amount": _format_amount(transaction.amount),
+        "suggested_category": item.suggested_category,
+        "suggested_parent_category": item.new_leaf_parent,
+        "reason": f"{item.reason} ({item.categorization_method})",
+        "confidence": f"{item.confidence:.2f}",
+        "blocked": _blocked_note(item, update),
+        "transaction_id": transaction.transaction_id,
+        **_split_values(item),
+    }
+
+
+def _as_carried(
+    item: CategorizedTransaction, decision: MonthlyReviewDecision | None
+) -> CategorizedTransaction:
+    """A carried decision shows no suggestion, so clearing it reopens the row.
+
+    An accepted proposal still shows the proposal its prefilled new-leaf cells match.
+    """
+    if decision is None:
+        return item
+    if decision.accepted_subscription_proposal:
+        return replace(item, new_leaf_parent=decision.new_parent_category)
+    return replace(item, suggested_category=None)
+
+
+def _carried_decision_cells(decision: MonthlyReviewDecision) -> dict[str, str | None]:
+    return {
+        "manual_category": decision.manual_category or None,
+        "new_parent_category": decision.new_parent_category or None,
+        "new_leaf_category": decision.new_leaf_category or None,
+        "learn_to_memory": None if decision.learn_to_memory else "no",
+    }
+
+
+def _split_values(item: CategorizedTransaction) -> dict[str, str | None]:
+    values = (
+        item.split_role,
+        item.split_rule,
+        item.source_transaction_id,
+        _format_optional_amount(item.allocated_amount),
+        _format_optional_amount(item.residual_amount),
+    )
+    return dict(zip(SPLIT_HEADERS, values, strict=True))
+
+
+def _blocked_note(item: CategorizedTransaction, update: TrackerUpdate | None) -> str | None:
+    """Only a `review` workbook update blocks the commit; `write` and `skip` do not.
+
+    A proposed new leaf has no row until accepted; commit registers it and inserts the row.
+    """
+    if update is None or update.write_action != "review":
+        return None
+    if item.new_leaf_parent:
+        return f"New category: row added under {item.new_leaf_parent} when you commit."
+    return f"{update.target_cell}: {update.reason}" if update.target_cell else update.reason
+
+
+def _format_votes(item: CategorizedTransaction) -> str:
+    return "; ".join(
+        f"{vote.category or 'NONE'} ({vote.source}, {vote.confidence:.2f})" for vote in item.votes
+    )
+
+
+def _decision_choices(item: CategorizedTransaction, leaf_categories: list[str]) -> list[str]:
+    """Suggestion and alternatives, then NONE, then every leaf.
+
+    A proposed new leaf is not offered; it is accepted via the new-leaf cells.
+    """
+    proposed = item.suggested_category if item.new_leaf_parent else None
+    candidates = [
+        item.suggested_category,
+        *item.alternatives,
+        *(vote.category for vote in item.votes),
+    ]
+    suggestions = [category for category in candidates if category and category != proposed]
+    return list(dict.fromkeys([*suggestions, REJECT_SUGGESTION, *leaf_categories]))
 
 
 def _allow_blank_validation(validation) -> None:

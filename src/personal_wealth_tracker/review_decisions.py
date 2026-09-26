@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import warnings
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from .models import CategorizedTransaction
-from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month
+from .utils import TRANSACTION_ID_SCHEME_VERSION, normalize_month, normalize_text
+
+REJECT_SUGGESTION = "NONE"
 
 
 @dataclass(frozen=True)
@@ -14,9 +17,18 @@ class MonthlyReviewDecision:
     manual_category: str = ""
     new_parent_category: str = ""
     new_leaf_category: str = ""
+    learn_to_memory: bool = True
+    accepted_subscription_proposal: bool = False
+    audit_correction: bool = False
+
+    @property
+    def rejected(self) -> bool:
+        return self.manual_category == REJECT_SUGGESTION
 
     @property
     def category(self) -> str:
+        if self.rejected:
+            return ""
         return self.new_leaf_category or self.manual_category
 
 
@@ -24,7 +36,9 @@ def load_monthly_review_decisions(
     path: Path,
     year: int,
     month: str,
+    blank_accepts: bool = True,
 ) -> dict[str, MonthlyReviewDecision]:
+    """`blank_accepts=False` reads only filled cells: blank rows are not accepted."""
     workbook = _load_workbook_without_extension_warning(path)
     try:
         if "Run Metadata" not in workbook.sheetnames:
@@ -34,7 +48,15 @@ def load_monthly_review_decisions(
 
         metadata = _metadata(workbook["Run Metadata"])
         _validate_metadata(metadata, year, month)
-        return _decisions(workbook["Review Required"])
+        decisions = _decisions(workbook["Review Required"], blank_accepts)
+        if "Audit" in workbook.sheetnames:
+            for transaction_id, decision in _audit_corrections(workbook["Audit"]).items():
+                if transaction_id in decisions:
+                    raise ValueError(
+                        f"Review decision transaction_id {transaction_id!r} appears more than once."
+                    )
+                decisions[transaction_id] = decision
+        return decisions
     finally:
         workbook.close()
 
@@ -42,6 +64,7 @@ def load_monthly_review_decisions(
 def _load_workbook_without_extension_warning(path: Path):
     try:
         from openpyxl import load_workbook
+        from openpyxl.utils.exceptions import InvalidFileException
     except ImportError as exc:
         raise RuntimeError("openpyxl is required for review decision import.") from exc
 
@@ -51,7 +74,13 @@ def _load_workbook_without_extension_warning(path: Path):
             message="Data Validation extension is not supported and will be removed",
             category=UserWarning,
         )
-        return load_workbook(path, data_only=True)
+        try:
+            return load_workbook(path, data_only=True)
+        except (OSError, KeyError, zipfile.BadZipFile, InvalidFileException) as exc:
+            raise ValueError(
+                f"Cannot read {path.name} ({exc}). "
+                "Close it in Excel or restore a saved copy, then re-run."
+            ) from exc
 
 
 def apply_monthly_review_decisions(
@@ -85,7 +114,8 @@ def validate_monthly_review_decision_categories(
         {
             decision.manual_category
             for decision in decisions.values()
-            if decision.manual_category and decision.manual_category not in valid_categories
+            if decision.manual_category
+            and decision.manual_category not in valid_categories | {REJECT_SUGGESTION}
         }
     )
     if missing_categories:
@@ -123,7 +153,7 @@ def _validate_metadata(metadata: dict[str, object], year: int, month: str) -> No
         )
 
 
-def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
+def _decisions(sheet, blank_accepts: bool) -> dict[str, MonthlyReviewDecision]:
     headers = {
         str(cell.value): index
         for index, cell in enumerate(sheet[1], start=1)
@@ -133,6 +163,9 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
     manual_category_column = _required_column(headers, "manual_category")
     new_parent_category_column = headers.get("new_parent_category")
     new_leaf_category_column = headers.get("new_leaf_category")
+    suggested_category_column = headers.get("suggested_category")
+    suggested_parent_category_column = headers.get("suggested_parent_category")
+    learn_to_memory_column = headers.get("learn_to_memory")
 
     decisions: dict[str, MonthlyReviewDecision] = {}
     for row in range(2, sheet.max_row + 1):
@@ -149,6 +182,19 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
                 f"Review decision row {row} with new_leaf_category must include "
                 "new_parent_category."
             )
+        suggested_category = _optional_stripped_cell(sheet, row, suggested_category_column)
+        suggested_parent = _optional_stripped_cell(sheet, row, suggested_parent_category_column)
+        # New-leaf cells matching the proposal accept it; a rewritten sheet carries it that way.
+        accepted_subscription_proposal = bool(suggested_parent) and (
+            new_parent_category,
+            new_leaf_category,
+        ) == (suggested_parent, suggested_category)
+        if blank_accepts and not manual_category and not new_leaf_category:
+            if suggested_parent:
+                new_parent_category, new_leaf_category = suggested_parent, suggested_category
+                accepted_subscription_proposal = True
+            else:
+                manual_category = suggested_category
         if not manual_category and not new_leaf_category:
             continue
         transaction_id = str(sheet.cell(row=row, column=transaction_id_column).value or "").strip()
@@ -161,8 +207,36 @@ def _decisions(sheet) -> dict[str, MonthlyReviewDecision]:
             manual_category=manual_category,
             new_parent_category=new_parent_category,
             new_leaf_category=new_leaf_category,
+            accepted_subscription_proposal=accepted_subscription_proposal,
+            learn_to_memory=normalize_text(
+                _optional_stripped_cell(sheet, row, learn_to_memory_column)
+            )
+            not in {"NO", "N", "FALSE", "0"},
         )
     return decisions
+
+
+def _audit_corrections(sheet) -> dict[str, MonthlyReviewDecision]:
+    """Filled `corrected_category` cells override committed auto rows; blank keeps them."""
+    headers = {
+        str(cell.value): index
+        for index, cell in enumerate(sheet[1], start=1)
+        if cell.value not in (None, "")
+    }
+    corrected_category_column = headers.get("corrected_category")
+    transaction_id_column = _required_column(headers, "transaction_id")
+    corrections: dict[str, MonthlyReviewDecision] = {}
+    for row in range(2, sheet.max_row + 1):
+        category = _optional_stripped_cell(sheet, row, corrected_category_column)
+        if not category:
+            continue
+        transaction_id = str(sheet.cell(row=row, column=transaction_id_column).value or "").strip()
+        if not transaction_id:
+            raise ValueError(f"Audit correction row {row} is missing transaction_id.")
+        corrections[transaction_id] = MonthlyReviewDecision(
+            transaction_id=transaction_id, manual_category=category, audit_correction=True
+        )
+    return corrections
 
 
 def _optional_stripped_cell(sheet, row: int, column: int | None) -> str:
@@ -190,10 +264,9 @@ def _apply_decision(
 ) -> CategorizedTransaction:
     return CategorizedTransaction(
         transaction=item.transaction,
-        suggested_category=decision.category,
+        suggested_category=decision.category or None,
         confidence=1.0,
         categorization_method="monthly_review_decision",
-        review_required=False,
         reason="Monthly review decision.",
         source_transaction_id=item.source_transaction_id,
         split_rule=item.split_rule,

@@ -28,14 +28,18 @@ def test_monthly_workflow_documents_operator_checklist():
     required_phrases = [
         "Monthly Tracker Workflow",
         "project_overview.md",
-        "Run A CSV Dry Run",
-        "--statement-format auto",
-        "review_required_<year>_<month>.csv",
-        "review_required_<year>_<month>.xlsx",
+        "uv run wealth-tracker monthly",
+        "--dry-run",
+        "review_required_<year>_<mon>.xlsx",
+        "one Exception Sheet per month",
+        "Blank `manual_category` accepts",
+        "`NONE` rejects",
+        "Atomic Month Commit",
+        "Workbook not written",
+        "`corrected_category`",
+        "Without a running local model",
         "Categorization Quality",
         "learn-category-memory",
-        "review_required_2026_apr.xlsx",
-        "learn_to_memory",
         "--commit",
         "cleanup-currency-labels",
         "Do not commit real bank statements",
@@ -44,6 +48,59 @@ def test_monthly_workflow_documents_operator_checklist():
 
     for phrase in required_phrases:
         assert phrase in workflow
+
+    for stale_phrase in ["Run A CSV Dry Run", "Apply Monthly Review Decisions"]:
+        assert stale_phrase not in workflow
+
+
+def test_adrs_are_numbered_and_cross_linked():
+    adr_dir = REPO_ROOT / "docs" / "adr"
+    adrs = sorted(adr_dir.glob("[0-9][0-9][0-9][0-9]-*.md"))
+
+    assert [int(adr.name[:4]) for adr in adrs] == list(range(1, len(adrs) + 1))
+    hosted = adr_dir / "0005-hosted-judgment-deferred.md"
+    assert "hosted judgment" in hosted.read_text(encoding="utf-8").lower()
+    consensus_flow_adrs = adrs[:5]
+    for adr in consensus_flow_adrs:
+        text = adr.read_text(encoding="utf-8")
+        for other in consensus_flow_adrs:
+            if other != adr:
+                assert f"]({other.name})" in text, f"{adr.name} does not link {other.name}"
+
+
+def test_glossary_defines_local_consensus_flow_terms():
+    domain_language = (REPO_ROOT / ".agent" / "System" / "domain_language.md").read_text(
+        encoding="utf-8"
+    )
+
+    for term in [
+        "Authority",
+        "Trust Policy",
+        "Suggester",
+        "Consensus",
+        "Exception Sheet",
+        "Guidance Alias",
+        "Atomic Month Commit",
+        "Hosted Judgment",
+    ]:
+        assert domain_language.count(f"\n**{term}**:\n") == 1, term
+
+
+def test_security_doc_keeps_hosted_judgment_off():
+    security = (REPO_ROOT / ".agent" / "System" / "security_privacy.md").read_text(
+        encoding="utf-8"
+    )
+
+    for phrase in [
+        "Hosted Judgment is opt-in only and not enabled",
+        "`outbound_redaction`",
+        "tested but unused",
+        "optional `hosted` extra",
+        "docs/adr/0005-hosted-judgment-deferred.md",
+    ]:
+        assert phrase in security
+
+    assert "must not auto-write workbook values" not in security
 
 
 def test_committed_csv_fixtures_are_redacted_and_do_not_require_real_csv_paths():
@@ -217,9 +274,10 @@ def test_local_llm_mode_documentation_is_in_sync():
         "Local LLM Mode",
         "--local-llm-suggestions",
         "review-only",
+        "gemma4:26b",
         "gemma4:12b",
-        "gemma4:e4b",
-        "60-second provider timeout",
+        "qwen3:14b",
+        "180-second cold-start provider timeout",
         "raw Nordea descriptions are excluded",
     ]
     for phrase in shared_phrases:
@@ -239,15 +297,18 @@ def test_local_llm_mode_documentation_is_in_sync():
 
     for phrase in [
         "local_llm:",
-        'model: "gemma4:12b"',
-        'fallback_model: "gemma4:e4b"',
-        "timeout_seconds: 60",
+        'model: "gemma4:26b"',
+        'second_model: "gemma4:12b"',
+        'fallback_model: "qwen3:14b"',
+        "timeout_seconds: 180",
+        'keep_alive: "30m"',
         "include_raw_description: false",
     ]:
         assert phrase in settings
 
     for phrase in [
-        "`status`: one of `category`, `no_suggestion`, `new_leaf_candidate`",
+        "Suggester port",
+        "enum of leaves plus `NONE`",
         "Invalid JSON",
         "Provider failures",
     ]:

@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from enum import Enum
 from pathlib import Path
+
+
+class Authority(str, Enum):
+    auto = "auto"
+    review = "review"
 
 
 @dataclass(frozen=True)
@@ -25,18 +31,33 @@ class Transaction:
 
 
 @dataclass(frozen=True)
+class Vote:
+    category: str | None
+    confidence: float
+    source: str
+
+
+@dataclass(frozen=True)
 class CategorizedTransaction:
     transaction: Transaction
     suggested_category: str | None
     confidence: float
     categorization_method: str
-    review_required: bool
     reason: str
+    authority: Authority = Authority.review
+    authority_reason: str = ""
+    votes: tuple[Vote, ...] = ()
+    alternatives: tuple[str, ...] = ()
+    new_leaf_parent: str | None = None
     source_transaction_id: str | None = None
     split_rule: str | None = None
     split_role: str | None = None
     allocated_amount: Decimal | None = None
     residual_amount: Decimal | None = None
+
+    @property
+    def review_required(self) -> bool:
+        return self.authority is Authority.review
 
 
 @dataclass(frozen=True)
@@ -72,13 +93,7 @@ class CategoryRegistryAddition:
     parent_category: str
     leaf_category: str
     source_transaction_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class LocalLLMAvailability:
-    available: bool
-    model: str | None
-    warning: str | None = None
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -86,14 +101,15 @@ class LocalLLMDiagnostics:
     enabled: bool = False
     provider: str = "ollama"
     endpoint: str = "http://localhost:11434"
-    model: str = "gemma4:12b"
-    fallback_model: str = "gemma4:e4b"
+    model: str = "gemma4:26b"
+    second_model: str = "gemma4:12b"
+    fallback_model: str = "qwen3:14b"
     active_model: str | None = None
     eligible_count: int = 0
     attempted_count: int = 0
     existing_leaf_suggestions: int = 0
+    new_leaf_proposal_count: int = 0
     no_suggestion_count: int = 0
-    new_leaf_candidate_count: int = 0
     low_confidence_response_count: int = 0
     invalid_response_count: int = 0
     provider_failure_count: int = 0
@@ -129,6 +145,9 @@ class RunResult:
     review_csv_path: Path
     output_workbook_path: Path | None = None
     review_xlsx_path: Path | None = None
+    review_count: int = 0
     category_registry_additions: tuple[CategoryRegistryAddition, ...] = ()
     local_llm_diagnostics: LocalLLMDiagnostics = field(default_factory=LocalLLMDiagnostics)
     statement_import_diagnostics: tuple[StatementImportDiagnostic, ...] = ()
+    source_statement: Path | None = None
+    exception_sheet_unreviewed: bool = False
