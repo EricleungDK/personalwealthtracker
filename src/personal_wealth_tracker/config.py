@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -126,16 +127,26 @@ class AppConfig:
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
+    return _yaml_mapping(path.read_text(encoding="utf-8"), path)
+
+
+def _yaml_mapping(text: str, source: object) -> dict[str, Any]:
+    loaded = _parse_yaml(text, source) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"Expected mapping in {source}")
+    return loaded
+
+
+def _parse_yaml(text: str, source: object) -> Any:
     try:
         import yaml
     except ImportError as exc:
         raise RuntimeError("PyYAML is required. Install dependencies with `uv sync`.") from exc
 
-    with path.open("r", encoding="utf-8") as handle:
-        loaded = yaml.safe_load(handle) or {}
-    if not isinstance(loaded, dict):
-        raise ValueError(f"Expected mapping in {path}")
-    return loaded
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {source}: {exc}") from exc
 
 
 def _load_optional_yaml(path: Path) -> dict[str, Any]:
@@ -144,9 +155,19 @@ def _load_optional_yaml(path: Path) -> dict[str, Any]:
     return _load_yaml(path)
 
 
-def load_config(config_dir: Path) -> AppConfig:
+def load_config(
+    config_dir: Path,
+    category_registry_additions: tuple[CategoryRegistryAddition, ...] = (),
+) -> AppConfig:
+    """Config from `config_dir`, with pending new leaves registered in memory only."""
     settings = _load_yaml(config_dir / "settings.yaml")
-    categories = _load_yaml(config_dir / "categories.yaml")
+    categories_path = config_dir / "categories.yaml"
+    categories_text = categories_path.read_text(encoding="utf-8")
+    if category_registry_additions:
+        categories_text = _categories_text_with_additions(
+            categories_text, category_registry_additions
+        )
+    categories = _yaml_mapping(categories_text, categories_path)
     rules_doc = _merge_rules_docs(
         _load_yaml(config_dir / "rules.yaml"),
         _load_optional_yaml(config_dir / "rules.local.yaml"),
@@ -336,39 +357,38 @@ def _positive_decimal(value: Any, label: str) -> Decimal:
     return amount
 
 
-def register_category_registry_additions(
+def pending_category_registry_additions(
     config_dir: Path,
     additions: tuple[CategoryRegistryAddition, ...],
-    write: bool = True,
 ) -> tuple[CategoryRegistryAddition, ...]:
-    """Validate new leaves against the registry; append them to categories.yaml when `write`."""
+    """Validated new leaves not yet in categories.yaml; a leaf already under its parent is dropped."""
     if not additions:
         return ()
 
+    registry = _category_registry(_load_yaml(config_dir / "categories.yaml"))
+    pending = tuple(
+        addition
+        for addition in additions
+        if addition.leaf_category
+        not in registry.children_by_parent.get(addition.parent_category, ())
+    )
+    _validate_category_registry_additions(registry, pending)
+    return pending
+
+
+def persist_category_registry_additions(
+    config_dir: Path,
+    additions: tuple[CategoryRegistryAddition, ...],
+) -> None:
+    """Insert each new leaf under its parent's `children:`, leaving every other byte untouched."""
+    if not additions:
+        return
     path = config_dir / "categories.yaml"
-    doc = _load_yaml(path)
-    registry = _category_registry(doc)
-    _validate_category_registry_additions(registry, additions)
-    if not write:
-        return additions
-
-    if "category_registry" not in doc:
-        raise ValueError("New leaf category registration requires category_registry config.")
-    nodes = doc["category_registry"]
-    if not isinstance(nodes, list):
-        raise ValueError("Expected category_registry to be a list.")
-
-    for addition in additions:
-        parent_node = _category_registry_parent_node(nodes, addition.parent_category)
-        children = parent_node.setdefault("children", [])
-        if not isinstance(children, list):
-            raise ValueError(
-                f"Expected children for category {addition.parent_category!r} to be a list."
-            )
-        children.append(addition.leaf_category)
-
-    _write_yaml(path, doc)
-    return additions
+    path.write_bytes(
+        _categories_text_with_additions(path.read_bytes().decode("utf-8"), additions).encode(
+            "utf-8"
+        )
+    )
 
 
 def _validate_category_registry_additions(
@@ -398,23 +418,125 @@ def _validate_category_registry_additions(
         seen[normalized] = addition.leaf_category
 
 
-def _category_registry_parent_node(nodes: list[Any], parent_category: str) -> dict[str, Any]:
-    for node in nodes:
-        if isinstance(node, dict) and _category_label(node) == parent_category:
-            return node
+def _categories_text_with_additions(
+    text: str,
+    additions: tuple[CategoryRegistryAddition, ...],
+) -> str:
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    for addition in additions:
+        lines = _insert_leaf_lines(lines, addition, newline)
+    edited = "".join(lines)
+    registry = _category_registry(_yaml_mapping(edited, "categories.yaml"))
+    for addition in additions:
+        if addition.leaf_category not in registry.children_by_parent.get(
+            addition.parent_category, ()
+        ):
+            raise ValueError(
+                f"Could not register {addition.leaf_category!r} under "
+                f"{addition.parent_category!r} in categories.yaml."
+            )
+    return edited
+
+
+def _insert_leaf_lines(
+    lines: list[str],
+    addition: CategoryRegistryAddition,
+    newline: str,
+) -> list[str]:
+    parent_row, key_column = _category_registry_parent_line(lines, addition.parent_category)
+    block_end = _block_end(lines, parent_row + 1, key_column - 1)
+    children_row = next(
+        (
+            row
+            for row in range(parent_row + 1, block_end)
+            if _indent(lines[row]) == key_column and lines[row].lstrip().startswith("children:")
+        ),
+        None,
+    )
+    lines = list(lines)
+    if children_row is None:
+        insert_at = _last_content_row(lines, parent_row, block_end) + 1
+        lines.insert(insert_at, " " * key_column + "children:" + newline)
+        children_row, block_end = insert_at, insert_at + 1
+    else:
+        inline = lines[children_row].split("children:", 1)[1].split("#", 1)[0].strip()
+        if inline == "[]":
+            lines[children_row] = " " * key_column + "children:" + newline
+        elif inline:
+            raise ValueError(
+                f"Children of category {addition.parent_category!r} must be a block list "
+                "to register a new leaf."
+            )
+
+    first_child = next(
+        (row for row in range(children_row + 1, block_end) if _is_content(lines[row])), None
+    )
+    dash_column = key_column if first_child is None else _indent(lines[first_child])
+    list_end = _list_end(lines, children_row + 1, block_end, dash_column)
+    insert_at = _last_content_row(lines, children_row, list_end) + 1
+    if insert_at == len(lines) and not lines[-1].endswith("\n"):
+        lines[-1] += newline
+    description = json.dumps(addition.description, ensure_ascii=False)
+    lines[insert_at:insert_at] = [
+        f"{' ' * dash_column}- label: {_yaml_scalar(addition.leaf_category)}{newline}",
+        f"{' ' * (dash_column + 2)}description: {description}{newline}",
+    ]
+    return lines
+
+
+def _category_registry_parent_line(lines: list[str], parent_category: str) -> tuple[int, int]:
+    """Row of the `- label: <parent>` entry and the column of its keys."""
+    for row, line in enumerate(lines):
+        if not line.lstrip().startswith("- label:"):
+            continue
+        try:
+            (entry,) = _parse_yaml(line.strip(), "categories.yaml entry")
+        except (TypeError, ValueError):
+            continue
+        if _category_label(entry) == parent_category:
+            return row, _indent(line) + 2
     raise ValueError(f"Category registry parent {parent_category!r} was not found.")
 
 
-def _write_yaml(path: Path, doc: dict[str, Any]) -> None:
-    try:
-        import yaml
-    except ImportError as exc:
-        raise RuntimeError("PyYAML is required. Install dependencies with `uv sync`.") from exc
+def _block_end(lines: list[str], start: int, parent_indent: int) -> int:
+    """First content row at or left of `parent_indent`, i.e. the end of the nested block."""
+    for row in range(start, len(lines)):
+        if _is_content(lines[row]) and _indent(lines[row]) <= parent_indent:
+            return row
+    return len(lines)
 
-    path.write_text(
-        yaml.safe_dump(doc, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+
+def _list_end(lines: list[str], start: int, end: int, dash_column: int) -> int:
+    for row in range(start, end):
+        line = lines[row]
+        if not _is_content(line):
+            continue
+        if _indent(line) < dash_column or (
+            _indent(line) == dash_column and not line.lstrip().startswith("-")
+        ):
+            return row
+    return end
+
+
+def _last_content_row(lines: list[str], start: int, end: int) -> int:
+    return max((row for row in range(start, end) if _is_content(lines[row])), default=start)
+
+
+def _is_content(line: str) -> bool:
+    stripped = line.strip()
+    return bool(stripped) and not stripped.startswith("#")
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _yaml_scalar(value: str) -> str:
+    plain = value.strip() == value and not any(char in value for char in ":#'\"{}[],&*!|>%@`")
+    if plain and _parse_yaml(value, "categories.yaml label") == value:
+        return value
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _category_registry(doc: dict[str, Any]) -> CategoryRegistry:

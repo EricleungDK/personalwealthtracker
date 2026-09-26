@@ -15,7 +15,7 @@ Last updated: 2026-09-26
 9. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
 10. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
 11. Reviewed monthly decisions, when supplied, override categorization by exact transaction ID.
-12. Reviewed new leaf category requests validate against the YAML category registry and may update `config/categories.yaml` before workbook planning.
+12. Reviewed new leaf category requests validate against the YAML category registry and are registered in memory for workbook planning; `config/categories.yaml` gains them (minimal text insert with a description) only after the month commit succeeds (issue #19).
 13. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
 14. `workbook.py` plans missing registered leaf rows at the end of their parent SUM section; `row_insertion.py` inserts them formula-aware and fails closed on a structural and numeric before/after check (ADR 0006).
 15. `reporting.py` writes report, audit, categorized CSV, review CSV, and review XLSX outputs with the statement parser name.

@@ -370,7 +370,7 @@ _Avoid_: Credit card settlement, liability payment
 - A **Leaf Category Row** is the normal target for `manual_category`, workbook value planning, and Category Memory learning.
 - The **Category Registry** is the durable source for deciding whether a category is parent, leaf, derived, or allowed to receive a **New Leaf Category Request**.
 - A **New Leaf Category Request** must provide an allowed **Parent/Section Row** and a unique **Leaf Category Row** label.
-- A reviewed second run may update the **Category Registry** with a valid **New Leaf Category Request** before planning workbook structure changes.
+- A reviewed second run registers a valid **New Leaf Category Request** in memory before planning workbook structure changes; the **Category Registry** file gains it only with the **Atomic Month Commit** (issue #19).
 - The **Trust Policy** decides one **Authority** per row; workbook cells derive from row **Authority** (ADR 0001).
 - Every category model is a **Suggester**; **Consensus** is the **Suggester** whose agreeing votes can earn `auto` under the **Trust Policy** (ADR 0002).
 - The **Exception Sheet** lists every `review` row; the **Atomic Month Commit** writes nothing until it is empty (ADR 0003).

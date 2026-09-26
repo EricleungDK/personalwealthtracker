@@ -93,6 +93,7 @@ class CategoryRegistryAddition:
     parent_category: str
     leaf_category: str
     source_transaction_ids: tuple[str, ...]
+    description: str = ""
 
 
 @dataclass(frozen=True)
