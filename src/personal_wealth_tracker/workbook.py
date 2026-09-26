@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import shutil
-import re
 from collections import defaultdict
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -16,7 +15,7 @@ from .models import (
     WorkbookPlan,
     WorkbookStructureChange,
 )
-
+from .row_insertion import insert_row_with_formulas, simple_sum_range
 
 DERIVED_WORKBOOK_ROWS = frozenset(
     {
@@ -68,13 +67,14 @@ def plan_workbook_changes(
     config: AppConfig,
 ) -> WorkbookPlan:
     workbook, sheet = _load_sheet(tracker_path, config.sheet_name)
-    category_rows = _category_rows(sheet, config.category_column)
     target_column = _find_month_column(sheet, year, month, config)
     structure_changes: list[WorkbookStructureChange] = []
     if target_column is None:
         structure_change = _plan_missing_period(sheet, year, month, config)
         structure_changes.append(structure_change)
         target_column = _first_target_column(structure_change)
+        if structure_change.write_action == "write":
+            _apply_structure_change(sheet, structure_change, config)
 
     grouped: dict[str, list[CategorizedTransaction]] = defaultdict(list)
     for item in categorized:
@@ -82,7 +82,9 @@ def plan_workbook_changes(
             continue
         grouped[item.suggested_category].append(item)
 
-    planned_leaf_rows: dict[str, int] = {}
+    # Structure changes are applied to the in-memory planning workbook in order, exactly as
+    # commit will replay them, so later placements and all update rows see the final layout.
+    category_rows = _category_rows(sheet, config.category_column)
     for category in sorted(grouped):
         if category in category_rows:
             continue
@@ -97,17 +99,21 @@ def plan_workbook_changes(
             target_column,
             config,
         )
+        if structure_change.write_action == "write":
+            failure = _apply_leaf_category_insertion(sheet, structure_change, config)
+            if failure is not None:
+                structure_change = replace(structure_change, write_action="review", reason=failure)
+                workbook.close()
+                workbook, sheet = _load_sheet_with_changes(tracker_path, structure_changes, config)
         structure_changes.append(structure_change)
-        if structure_change.write_action == "write" and structure_change.target_range is not None:
-            planned_leaf_rows[category] = _row_index(structure_change.target_range.split(":", 1)[0])
+        category_rows = _category_rows(sheet, config.category_column)
 
     updates: list[TrackerUpdate] = []
     for category, items in sorted(grouped.items()):
         amount = _category_amount(category, items)
-        row = category_rows.get(category) or planned_leaf_rows.get(category)
-        planned_row = category in planned_leaf_rows
+        row = category_rows.get(category)
         cell = sheet.cell(row=row, column=target_column) if row and target_column else None
-        existing_value = None if planned_row else cell.value if cell else None
+        existing_value = cell.value if cell else None
         action, reason = _write_decision(category, row, target_column, existing_value, items, config)
         updates.append(
             TrackerUpdate(
@@ -127,6 +133,20 @@ def plan_workbook_changes(
 
     workbook.close()
     return WorkbookPlan(updates=updates, structure_changes=structure_changes)
+
+
+def _load_sheet_with_changes(
+    tracker_path: Path, structure_changes: list[WorkbookStructureChange], config: AppConfig
+):
+    workbook, sheet = _load_sheet(tracker_path, config.sheet_name)
+    try:
+        for change in structure_changes:
+            if change.write_action == "write":
+                _apply_structure_change(sheet, change, config)
+    except ValueError:
+        workbook.close()
+        raise
+    return workbook, sheet
 
 
 def rows_in_review(
@@ -239,11 +259,7 @@ def commit_updates(
     output_dir: Path,
     structure_changes: list[WorkbookStructureChange] | None = None,
 ) -> Path:
-    workbook, sheet = _load_sheet(tracker_path, config.sheet_name)
-    for change in structure_changes or []:
-        if change.write_action == "write":
-            _apply_structure_change(sheet, change, config)
-
+    workbook, sheet = _load_sheet_with_changes(tracker_path, structure_changes or [], config)
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"{tracker_path.stem}_auto_{timestamp}{tracker_path.suffix}"
@@ -307,43 +323,41 @@ def _apply_structure_change(sheet, change: WorkbookStructureChange, config: AppC
             config=config,
         )
     elif change.change_type == "insert_leaf_category":
-        _apply_leaf_category_insertion(sheet, change, config)
+        failure = _apply_leaf_category_insertion(sheet, change, config)
+        if failure is not None:
+            raise ValueError(failure)
 
 
-def _apply_leaf_category_insertion(sheet, change: WorkbookStructureChange, config: AppConfig) -> None:
+def _apply_leaf_category_insertion(
+    sheet, change: WorkbookStructureChange, config: AppConfig
+) -> str | None:
+    """Insert the planned leaf row; return a failure reason if the safety check fails."""
     if (
         change.source_range is None
         or change.target_range is None
         or change.leaf_category is None
         or change.parent_category is None
     ):
-        return
+        return f"Leaf insertion for {change.leaf_category} is incomplete."
 
     source_row = _row_index(change.source_range.split(":", 1)[0])
     target_row = _row_index(change.target_range.split(":", 1)[0])
-    target_column = _target_month_column(sheet, change.target_year, change.target_months[0], config)
     parent_row = _category_rows(sheet, config.category_column).get(change.parent_category)
-    parent_formula = (
-        sheet.cell(row=parent_row, column=target_column).value if parent_row is not None else None
-    )
+    if parent_row is None:
+        return f"Parent row for {change.leaf_category} was not found."
 
-    sheet.insert_rows(target_row)
+    failure = insert_row_with_formulas(sheet.parent, sheet.title, target_row, parent_row)
+    if failure is not None:
+        return failure
     _copy_row_format(sheet, source_row, target_row)
-    for column in range(1, sheet.max_column + 1):
-        sheet.cell(row=target_row, column=column).value = None
     sheet.cell(row=target_row, column=config.category_column).value = change.leaf_category
-
-    if parent_row is not None and isinstance(parent_formula, str):
-        sheet.cell(row=parent_row, column=target_column).value = _expanded_parent_sum_formula(
-            parent_formula,
-            target_row,
-            target_column,
-        )
+    return None
 
 
 def _copy_row_format(sheet, source_row: int, target_row: int) -> None:
     sheet.row_dimensions[target_row].height = sheet.row_dimensions[source_row].height
     sheet.row_dimensions[target_row].hidden = sheet.row_dimensions[source_row].hidden
+    sheet.row_dimensions[target_row].outline_level = sheet.row_dimensions[source_row].outline_level
     for column in range(1, sheet.max_column + 1):
         source_cell = sheet.cell(row=source_row, column=column)
         target_cell = sheet.cell(row=target_row, column=column)
@@ -553,63 +567,65 @@ def _plan_missing_leaf_category(
             leaf_category=leaf_category,
         )
 
-    siblings = tuple(config.category_registry.children_by_parent.get(parent_category, ()))
-    sibling_rows = [
-        category_rows[sibling]
-        for sibling in siblings
-        if sibling != leaf_category and sibling in category_rows
-    ]
-    if not sibling_rows:
+    def review(reason: str) -> WorkbookStructureChange:
         return WorkbookStructureChange(
             change_type="insert_leaf_category",
             target_year=year,
             target_months=(month,),
             source_range=None,
-            target_range=f"{parent_row + 1}:{parent_row + 1}",
+            target_range=None,
             write_action="review",
-            reason=f"No existing sibling leaf row found for {leaf_category}.",
+            reason=reason,
             parent_category=parent_category,
             leaf_category=leaf_category,
         )
 
-    source_row = max(sibling_rows)
-    target_row = source_row + 1
+    if target_column is None:
+        return review("Target month column not found.")
+
     boundary_row = _next_category_boundary_row(sheet, parent_row, config)
-    if boundary_row is not None and target_row > boundary_row:
-        return WorkbookStructureChange(
-            change_type="insert_leaf_category",
-            target_year=year,
-            target_months=(month,),
-            source_range=f"{source_row}:{source_row}",
-            target_range=f"{target_row}:{target_row}",
-            write_action="review",
-            reason=(
-                f"Could not place {leaf_category} under {parent_category} before the next "
+    parent_formula = sheet.cell(row=parent_row, column=target_column).value
+    if isinstance(parent_formula, str) and parent_formula.startswith("="):
+        range_info = simple_sum_range(parent_formula)
+        if range_info is None:
+            return review(
+                "Parent formula is not a simple SUM range; manual workbook adjustment required."
+            )
+        start_column, start_row, end_column, end_row = range_info
+        target_column_letter = _column_letter(target_column)
+        if (
+            start_column != target_column_letter
+            or end_column != target_column_letter
+            or start_row <= parent_row
+            or start_row > end_row
+        ):
+            return review(f"Parent formula SUM range does not match the {parent_category} section.")
+        if boundary_row is not None and end_row >= boundary_row:
+            return review(
+                f"Parent formula SUM range for {parent_category} extends past the next "
                 "parent/section boundary."
-            ),
-            parent_category=parent_category,
-            leaf_category=leaf_category,
-        )
+            )
+        target_row = end_row + 1
+    elif boundary_row is not None:
+        target_row = boundary_row
+    else:
+        target_row = _last_labeled_row(sheet, parent_row, config) + 1
 
-    formula_reason = _leaf_insertion_formula_blocker(
-        sheet,
-        parent_row,
-        target_row,
-        target_column,
-    )
-    write_action = "review" if formula_reason else "write"
-    reason = formula_reason or (
-        f"Insert missing leaf category {leaf_category} under {parent_category} at row "
-        f"{target_row}."
-    )
+    source_row = target_row - 1
+    if source_row == parent_row:
+        return review(f"No existing leaf row in the {parent_category} section to copy formatting from.")
+
     return WorkbookStructureChange(
         change_type="insert_leaf_category",
         target_year=year,
         target_months=(month,),
         source_range=f"{source_row}:{source_row}",
         target_range=f"{target_row}:{target_row}",
-        write_action=write_action,
-        reason=reason,
+        write_action="write",
+        reason=(
+            f"Insert missing leaf category {leaf_category} under {parent_category} at the end "
+            f"of its section, row {target_row}."
+        ),
         parent_category=parent_category,
         leaf_category=leaf_category,
     )
@@ -632,57 +648,12 @@ def _next_category_boundary_row(sheet, parent_row: int, config: AppConfig) -> in
     return None
 
 
-def _leaf_insertion_formula_blocker(
-    sheet,
-    parent_row: int,
-    target_row: int,
-    target_column: int | None,
-) -> str | None:
-    if target_column is None:
-        return "Target month column not found."
-    formula = sheet.cell(row=parent_row, column=target_column).value
-    if formula in (None, ""):
-        return None
-    if not isinstance(formula, str) or not formula.startswith("="):
-        return None
-    range_info = _simple_sum_range(formula)
-    if range_info is None:
-        return "Parent formula is not a simple SUM range; manual workbook adjustment required."
-
-    start_column, start_row, end_column, end_row = range_info
-    target_column_letter = _column_letter(target_column)
-    if (
-        start_column != target_column_letter
-        or end_column != target_column_letter
-        or target_row != end_row + 1
-        or start_row > end_row
-    ):
-        return "Parent formula SUM range does not match the planned leaf insertion."
-    return None
-
-
-def _simple_sum_range(formula: str) -> tuple[str, int, str, int] | None:
-    match = re.fullmatch(r"=SUM\((\$?[A-Z]+)\$?(\d+):(\$?[A-Z]+)\$?(\d+)\)", formula)
-    if match is None:
-        return None
-    start_column, start_row, end_column, end_row = match.groups()
-    return (
-        start_column.replace("$", ""),
-        int(start_row),
-        end_column.replace("$", ""),
-        int(end_row),
-    )
-
-
-def _expanded_parent_sum_formula(formula: str, target_row: int, target_column: int) -> str:
-    range_info = _simple_sum_range(formula)
-    if range_info is None:
-        return formula
-    start_column, start_row, end_column, _end_row = range_info
-    target_column_letter = _column_letter(target_column)
-    if start_column != target_column_letter or end_column != target_column_letter:
-        return formula
-    return f"=SUM({start_column}{start_row}:{end_column}{target_row})"
+def _last_labeled_row(sheet, parent_row: int, config: AppConfig) -> int:
+    last_row = parent_row
+    for row in range(parent_row + 1, sheet.max_row + 1):
+        if _row_category(sheet, row, config) is not None:
+            last_row = row
+    return last_row
 
 
 def _plan_missing_period(sheet, year: int, month: str, config: AppConfig) -> WorkbookStructureChange:

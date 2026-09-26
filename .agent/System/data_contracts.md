@@ -143,6 +143,8 @@ Direct value updates should target leaf workbook rows only. Derived workbook row
 
 Future period-column creation should be represented separately from value updates so reports can distinguish planned structure changes from financial cell writes. Dry-run output should expose the planned structure change before commit mode applies it.
 
+Leaf-row insertion records (`insert_leaf_category`) carry `parent_category`, `leaf_category`, `source_range` (format source row, the section's last row) and `target_range` (the new row, `parent SUM end + 1`). Rows are numbered for the workbook state after all earlier changes in the list, which commit replays in order. `review` records carry the blocking reason.
+
 Period-column creation records should include the target year/month and the source template period column used for formulas and formatting.
 
 Year-block creation records should include the target year, the 12 period columns to create, and the source year block used as the template.

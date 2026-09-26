@@ -2,7 +2,7 @@
 
 Use this runbook to update the tracker workbook for one reporting month. The normal flow is one command, re-run until the month commits.
 
-For a non-technical map of the project structure, components, outputs, scripts, and terminology, see [project_overview.md](project_overview.md). Decisions behind this flow are in `docs/adr/` (0001 per-row authority, 0002 local Consensus, 0003 Exception Sheet and Atomic Month Commit, 0004 memory on commit, 0005 hosted judgment deferred).
+For a non-technical map of the project structure, components, outputs, scripts, and terminology, see [project_overview.md](project_overview.md). Decisions behind this flow are in `docs/adr/` (0001 per-row authority, 0002 local Consensus, 0003 Exception Sheet and Atomic Month Commit, 0004 memory on commit, 0005 hosted judgment deferred, 0006 formula-aware leaf row insertion).
 
 ## 1. Prepare Local Inputs
 
@@ -52,7 +52,7 @@ The `Review Required` sheet lists only rows in review: `review`-authority transa
 - `NONE` rejects the suggestion: the row is resolved but written to no category.
 - Any other value must be an existing Leaf Category Row, such as `Food& Drinks (monthly)` or `Apple Cloud`. Parent/Section Row labels such as `Living expenses`, `Services` and `Insurance` group the tracker and are not valid targets.
 - A proposed subscription leaf (`suggested_parent_category` `Services`, e.g. `Claude subscription`) is always in review. Blank accepts it as a new leaf under `Services` on the commit run (never on `--dry-run`); from the next month Category Memory files the merchant there. Pick an existing leaf such as `Disney+` in `manual_category` or fill `new_parent_category` `Services` and an edited name in `new_leaf_category` instead if it fits better.
-- For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The commit run registers it in `config/categories.yaml` (reported under `Category Registry Updates`) and may insert the row into the copied workbook when placement and parent formulas are safe.
+- For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The commit run registers it in `config/categories.yaml` (reported under `Category Registry Updates`) and inserts the row at the end of its parent section in the copied workbook, shifting every formula and expanding the parent SUM in all month columns. If the parent formula is not a simple SUM or the before/after safety check fails, the rows stay in review with the reason and nothing is written.
 - `learn_to_memory`: leave blank to learn the decision on commit; `no` for a one-off.
 - Use `Category Options` to avoid derived, fixed, or formula-owned rows.
 - Use `Audit` to spot-check every `auto` row with its `source`, `votes` and `reason`.
