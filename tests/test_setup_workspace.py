@@ -206,3 +206,25 @@ def test_initialized_workspace_report_reflects_configured_currency(tmp_path):
     report = result.report_path.read_text(encoding="utf-8")
     assert "- Tracker Currency: NOK" in report
     assert "- Statement Currency: NOK" in report
+
+
+def test_setup_settings_match_current_trust_policy_and_local_llm_defaults(tmp_path):
+    from decimal import Decimal
+
+    from personal_wealth_tracker.config import load_config
+
+    initialize_local_workspace(tmp_path / "wealth")
+
+    config = load_config(tmp_path / "wealth" / "config")
+
+    assert config.local_llm.timeout_seconds == 180.0
+    assert config.local_llm.keep_alive == "30m"
+    assert config.trust_policy.auto_max_amount == Decimal(1000)
+    assert config.trust_policy.min_agreement == 2
+    assert config.trust_policy.never_auto_categories == frozenset(
+        {"Rent (monthly)", "Full-time job (net)"}
+    )
+    profile = (tmp_path / "wealth" / "profiles" / "default.local.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert 'model_output_policy: "consensus_or_review"' in profile
