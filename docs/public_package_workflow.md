@@ -1,6 +1,6 @@
 # Public Package Workflow
 
-This guide is the public-package path for using PersonalWorthTracker without private financial data. It shows the install, setup, synthetic examples, trusted imports, unknown-format review flow, learning, and copied-workbook commit path.
+This guide is the public-package path for using PersonalWorthTracker without private financial data. It shows the install, setup, synthetic examples, trusted imports, unknown-format review flow, learning, and in-place workbook commit path.
 
 For the privacy contract behind this guide, read the public/private boundary in [public_private_boundary.md](public_private_boundary.md).
 
@@ -82,9 +82,9 @@ uv run wealth-tracker learn-category-memory \
 
 Category Memory is local profile state. It is not a public fixture and must not be committed.
 
-## Commit To A Copied Workbook
+## Commit To The Workbook
 
-After dry-run review, use `--commit` to write only eligible values to a copied workbook:
+After dry-run review, use `--commit` to write only eligible values into the workbook:
 
 ```bash
 uv run wealth-tracker \
@@ -96,7 +96,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Commit mode creates backups and processed workbook copies under ignored local paths. It never writes directly to the original workbook.
+Commit mode backs up the workbook to `data/backups/` and then updates it in place, so committed months accumulate. The Commit Ledger `data/commit_ledger.json` lets a re-commit replace only its own earlier values (ADR 0007).
 
 ## Unknown Statement Review
 

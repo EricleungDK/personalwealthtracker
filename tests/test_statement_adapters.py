@@ -231,7 +231,7 @@ def test_pipeline_consumes_trusted_statement_adapter_result(monkeypatch, tmp_pat
     monkeypatch.setattr(pipeline, "load_category_memory", lambda _memory_dir: {})
     monkeypatch.setattr(pipeline, "categorize_transactions", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(pipeline, "disabled_diagnostics", lambda _settings: LocalLLMDiagnostics())
-    monkeypatch.setattr(pipeline, "plan_workbook_changes", lambda *_args: WorkbookPlan([], []))
+    monkeypatch.setattr(pipeline, "plan_workbook_changes", lambda *_args, **_kwargs: WorkbookPlan([], []))
     monkeypatch.setattr(
         pipeline,
         "write_outputs",
