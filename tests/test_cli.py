@@ -361,3 +361,27 @@ def test_cli_rejects_missing_explicit_profile(capsys):
 
     assert exit_code == 1
     assert "Profile not found: missing.yaml" in capsys.readouterr().err
+
+
+def test_top_level_help_lists_every_subcommand(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+
+    output = capsys.readouterr().out
+    for command in (
+        "monthly",
+        "learn-category-memory",
+        "cleanup-currency-labels",
+        "import-statement",
+        "importer-profile",
+        "template-workbook",
+        "setup",
+    ):
+        assert command in output
+
+
+def test_subcommand_help_shows_its_own_name(capsys):
+    with pytest.raises(SystemExit):
+        main(["monthly", "--help"])
+
+    assert "usage: wealth-tracker monthly" in capsys.readouterr().out
