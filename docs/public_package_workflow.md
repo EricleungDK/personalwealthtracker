@@ -1,6 +1,6 @@
 # Public Package Workflow
 
-This guide is the public-package path for using PersonalWorthTracker without private financial data. It shows the install, setup, the one-command `monthly` run on synthetic examples, the per-month command, the unknown-format review flow, and learning.
+This guide is the public-package path for using Personal Wealth Tracker without private financial data. It shows the install, setup, the one-command `monthly` run on synthetic examples, the per-month command, the unknown-format review flow, and learning.
 
 For the privacy contract behind this guide, read the public/private boundary in [public_private_boundary.md](public_private_boundary.md).
 
@@ -25,7 +25,7 @@ uv run wealth-tracker setup \
   --start-year 2026
 ```
 
-The setup command creates generic config, a private local profile (`profiles/default.local.yaml`, a record of the workspace paths), ignored local data folders, reports and logs folders, the versioned synthetic Template Workbook at `templates/local-wealth-tracker-template.xlsx`, and the synthetic statement example at `examples/synthetic-nordea-transactions.csv`.
+The setup command creates generic config, a private local profile (`profiles/default.local.yaml`; `monthly` and the per-month command read its `profile_paths` as path defaults), ignored local data folders, reports and logs folders, the versioned synthetic Template Workbook at `templates/local-wealth-tracker-template.xlsx`, and the synthetic statement example at `examples/synthetic-nordea-transactions.csv`.
 
 Existing setup-managed files are preserved unless `--force` is supplied. Real statements, real tracker workbooks, local Category Memory, Importer Profile files, report outputs, logs, and local profile files stay private and ignored by Git.
 

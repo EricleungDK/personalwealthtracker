@@ -1,6 +1,6 @@
 # Domain Language
 
-Shared language for PersonalWorthTracker domain decisions.
+Shared language for Personal Wealth Tracker domain decisions.
 
 ## Language
 

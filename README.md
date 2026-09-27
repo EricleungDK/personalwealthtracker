@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💰 PersonalWorthTracker
+# 💰 Personal Wealth Tracker
 
 **Turn your monthly bank export into an up-to-date Excel net-worth tracker — without your data ever leaving your machine.**
 
