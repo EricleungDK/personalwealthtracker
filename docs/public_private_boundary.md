@@ -2,7 +2,7 @@
 
 This repository is the incubation workspace for a future public Local Wealth-Tracker Agent package. The public package can contain reusable code, synthetic examples, sample configuration, and documented contracts. Private profile data stays local and ignored by Git.
 
-The Local Wealth-Tracker Agent helps with setup, statement import, review artifacts, monthly planning, Category Memory, and copied-workbook updates. It is not an autonomous finance authority. Importer guesses and untrusted imports stay review-only. Local model suggestions reach a copied workbook without a user decision only when the Trust Policy grants `auto` (two local models agree, amount within the cap, category not never-auto; see [ADR 0001](adr/0001-per-row-authority.md), [ADR 0002](adr/0002-local-two-model-consensus.md)) and workbook safety checks pass.
+The Local Wealth-Tracker Agent helps with setup, statement import, review artifacts, monthly planning, Category Memory, and in-place workbook updates after a backup. It is not an autonomous finance authority. Importer guesses and untrusted imports stay review-only. Local model suggestions reach the workbook without a user decision only when the Trust Policy grants `auto` (two local models agree, amount within the cap, category not never-auto; see [ADR 0001](adr/0001-per-row-authority.md), [ADR 0002](adr/0002-local-two-model-consensus.md)) and workbook safety checks pass.
 
 ## Public Package Responsibilities
 
@@ -27,8 +27,9 @@ Private profile artifacts are local-only and ignored by Git:
 - Watched or staging inputs under `data/watched_folder/`.
 - Generated Category Memory under `data/category_memory/`.
 - Local Importer Profiles under `data/importer_profiles/`.
-- Copied workbooks under `data/processed/`.
+- Copied workbooks from `cleanup` under `data/processed/`.
 - Workbook backups under `data/backups/`.
+- The Commit Ledger `data/commit_ledger.json` (amounts each committed month wrote).
 - Generated reports and review artifacts under `reports/`.
 - Local run logs under `logs/`.
 - Local config overlays such as `config/*.local.yaml`.
@@ -51,16 +52,18 @@ Use these paths for the current incubation repo and future setup workflow:
 | Category Memory | none | `data/category_memory/` |
 | Importer Profiles | synthetic/demo only | `data/importer_profiles/` |
 | Generated reports | none | `reports/` |
-| Copied workbooks | none | `data/processed/` |
+| Cleanup workbook copies | none | `data/processed/` |
 | Backups | none | `data/backups/` |
+| Commit Ledger | none | `data/commit_ledger.json` |
 | Logs | none | `logs/` |
 
 The sample public configuration documents the expected shape of local paths, but users should copy it to an ignored profile file before adding real paths.
 
 ## Safety Rules
 
-- The original Tracker Workbook is never modified directly.
-- Commit mode writes only to a copied workbook under `data/processed/`.
+- Commit mode backs up the Tracker Workbook to `data/backups/` before updating it in place, so every committed month accumulates in one workbook.
+- A re-commit of a month rewrites only cells still holding the Commit Ledger amount; cells you edited stay in review.
+- `cleanup --commit` writes only to a copied workbook under `data/processed/`.
 - Unknown or model-assisted statement imports remain untrusted until user review confirms them.
 - Category Memory learns only when a month commits: user decisions as `human` (opt out with `learn_to_memory` `no`), consensus results as `auto`, trusted only after two committed months ([ADR 0004](adr/0004-memory-learned-on-commit-with-provenance.md)).
 - Importer Profiles learn only from confirmed imports and stay private by default.

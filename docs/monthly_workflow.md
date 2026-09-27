@@ -43,7 +43,7 @@ There is one Exception Sheet per month: always edit `review_required_<year>_<mon
 uv run wealth-tracker monthly --dry-run
 ```
 
-Dry run writes the report, Exception Sheet and Audit preview, but never the workbook copy, backup, Category Memory or `config/categories.yaml` (new leaf requests are only listed under `Category Registry Updates` in the report). Its next action says to re-run without `--dry-run` once nothing is in review.
+Dry run writes the report, Exception Sheet and Audit preview, but never the workbook, backup, Category Memory or `config/categories.yaml` (new leaf requests are only listed under `Category Registry Updates` in the report). Its next action says to re-run without `--dry-run` once nothing is in review.
 
 ## 4. Work The Exception Sheet
 
@@ -63,7 +63,7 @@ How to fill the sheet:
 - `NONE` rejects the suggestion: the row is resolved but written to no category.
 - Any other value must be an existing Leaf Category Row, such as `Food& Drinks (monthly)` or `Apple Cloud`. Parent/Section Row labels such as `Living expenses`, `Services` and `Insurance` group the tracker and are not valid targets.
 - A proposed subscription leaf (`suggested_parent_category` `Services`, e.g. `Claude subscription`) is always in review. Blank accepts it as a new leaf under `Services` on the commit run (never on `--dry-run`); from the next month Category Memory files the merchant there. Pick an existing leaf such as `Disney+` in `manual_category` or fill `new_parent_category` `Services` and an edited name in `new_leaf_category` instead if it fits better.
-- For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The run plans it in memory (reported under `Category Registry Updates`); only a commit that writes the workbook adds it to `config/categories.yaml`, as a `- label:` and `description:` pair under the parent with every other line untouched (description `<Service> subscription billing.` for an accepted proposal, `Added in monthly review <Mon YYYY>.` for a typed leaf; edit it to guide the Suggester). A run blocked by rows in review leaves the file unchanged, and re-running with the same sheet adds no duplicate. The commit inserts the row at the end of its parent section in the copied workbook, shifting every formula and expanding the parent SUM in all month columns. If the parent formula is not a simple SUM or the before/after safety check fails, the rows stay in review with the reason and nothing is written.
+- For a missing leaf, pick the allowed Parent/Section Row in `new_parent_category` and type the new label in `new_leaf_category`; leave `manual_category` empty on that row. The run plans it in memory (reported under `Category Registry Updates`); only a commit that writes the workbook adds it to `config/categories.yaml`, as a `- label:` and `description:` pair under the parent with every other line untouched (description `<Service> subscription billing.` for an accepted proposal, `Added in monthly review <Mon YYYY>.` for a typed leaf; edit it to guide the Suggester). A run blocked by rows in review leaves the file unchanged, and re-running with the same sheet adds no duplicate. The commit inserts the row at the end of its parent section in the tracker, shifting every formula and expanding the parent SUM in all month columns. If the parent formula is not a simple SUM or the before/after safety check fails, the rows stay in review with the reason and nothing is written.
 - `learn_to_memory`: leave blank to learn the decision on commit; `no` for a one-off.
 - Use `Category Options` to avoid derived, fixed, or formula-owned rows.
 - Use `Audit` to spot-check every `auto` row not in review with its `source`, `votes` and `reason`.
@@ -78,15 +78,16 @@ Decisions apply by exact `transaction_id` for this reporting month. Stale or unk
 uv run wealth-tracker monthly
 ```
 
-Atomic Month Commit: the copied workbook is written only when zero rows remain in review. Otherwise the report says `Workbook not written: N row(s) in review.` and no backup, workbook copy or Category Memory is written. On commit:
+Atomic Month Commit: the tracker is written only when zero rows remain in review. Otherwise the report says `Workbook not written: N row(s) in review.` and no backup, workbook change or Category Memory is written. On commit:
 
-- a backup goes to `data/backups/` and the updated copy to `data/processed/`; the original workbook is untouched,
+- a backup goes to `data/backups/`, then the tracker is updated in place, so every committed month accumulates in one workbook (restore the backup to undo),
+- the amounts written are recorded in the Commit Ledger `data/commit_ledger.json`; re-committing the month rewrites or clears only cells still holding those amounts (ADR 0007),
 - formula-owned, fixed, and populated manual cells are never overwritten,
 - Category Memory is learned from the month: Exception Sheet decisions and Audit corrections with provenance `human` (used from the next month; `NONE` forgets the merchant's mapping), and Consensus results with provenance `auto`, which categorise only after the same merchant and category commit in two months (a Suggester hint until then).
 
 ## 6. Correct A Committed Month
 
-Fill `corrected_category` (a leaf or `NONE`) on the `Audit` sheet of `review_required_<year>_<mon>.xlsx` and re-run `monthly` while that statement is still the newest. The correction becomes a Monthly Review Decision, the month is committed again from the original workbook, and the merchant's memory is replaced with a `human` mapping. For an older month, use the per-month command in step 8 with `--review-decisions` and `--commit`.
+Fill `corrected_category` (a leaf or `NONE`) on the `Audit` sheet of `review_required_<year>_<mon>.xlsx` and re-run `monthly` while that statement is still the newest. The correction becomes a Monthly Review Decision, the month is committed again over its earlier values (Commit Ledger), and the merchant's memory is replaced with a `human` mapping. For an older month, use the per-month command in step 8 with `--review-decisions` and `--commit`.
 
 ## 7. Local LLM Mode And No-Model Degradation
 

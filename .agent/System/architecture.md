@@ -20,9 +20,9 @@ Entry points (`cli.py`): `wealth-tracker monthly` (default operator path, `pipel
 12. `workbook.py` locates the `Net worth` sheet, target month column, and category rows, and plans value updates.
 13. `workbook.py` plans missing registered leaf rows at the end of their parent SUM section; `row_insertion.py` inserts them formula-aware and fails closed on a structural and numeric before/after check (ADR 0006).
 14. `reporting.py` writes report, JSONL audit, categorized CSV, review CSV, and the Exception Sheet XLSX (`Review Required` + `Audit`); `monthly` rewrites one sheet per month with decisions carried forward (issue #20).
-15. Atomic Month Commit (ADR 0003): only when zero rows are in review, commit creates a backup, writes eligible updates to a copied workbook under `data/processed/`, persists new leaves, and learns Category Memory with provenance (`category_memory.py`, ADR 0004). Otherwise nothing is written besides outputs.
+15. Atomic Month Commit (ADR 0003): only when zero rows are in review, commit creates a backup under `data/backups/`, writes eligible updates into the tracker in place (sibling save + `os.replace`), records them in the Commit Ledger `data/commit_ledger.json` (`commit_ledger.py`, ADR 0007), persists new leaves, and learns Category Memory with provenance (`category_memory.py`, ADR 0004). Otherwise nothing is written besides outputs.
 
-Supporting modules: `setup_workspace.py` (`setup`), `template_workbook.py` (`template-workbook`), `statement_import_assistant.py` (`import-statement`, untrusted unknown formats), `importer_profiles.py` (`importer-profile`), `cleanup.py` (`cleanup-currency-labels`), `outbound_redaction.py` (unused hosted allowlist, ADR 0005), `models.py`, `utils.py`.
+Supporting modules: `setup_workspace.py` (`setup`), `template_workbook.py` (`template-workbook`), `statement_import_assistant.py` (`import-statement`, untrusted unknown formats), `importer_profiles.py` (`importer-profile`), `cleanup.py` (`cleanup-currency-labels`, still writes a copy to `data/processed/`), `outbound_redaction.py` (unused hosted allowlist, ADR 0005), `models.py`, `utils.py`.
 
 ## Parser Design
 
@@ -50,7 +50,7 @@ Workbook updates are planned before writing. A planned value update becomes writ
 - the target cell is empty,
 - the target cell is not a formula.
 
-Reviewed `new_parent_category` and `new_leaf_category` values create a category-registry update, not a financial workbook value write. If the new leaf is missing from the workbook, dry-run reports an `insert_leaf_category` structure change. Planning applies structure changes in order to the in-memory workbook so update rows are final; commit replays them only on a copied workbook. Unsupported parent formula shapes or a failed safety check keep the change in review.
+Reviewed `new_parent_category` and `new_leaf_category` values create a category-registry update, not a financial workbook value write. If the new leaf is missing from the workbook, dry-run reports an `insert_leaf_category` structure change. Planning applies structure changes in order to the in-memory workbook so update rows are final; commit replays them on the tracker after a backup. Unsupported parent formula shapes or a failed safety check keep the change in review.
 
 Commit mode writes only planned updates whose action is `write`, and only when no row or update is in review (Atomic Month Commit).
 
@@ -68,7 +68,7 @@ Commit mode writes only planned updates whose action is `write`, and only when n
 - Workbook writing should use the converted DKK value only; conversion-rate metadata belongs in reports/audit logs for now.
 - Workbook cleanup tasks such as currency label correction should remain separate from monthly planning and commit mode.
 - Missing period-column creation should be a dedicated writer capability with tests for formulas, formatting, merged year headers, and section structure preservation.
-- Period-column creation should be planned and reported in dry-run before commit mode applies the structure change to a copied workbook.
+- Period-column creation should be planned and reported in dry-run before commit mode applies the structure change to the tracker (after a backup).
 - Period-column creation should copy formulas, styles, widths, and relevant structure from the immediately previous period column and report that source in dry-run.
 - Year-block creation should copy the prior year/month structure as a full 12-month block only when headers and period layout are unambiguous; otherwise the dry-run should stop for review.
 - Period/year creation should clear ordinary copied non-formula values while preserving formulas, styles, widths, merged headers, and other required structure.

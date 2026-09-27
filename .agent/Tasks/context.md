@@ -7,7 +7,7 @@ A short snapshot of where the project stands. Keep it small: settled decisions g
 ## State
 
 - A Python CLI (`wealth-tracker`), managed with uv, Python 3.12.
-- Main flow: `wealth-tracker monthly`. It parses the newest Nordea CSV, decides each row's authority (Trust Policy plus a two-model local Consensus), writes one Exception Sheet per month, commits the month atomically to a copied workbook, and learns Category Memory on commit.
+- Main flow: `wealth-tracker monthly`. It parses the newest Nordea CSV, decides each row's authority (Trust Policy plus a two-model local Consensus), writes one Exception Sheet per month, commits the month atomically into the tracker in place after a backup (ADR 0007), and learns Category Memory on commit.
 - Also shipped: public-package tooling (`setup`, `template-workbook`, `import-statement`, `importer-profile`), proxy split transfers, the YAML category registry and leaf row insertion.
 - The last feature batch was GitHub #2-#20, merged in PR #15 on 2026-09-26.
 

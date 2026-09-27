@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from .commit_ledger import is_committed_value
 from .config import AppConfig
 from .models import (
     CategorizedTransaction,
@@ -65,7 +66,10 @@ def plan_workbook_changes(
     year: int,
     month: str,
     config: AppConfig,
+    committed: dict[str, Decimal] | None = None,
 ) -> WorkbookPlan:
+    """`committed` is this month's Commit Ledger entry: cells still holding it are tool-owned."""
+    committed = committed or {}
     workbook, sheet = _load_sheet(tracker_path, config.sheet_name)
     target_column = _find_month_column(sheet, year, month, config)
     structure_changes: list[WorkbookStructureChange] = []
@@ -114,7 +118,10 @@ def plan_workbook_changes(
         row = category_rows.get(category)
         cell = sheet.cell(row=row, column=target_column) if row and target_column else None
         existing_value = cell.value if cell else None
-        action, reason = _write_decision(category, row, target_column, existing_value, items, config)
+        owned = is_committed_value(existing_value, committed.get(category))
+        action, reason = _write_decision(
+            category, row, target_column, None if owned else existing_value, items, config
+        )
         updates.append(
             TrackerUpdate(
                 year=year,
@@ -128,6 +135,29 @@ def plan_workbook_changes(
                 existing_value=existing_value,
                 write_action=action,
                 reason=reason,
+            )
+        )
+
+    for category, committed_amount in sorted(committed.items()):
+        row = category_rows.get(category)
+        if category in grouped or row is None or target_column is None:
+            continue
+        cell = sheet.cell(row=row, column=target_column)
+        if not is_committed_value(cell.value, committed_amount):
+            continue
+        updates.append(
+            TrackerUpdate(
+                year=year,
+                month=month,
+                category=category,
+                amount=Decimal("0"),
+                source_transactions=(),
+                target_row=row,
+                target_column=target_column,
+                target_cell=cell.coordinate,
+                existing_value=cell.value,
+                write_action="clear",
+                reason="Previously committed value no longer matched by any statement row.",
             )
         )
 
@@ -265,9 +295,13 @@ def commit_updates(
     output_path = output_dir / f"{tracker_path.stem}_auto_{timestamp}{tracker_path.suffix}"
 
     for update in updates:
-        if update.write_action != "write" or update.target_row is None or update.target_column is None:
+        if update.target_row is None or update.target_column is None:
             continue
-        sheet.cell(row=update.target_row, column=update.target_column).value = float(update.amount)
+        cell = sheet.cell(row=update.target_row, column=update.target_column)
+        if update.write_action == "write":
+            cell.value = float(update.amount)
+        elif update.write_action == "clear":
+            cell.value = None
 
     workbook.save(output_path)
     workbook.close()

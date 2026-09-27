@@ -18,7 +18,7 @@ The product decisions that are in force, grouped by topic. Each line gives the r
 - Matched Nordea net salary may write `Full-time job (net)`. Payroll and tax rows stay workbook-owned (2026-05-11).
 - Internal transfers are excluded from income and expense unless deliberately mapped. Credit card payments settle a liability; they are not expenses (2026-05-11).
 - Same-month deterministic refunds reduce the matched category. A refund in a later month counts in the month it appears, and earlier months are never reopened. Claims map to `Expense claims` (2026-05-11).
-- Commits write to a copied workbook, never to the original (2026-05-06).
+- A commit backs up the tracker to `data/backups/` and then updates it in place, so months accumulate. The Commit Ledger (`data/commit_ledger.json`) records what each month wrote, so a re-commit replaces only its own values and leaves user-edited cells in review (2026-09-27, ADR 0007).
 - Missing period and year columns copy the previous period's structure and formulas, clear copied manual values, and keep only configured `carry_forward_rows`. They appear in the dry run before commit (2026-05-11, ISSUE-004).
 - Workbook label and currency cleanup is a separate one-off task, never part of a monthly run (2026-05-11).
 
@@ -82,3 +82,4 @@ The product decisions that are in force, grouped by topic. Each line gives the r
 - "Every cell-level safety block is a review": superseded by atomic month commit (ADR 0003).
 - Earlier model targets (`gemma4:e4b`, `gemma4:12b` as primary): superseded by the consensus pair above.
 - "Register new leaves from the reviewed run": leaves now register on commit only (#19).
+- "Commits write to a copied workbook, never the original": superseded by commit in place (ADR 0007).

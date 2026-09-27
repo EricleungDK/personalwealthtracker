@@ -371,7 +371,6 @@ def main(argv: list[str] | None = None) -> int:
                 category_memory_dir=args.category_memory_dir,
                 dry_run=args.dry_run,
                 backups_dir=args.backups_dir,
-                processed_dir=args.processed_dir,
             )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
@@ -517,7 +516,6 @@ def main(argv: list[str] | None = None) -> int:
             review_decisions_path=args.review_decisions,
             local_llm_suggestions=args.local_llm_suggestions,
             backups_dir=args.backups_dir,
-            processed_dir=args.processed_dir,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -576,7 +574,6 @@ PROFILE_PATHS = {
     "output_dir": ("reports_dir", Path("reports")),
     "category_memory_dir": ("category_memory_dir", Path("data/category_memory")),
     "backups_dir": ("backups_dir", Path("data/backups")),
-    "processed_dir": ("processed_workbooks_dir", Path("data/processed")),
 }
 MONTHLY_PROFILE_PATHS = {
     "tracker": ("tracker_workbook", Path("Net Worth Tracker.xlsx")),
@@ -598,7 +595,6 @@ def _add_profile_path_args(parser: argparse.ArgumentParser) -> None:
         ("--output-dir", "output_dir"),
         ("--category-memory-dir", "category_memory_dir"),
         ("--backups-dir", "backups_dir"),
-        ("--processed-dir", "processed_dir"),
     ):
         key, fallback = PROFILE_PATHS[dest]
         parser.add_argument(

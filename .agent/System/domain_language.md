@@ -49,8 +49,12 @@ A Monthly Review Decision or Audit correction read from the Exception Sheet and 
 _Avoid_: Replayed decision
 
 **Atomic Month Commit**:
-Commit mode writes the copied Tracker Workbook only when zero rows remain in review, so it never holds a partial month.
+Commit mode writes the Tracker Workbook, in place after a backup, only when zero rows remain in review, so it never holds a partial month.
 _Avoid_: Unreviewed bucket, partial commit
+
+**Commit Ledger**:
+The category amounts each committed month wrote into the Tracker Workbook (`data/commit_ledger.json`). On a re-commit, a cell still holding its ledger amount is tool-owned and may be rewritten or cleared; any other value is a manual value (ADR 0007).
+_Avoid_: Write log, commit history
 
 **Trust Policy**:
 The single pure module that decides Authority from evidence (tier, model votes, agreement), row facts (amount), and settings (`auto_max_amount`, `min_agreement`, `never_auto_categories`).

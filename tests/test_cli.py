@@ -340,15 +340,15 @@ def test_cli_passes_profile_and_flag_paths_to_pipeline(monkeypatch, tmp_path):
         [
             "--tracker", "tracker.xlsx", "--statement", "statement.csv",
             "--year", "2026", "--month", "Apr",
-            "--profile", str(profile), "--processed-dir", "flag/proc",
+            "--profile", str(profile), "--category-memory-dir", "flag/memory",
         ]
     )
 
     assert exit_code == 0
     assert captured["output_dir"] == tmp_path / "ws" / "out" / "reports"
     assert captured["backups_dir"] == tmp_path / "ws" / "out" / "bk"
-    assert captured["processed_dir"] == Path("flag/proc")
-    assert captured["category_memory_dir"] == Path("data/category_memory")
+    assert captured["category_memory_dir"] == Path("flag/memory")
+    assert "processed_dir" not in captured
 
 
 def test_cli_rejects_missing_explicit_profile(capsys):
