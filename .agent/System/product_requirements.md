@@ -6,7 +6,7 @@ Last updated: 2026-05-27
 
 Build a local-first automation helper that reduces monthly manual entry in the existing personal wealth tracker workbook while keeping the workbook as the source of truth.
 
-The product is a monthly tracker workbook updater, not a personal finance ledger. It proposes safe monthly updates from statement evidence, produces review artifacts, learns only from explicit review decisions, and writes only to copied workbooks.
+The product is a monthly tracker workbook updater, not a personal finance ledger. It proposes safe monthly updates from statement evidence, produces review artifacts, learns only from explicit review decisions, and writes into the tracker workbook only after a backup.
 
 ## Current MVP Scope
 
@@ -27,7 +27,7 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - Support private local rule overlays in ignored `config/rules.local.yaml`.
 - Support private proxy split rules that split one intermediary transfer into allocation lines plus optional residual review lines.
 - Plan workbook value updates and structure changes before writing.
-- In commit mode, create backups and write eligible changes only to copied workbooks under `data/processed/`.
+- In commit mode, create a backup under `data/backups/`, then write eligible changes into the tracker in place (ADR 0007).
 - Keep the original tracker workbook unchanged.
 
 ## Workbook Safety Requirements

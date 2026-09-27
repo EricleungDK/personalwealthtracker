@@ -19,7 +19,7 @@ Last updated: 2026-09-26
 13. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
 14. `workbook.py` plans missing registered leaf rows at the end of their parent SUM section; `row_insertion.py` inserts them formula-aware and fails closed on a structural and numeric before/after check (ADR 0006).
 15. `reporting.py` writes report, audit, categorized CSV, review CSV, and review XLSX outputs with the statement parser name.
-16. Commit mode creates a backup and writes eligible updates to a copied workbook only.
+16. Commit mode creates a backup and writes eligible updates into the tracker in place, recording them in the Commit Ledger (ADR 0007).
 
 ## Parser Design
 
@@ -48,7 +48,7 @@ Workbook updates are planned before writing. A planned value update becomes writ
 - the target cell is not a formula.
 - all included transactions have high-confidence deterministic category matches.
 
-Reviewed `new_parent_category` and `new_leaf_category` values create a category-registry update, not a financial workbook value write. If the new leaf is missing from the workbook, dry-run reports an `insert_leaf_category` structure change. Planning applies structure changes in order to the in-memory workbook so update rows are final; commit replays them only on a copied workbook. Unsupported parent formula shapes or a failed safety check keep the change in review.
+Reviewed `new_parent_category` and `new_leaf_category` values create a category-registry update, not a financial workbook value write. If the new leaf is missing from the workbook, dry-run reports an `insert_leaf_category` structure change. Planning applies structure changes in order to the in-memory workbook so update rows are final; commit replays them on the tracker after a backup. Unsupported parent formula shapes or a failed safety check keep the change in review.
 
 Commit mode writes only planned updates whose action is `write`.
 
@@ -66,7 +66,7 @@ Commit mode writes only planned updates whose action is `write`.
 - Workbook writing should use the converted DKK value only; conversion-rate metadata belongs in reports/audit logs for now.
 - Workbook cleanup tasks such as currency label correction should remain separate from monthly planning and commit mode.
 - Missing period-column creation should be a dedicated writer capability with tests for formulas, formatting, merged year headers, and section structure preservation.
-- Period-column creation should be planned and reported in dry-run before commit mode applies the structure change to a copied workbook.
+- Period-column creation should be planned and reported in dry-run before commit mode applies the structure change to the tracker (after a backup).
 - Period-column creation should copy formulas, styles, widths, and relevant structure from the immediately previous period column and report that source in dry-run.
 - Year-block creation should copy the prior year/month structure as a full 12-month block only when headers and period layout are unambiguous; otherwise the dry-run should stop for review.
 - Period/year creation should clear ordinary copied non-formula values while preserving formulas, styles, widths, merged headers, and other required structure.

@@ -38,7 +38,7 @@ uv run wealth-tracker monthly
 uv run wealth-tracker monthly --dry-run
 ```
 
-`monthly` takes the newest CSV in `data/raw_statements/`, infers the month from its row dates, and runs categorisation, the two local model voters and the Trust Policy against `Net Worth Tracker.xlsx`. With zero rows in review it commits the month to a copied workbook; otherwise it writes the Exception Sheet `reports/review_required_<year>_<mon>.xlsx` and stops. Fill and save that sheet (blank accepts the suggestion, `NONE` rejects; a row without a suggestion needs a category or `NONE`) and re-run `monthly`; each run rewrites that one sheet with your decisions kept and the rows still open listed first, until the month commits. Blank rows in a sheet unchanged since the tool wrote it are not accepted. The summary prints auto rows, rows in review, pending amount and the next action. `--dry-run` writes the Exception Sheet and Audit preview but never the workbook, backup, Category Memory or category registry (new leaf requests are only listed in the report). Without a running local model the run still completes; unmatched rows become exceptions. Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-dir` and `--category-memory-dir`.
+`monthly` takes the newest CSV in `data/raw_statements/`, infers the month from its row dates, and runs categorisation, the two local model voters and the Trust Policy against `Net Worth Tracker.xlsx`. With zero rows in review it commits the month into `Net Worth Tracker.xlsx` in place, after a backup; otherwise it writes the Exception Sheet `reports/review_required_<year>_<mon>.xlsx` and stops. Fill and save that sheet (blank accepts the suggestion, `NONE` rejects; a row without a suggestion needs a category or `NONE`) and re-run `monthly`; each run rewrites that one sheet with your decisions kept and the rows still open listed first, until the month commits. Blank rows in a sheet unchanged since the tool wrote it are not accepted. The summary prints auto rows, rows in review, pending amount and the next action. `--dry-run` writes the Exception Sheet and Audit preview but never the workbook, backup, Category Memory or category registry (new leaf requests are only listed in the report). Without a running local model the run still completes; unmatched rows become exceptions. Override paths with `--tracker`, `--statements-dir`, `--config-dir`, `--output-dir` and `--category-memory-dir`.
 
 ## CSV-First Dry Run
 
@@ -156,7 +156,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the exception sheet (`review_required_<year>_<month>.xlsx`); fill it and re-run with `--review-decisions` to commit. With zero rows in review it creates a backup under `data/backups/` and writes the month only to a copied workbook under `data/processed/`, skipping formulas and fixed rows.
+Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the exception sheet (`review_required_<year>_<month>.xlsx`); fill it and re-run with `--review-decisions` to commit. With zero rows in review it creates a backup under `data/backups/` and writes the month into the tracker in place, skipping formulas, fixed rows and manual values (ADR 0007).
 
 ## Project Structure
 
