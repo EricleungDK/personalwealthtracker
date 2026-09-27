@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import replace
 from pathlib import Path
 
 from .categorizer import categorize_transactions
 from .category_memory import learn_committed_month, load_category_memory, load_reviewed_policy
+from .commit_ledger import load_committed_month, record_committed_month
 from .config import (
     load_config,
     pending_category_registry_additions,
@@ -31,6 +33,8 @@ from .workbook import (
     rows_in_review,
     workbook_category_options,
 )
+
+COMMIT_LEDGER_PATH = Path("data/commit_ledger.json")
 
 
 def run_pipeline(
@@ -106,7 +110,14 @@ def run_pipeline(
                 reviewed_policy=load_reviewed_policy(category_memory_dir),
             ),
         )
-    workbook_plan = plan_workbook_changes(tracker_path, categorized, year, month, config)
+    workbook_plan = plan_workbook_changes(
+        tracker_path,
+        categorized,
+        year,
+        month,
+        config,
+        committed=load_committed_month(COMMIT_LEDGER_PATH, year, month),
+    )
     updates = workbook_plan.updates
     structure_changes = workbook_plan.structure_changes
     mode = "commit" if commit else "dry-run"
@@ -114,14 +125,19 @@ def run_pipeline(
 
     output_workbook_path = None
     if commit and not review_count:
+        _ensure_writable(tracker_path)
         create_backup(tracker_path, Path("data/backups"))
-        output_workbook_path = commit_updates(
+        output_workbook_path = _replace_in_place(
             tracker_path,
-            updates,
-            config,
-            Path("data/processed"),
-            structure_changes=structure_changes,
+            commit_updates(
+                tracker_path,
+                updates,
+                config,
+                tracker_path.parent,
+                structure_changes=structure_changes,
+            ),
         )
+        record_committed_month(COMMIT_LEDGER_PATH, year, month, updates)
         persist_category_registry_additions(config_dir, category_registry_additions)
         learn_committed_month(
             category_memory_dir,
@@ -227,15 +243,21 @@ def exception_sheet_path(output_dir: Path, year: int, month: str) -> Path:
     return output_dir / f"review_required_{year}_{month.lower()}.xlsx"
 
 
-def _ensure_writable(exception_sheet: Path) -> None:
-    """Fail before any commit if the rewrite would fail, e.g. while Excel holds the sheet."""
+def _ensure_writable(path: Path) -> None:
+    """Fail before any commit if the rewrite would fail, e.g. while Excel holds the file."""
     try:
-        with exception_sheet.open("r+b"):
+        with path.open("r+b"):
             pass
     except OSError as exc:
         raise ValueError(
-            f"Cannot write {exception_sheet.name} ({exc}). Close it in Excel, then re-run."
+            f"Cannot write {path.name} ({exc}). Close it in Excel, then re-run."
         ) from exc
+
+
+def _replace_in_place(tracker_path: Path, updated_copy: Path) -> Path:
+    """Swap the updated sibling copy over the tracker so the next month builds on this one."""
+    os.replace(updated_copy, tracker_path)
+    return tracker_path
 
 
 def _changed_since_written(exception_sheet: Path) -> bool:
