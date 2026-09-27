@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import yaml
+
 from .category_memory import import_reviewed_decisions
 from .cleanup import run_currency_label_cleanup
 from .importer_profiles import (
@@ -36,15 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--year", required=True, type=int, help="Target tracker year.")
     parser.add_argument("--month", required=True, help="Target tracker month, e.g. Feb.")
     parser.add_argument("--config-dir", type=Path, default=Path("config"), help="Config directory.")
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path("reports"), help="Report output directory."
-    )
-    parser.add_argument(
-        "--category-memory-dir",
-        type=Path,
-        default=Path("data/category_memory"),
-        help="Private generated category memory directory.",
-    )
+    _add_profile_path_args(parser)
     parser.add_argument(
         "--review-decisions",
         type=Path,
@@ -76,25 +70,18 @@ def build_monthly_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--tracker",
         type=Path,
-        default=Path("Net Worth Tracker.xlsx"),
-        help="Path to the tracker workbook.",
+        help="Path to the tracker workbook (default: profile, else 'Net Worth Tracker.xlsx').",
     )
     parser.add_argument(
         "--statements-dir",
         type=Path,
-        default=Path("data/raw_statements"),
-        help="Raw statements folder; the newest CSV is used.",
+        help=(
+            "Raw statements folder; the newest CSV is used "
+            "(default: profile, else data/raw_statements)."
+        ),
     )
     parser.add_argument("--config-dir", type=Path, default=Path("config"), help="Config directory.")
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path("reports"), help="Report output directory."
-    )
-    parser.add_argument(
-        "--category-memory-dir",
-        type=Path,
-        default=Path("data/category_memory"),
-        help="Private generated category memory directory.",
-    )
+    _add_profile_path_args(parser)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -350,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "monthly":
         args = build_monthly_parser().parse_args(argv[1:])
         try:
+            _apply_profile_paths(args, MONTHLY_PROFILE_PATHS)
             result = run_monthly(
                 tracker_path=args.tracker,
                 statements_dir=args.statements_dir,
@@ -357,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 category_memory_dir=args.category_memory_dir,
                 dry_run=args.dry_run,
+                backups_dir=args.backups_dir,
+                processed_dir=args.processed_dir,
             )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
@@ -488,6 +478,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     try:
+        _apply_profile_paths(args, PROFILE_PATHS)
         result = run_pipeline(
             tracker_path=args.tracker,
             statement_path=args.statement,
@@ -500,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
             statement_format=args.statement_format,
             review_decisions_path=args.review_decisions,
             local_llm_suggestions=args.local_llm_suggestions,
+            backups_dir=args.backups_dir,
+            processed_dir=args.processed_dir,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -549,6 +542,68 @@ def _print_monthly_summary(result: RunResult, output_dir: Path) -> None:
         )
     else:
         print("Next action: re-run `wealth-tracker monthly` without --dry-run to commit.")
+
+
+DEFAULT_PROFILE = Path("profiles/default.local.yaml")
+
+# CLI dest -> (profile_paths key, fallback when neither flag nor profile sets it)
+PROFILE_PATHS = {
+    "output_dir": ("reports_dir", Path("reports")),
+    "category_memory_dir": ("category_memory_dir", Path("data/category_memory")),
+    "backups_dir": ("backups_dir", Path("data/backups")),
+    "processed_dir": ("processed_workbooks_dir", Path("data/processed")),
+}
+MONTHLY_PROFILE_PATHS = {
+    "tracker": ("tracker_workbook", Path("Net Worth Tracker.xlsx")),
+    "statements_dir": ("raw_statements_dir", Path("data/raw_statements")),
+    **PROFILE_PATHS,
+}
+
+
+def _add_profile_path_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--profile",
+        type=Path,
+        help=(
+            f"Profile whose profile_paths set the path defaults (default: {DEFAULT_PROFILE} "
+            "when it exists). Paths are relative to the workspace that holds profiles/."
+        ),
+    )
+    for flag, dest in (
+        ("--output-dir", "output_dir"),
+        ("--category-memory-dir", "category_memory_dir"),
+        ("--backups-dir", "backups_dir"),
+        ("--processed-dir", "processed_dir"),
+    ):
+        key, fallback = PROFILE_PATHS[dest]
+        parser.add_argument(
+            flag, dest=dest, type=Path, help=f"Default: profile {key}, else {fallback}."
+        )
+
+
+def _apply_profile_paths(
+    args: argparse.Namespace, defaults: dict[str, tuple[str, Path]]
+) -> None:
+    """Fill unset path flags: explicit flag, then profile, then built-in fallback."""
+    profile_paths = _load_profile_paths(args.profile)
+    for dest, (key, fallback) in defaults.items():
+        if getattr(args, dest) is None:
+            setattr(args, dest, profile_paths.get(key, fallback))
+
+
+def _load_profile_paths(profile: Path | None) -> dict[str, Path]:
+    if profile is None:
+        if not DEFAULT_PROFILE.exists():
+            return {}
+        profile = DEFAULT_PROFILE
+    elif not profile.exists():
+        raise ValueError(f"Profile not found: {profile}")
+    document = yaml.safe_load(profile.read_text(encoding="utf-8")) or {}
+    raw_paths = document.get("profile_paths") or {}
+    if not isinstance(raw_paths, dict):
+        raise ValueError(f"Profile {profile}: profile_paths must be a mapping.")
+    workspace = profile.parent.parent if profile.parent.name == "profiles" else profile.parent
+    return {key: workspace / str(value) for key, value in raw_paths.items()}
 
 
 def _parse_label_renames(raw_renames: list[str]) -> dict[str, str]:

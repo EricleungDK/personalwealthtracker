@@ -497,6 +497,58 @@ trust_policy:
 """
 
 
+def test_monthly_commits_backup_and_copy_to_chosen_dirs(tmp_path, monkeypatch, capsys):
+    _workspace(tmp_path, monkeypatch)
+    _statement(
+        tmp_path, "april.csv", "2026/04/01;-25,00;975,00;DKK;APPLE.COM/BILL;Card purchase;1;2;Yes\n"
+    )
+    _use_suggester(monkeypatch, FakeSuggester({}))
+
+    exit_code = main(["monthly", "--backups-dir", "out/bk", "--processed-dir", "out/proc"])
+
+    assert exit_code == 0
+    assert "Next action: none; month committed." in capsys.readouterr().out
+    assert list((tmp_path / "out" / "proc").glob("*.xlsx"))
+    assert list((tmp_path / "out" / "bk").glob("*.xlsx"))
+    assert not (tmp_path / "data" / "processed").exists()
+    assert not (tmp_path / "data" / "backups").exists()
+
+
+def test_monthly_uses_profile_paths_and_flags_override_them(tmp_path, monkeypatch, capsys):
+    _workspace(tmp_path, monkeypatch)
+    (tmp_path / "books").mkdir()
+    (tmp_path / "Net Worth Tracker.xlsx").rename(tmp_path / "books" / "tracker.xlsx")
+    statement = tmp_path / "stmts" / "april.csv"
+    statement.parent.mkdir()
+    statement.write_text(
+        CSV_HEADER + "2026/04/01;-25,00;975,00;DKK;APPLE.COM/BILL;Card purchase;1;2;Yes\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "profiles").mkdir()
+    _write(
+        tmp_path / "profiles" / "default.local.yaml",
+        """
+profile_paths:
+  tracker_workbook: "books/tracker.xlsx"
+  raw_statements_dir: "stmts"
+  reports_dir: "out/reports"
+  category_memory_dir: "out/memory"
+  processed_workbooks_dir: "out/proc"
+  backups_dir: "out/bk"
+""",
+    )
+    _use_suggester(monkeypatch, FakeSuggester({}))
+
+    exit_code = main(["monthly", "--processed-dir", "flag/proc"])
+
+    assert exit_code == 0
+    assert "Next action: none; month committed." in capsys.readouterr().out
+    assert list((tmp_path / "out" / "reports").glob("*.md"))
+    assert list((tmp_path / "out" / "bk").glob("*.xlsx"))
+    assert list((tmp_path / "flag" / "proc").glob("*.xlsx"))
+    assert not (tmp_path / "out" / "proc").exists()
+
+
 def _workspace(tmp_path: Path, monkeypatch, trust_policy: str = "") -> None:
     monkeypatch.chdir(tmp_path)
     workbook = Workbook()

@@ -305,3 +305,59 @@ def test_cli_reports_rows_in_review_and_exception_sheet(monkeypatch, tmp_path, c
     assert "Rows in review: 2" in output
     assert f"Exception sheet: {tmp_path / 'review_required_2026_apr.xlsx'}" in output
     assert "Output workbook" not in output
+
+
+def test_cli_passes_profile_and_flag_paths_to_pipeline(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_pipeline(**kwargs):
+        captured.update(kwargs)
+        return RunResult(
+            mode="dry-run",
+            target_year=2026,
+            target_month="Apr",
+            statement_parser="nordea-csv",
+            transactions=[],
+            categorized_transactions=[],
+            updates=[],
+            structure_changes=[],
+            report_path=tmp_path / "report.md",
+            audit_path=tmp_path / "audit.jsonl",
+            categorized_csv_path=tmp_path / "categorized.csv",
+            review_csv_path=tmp_path / "review.csv",
+        )
+
+    monkeypatch.setattr("personal_wealth_tracker.cli.run_pipeline", fake_run_pipeline)
+    monkeypatch.chdir(tmp_path)
+    profile = tmp_path / "ws" / "profiles" / "mine.local.yaml"
+    profile.parent.mkdir(parents=True)
+    profile.write_text(
+        'profile_paths:\n  reports_dir: "out/reports"\n  backups_dir: "out/bk"\n',
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--tracker", "tracker.xlsx", "--statement", "statement.csv",
+            "--year", "2026", "--month", "Apr",
+            "--profile", str(profile), "--processed-dir", "flag/proc",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["output_dir"] == tmp_path / "ws" / "out" / "reports"
+    assert captured["backups_dir"] == tmp_path / "ws" / "out" / "bk"
+    assert captured["processed_dir"] == Path("flag/proc")
+    assert captured["category_memory_dir"] == Path("data/category_memory")
+
+
+def test_cli_rejects_missing_explicit_profile(capsys):
+    exit_code = main(
+        [
+            "--tracker", "tracker.xlsx", "--statement", "statement.csv",
+            "--year", "2026", "--month", "Apr", "--profile", "missing.yaml",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Profile not found: missing.yaml" in capsys.readouterr().err
