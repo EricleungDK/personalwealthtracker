@@ -21,9 +21,27 @@ from .template_workbook import create_template_workbook, customize_template_work
 from .workbook import rows_in_review
 
 
+SUBCOMMANDS = (
+    ("monthly", "Main flow: categorise the newest statement and commit the month."),
+    ("learn-category-memory", "Import reviewed decisions into Category Memory by hand."),
+    ("cleanup-currency-labels", "One-off workbook currency label cleanup."),
+    ("import-statement", "Review artifact for an unknown statement format."),
+    ("importer-profile", "Learn, export or reset private Importer Profiles."),
+    ("template-workbook", "Create or customize the synthetic Template Workbook."),
+    ("setup", "Initialize a local workspace from the public template."),
+)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Update a personal wealth tracker from a statement."
+        prog="wealth-tracker",
+        description=(
+            "Update a personal wealth tracker from a statement. Without a subcommand this "
+            "runs one explicit month (the per-month command below)."
+        ),
+        epilog="subcommands (run `wealth-tracker <subcommand> --help`):\n"
+        + "\n".join(f"  {name:<25}{summary}" for name, summary in SUBCOMMANDS),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--tracker", required=True, type=Path, help="Path to the tracker workbook.")
     parser.add_argument(
@@ -47,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--local-llm-suggestions",
         action="store_true",
-        help="Explicitly enable local Ollama/Gemma review-only category suggestions.",
+        help="Ask the two local Ollama models (Consensus); `monthly` always does.",
     )
     parser.add_argument(
         "--commit",
@@ -62,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def build_monthly_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker monthly",
         description=(
             "Categorise the newest statement export for its month; commit when no rows "
             "remain in review, otherwise write the Exception Sheet."
@@ -92,6 +111,7 @@ def build_monthly_parser() -> argparse.ArgumentParser:
 
 def build_category_memory_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker learn-category-memory",
         description="Import confirmed reviewed decisions into category memory."
     )
     parser.add_argument(
@@ -117,6 +137,7 @@ def build_category_memory_parser() -> argparse.ArgumentParser:
 
 def build_cleanup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker cleanup-currency-labels",
         description="Run one-off tracker workbook cleanup tasks."
     )
     parser.add_argument("--tracker", required=True, type=Path, help="Path to the tracker workbook.")
@@ -141,6 +162,7 @@ def build_cleanup_parser() -> argparse.ArgumentParser:
 
 def build_import_statement_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker import-statement",
         description="Create a review artifact for an unknown statement format."
     )
     parser.add_argument(
@@ -182,6 +204,7 @@ def build_import_statement_parser() -> argparse.ArgumentParser:
 
 def build_importer_profile_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker importer-profile",
         description="Manage private local Importer Profiles."
     )
     subparsers = parser.add_subparsers(dest="profile_command", required=True)
@@ -229,6 +252,7 @@ def build_importer_profile_parser() -> argparse.ArgumentParser:
 
 def build_template_workbook_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker template-workbook",
         description="Create the public synthetic Template Workbook."
     )
     subparsers = parser.add_subparsers(dest="template_command", required=True)
@@ -291,6 +315,7 @@ def build_template_workbook_parser() -> argparse.ArgumentParser:
 
 def build_setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker setup",
         description="Initialize a local workspace from the public template."
     )
     parser.add_argument(
