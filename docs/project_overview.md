@@ -1,12 +1,12 @@
 # Project Overview
 
-This page is the non-technical map of PersonalWorthTracker (GitHub repo `personalwealthtracker`, Python package `personal-wealth-tracker`, command `wealth-tracker`). It explains what lives where, how a monthly run moves through the project, and which files are scripts, components, or documentation.
+This page is the non-technical map of Personal Wealth Tracker (GitHub repo `personalwealthtracker`, Python package `personal-wealth-tracker`, command `wealth-tracker`). It explains what lives where, how a monthly run moves through the project, and which files are scripts, components, or documentation.
 
 For the step-by-step monthly checklist, use [monthly_workflow.md](monthly_workflow.md). For the public setup, synthetic examples, adapter contracts, and v1 non-goals, use [docs/public_package_workflow.md](public_package_workflow.md), the Public Package Workflow.
 
 ## What The Project Does
 
-PersonalWorthTracker is a local command-line helper for updating a personal Excel wealth tracker. The main entry point is `wealth-tracker monthly`: it reads the newest Nordea CSV, infers the month, categorizes every transaction (deterministic tiers first, then two local models voting), decides per row whether it may be written without you (`auto`) or needs a decision (`review`), and writes a copied workbook only when nothing is left in review. Otherwise it writes one Exception Sheet for you to fill. Nothing leaves the machine.
+Personal Wealth Tracker is a local command-line helper for updating a personal Excel wealth tracker. The main entry point is `wealth-tracker monthly`: it reads the newest Nordea CSV, infers the month, categorizes every transaction (deterministic tiers first, then two local models voting), decides per row whether it may be written without you (`auto`) or needs a decision (`review`), and writes a copied workbook only when nothing is left in review. Otherwise it writes one Exception Sheet for you to fill. Nothing leaves the machine.
 
 The original tracker workbook, real bank statements, generated reports, category memory, backups, and processed workbooks stay local and ignored by Git.
 

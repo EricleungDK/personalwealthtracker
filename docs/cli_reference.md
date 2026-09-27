@@ -6,15 +6,15 @@ Nordea CSV is the preferred bank cashflow input because it includes merchant-ric
 
 Real CSV exports are ignored by Git and must not be committed. Keep them under an ignored local path such as `data/raw_statements/` or pass any other ignored local path to `--statement`.
 
-All default paths are relative to the directory you run the command from.
+All default paths are relative to the directory you run the command from. For `monthly` and the per-month command, path defaults come from the profile's `profile_paths` first (`--profile`, default `profiles/default.local.yaml` when it exists; its paths are relative to the workspace that holds `profiles/`); an explicit flag always wins.
 
 ## Command Summary
 
 | Command | Flags (default) |
 | --- | --- |
 | `setup` | `--workspace` (`.`), `--tracker-currency` (`DKK`), `--start-year` (`2026`), `--force`, `--reports-dir`, `--category-memory-dir`, `--importer-profiles-dir` |
-| `monthly` | `--tracker` (`Net Worth Tracker.xlsx`), `--statements-dir` (`data/raw_statements`), `--config-dir` (`config`), `--output-dir` (`reports`), `--category-memory-dir` (`data/category_memory`), `--dry-run` |
-| per-month (no subcommand) | required `--tracker`, `--statement`, `--year`, `--month`; `--statement-format` (`auto` \| `nordea-csv` \| `nordea-pdf`), `--config-dir`, `--output-dir`, `--category-memory-dir` (as `monthly`), `--review-decisions`, `--local-llm-suggestions`, `--commit` |
+| `monthly` | `--tracker` (`Net Worth Tracker.xlsx`), `--statements-dir` (`data/raw_statements`), `--config-dir` (`config`), `--profile`, `--output-dir` (`reports`), `--category-memory-dir` (`data/category_memory`), `--backups-dir` (`data/backups`), `--processed-dir` (`data/processed`), `--dry-run` |
+| per-month (no subcommand) | required `--tracker`, `--statement`, `--year`, `--month`; `--statement-format` (`auto` \| `nordea-csv` \| `nordea-pdf`), `--config-dir`, `--profile`, `--output-dir`, `--category-memory-dir`, `--backups-dir`, `--processed-dir` (as `monthly`), `--review-decisions`, `--local-llm-suggestions`, `--commit` |
 | `learn-category-memory` | required `--decisions`; `--memory-dir` (`data/category_memory`), `--config-dir` (`config`) |
 | `cleanup-currency-labels` | required `--tracker`; `--tracker-currency` (`DKK`), `--output-dir` (`reports`), `--commit` |
 | `import-statement` | required `--statement`, `--year`, `--month`; `--tracker-currency` (`DKK`), `--output-dir` (`reports`), `--local-model`, `--importer-profiles-dir` (`data/importer_profiles`), `--importer-profile` |
@@ -24,7 +24,7 @@ All default paths are relative to the directory you run the command from.
 | `template-workbook create` | required `--output`; `--tracker-currency` (`DKK`), `--start-year` (`2026`), `--sheet-name` (`Net worth`) |
 | `template-workbook customize` | required `--template`, `--output`; `--tracker-currency`, `--rename OLD=NEW` (repeatable) |
 
-The per-month command and `cleanup-currency-labels` are dry runs unless `--commit` is given; `monthly` commits by default (only when nothing is in review) and `--dry-run` previews. `uv run wealth-tracker <command> --help` prints one command's flags; plain `wealth-tracker --help` shows only the per-month command.
+The per-month command and `cleanup-currency-labels` are dry runs unless `--commit` is given; `monthly` commits by default (only when nothing is in review) and `--dry-run` previews. `uv run wealth-tracker <command> --help` prints one command's flags; plain `wealth-tracker --help` shows the per-month command's flags plus the list of subcommands.
 
 ## Template Workbook
 
@@ -176,7 +176,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the Exception Sheet (`review_required_<year>_<mon>.xlsx`, e.g. `review_required_2026_apr.xlsx`); fill it and re-run with `--review-decisions` pointing at it to commit. The per-month command then writes its refreshed sheet to `review_required_<year>_<mon>_after_decisions.xlsx` instead of overwriting yours. With zero rows in review it creates a backup under `data/backups/`, writes the month only to a copied workbook under `data/processed/` (skipping formulas and fixed rows), adds any new leaves to `config/categories.yaml`, and learns Category Memory.
+Commit mode is an Atomic Month Commit: when any row is still in review it writes no workbook and leaves the Exception Sheet (`review_required_<year>_<mon>.xlsx`, e.g. `review_required_2026_apr.xlsx`); fill it and re-run with `--review-decisions` pointing at it to commit. The per-month command then writes its refreshed sheet to `review_required_<year>_<mon>_after_decisions.xlsx` instead of overwriting yours. With zero rows in review it creates a backup under `data/backups/` (`--backups-dir`), writes the month only to a copied workbook under `data/processed/` (`--processed-dir`) (skipping formulas and fixed rows), adds any new leaves to `config/categories.yaml`, and learns Category Memory.
 
 ## Project Structure
 

@@ -65,6 +65,7 @@ The product decisions that are in force, grouped by topic. Each line gives the r
 - The public shape is a local wealth-tracker agent: a Python CLI, a synthetic template workbook, synthetic examples, sample config and optional local models (2026-06-07, ISSUE-031 to ISSUE-040).
 - Template customization is limited to known dimensions: categories, section labels, periods, currencies and profile paths. Arbitrary formulas and layouts are out of scope (2026-06-07).
 - Unknown statement formats go through the Statement Import Assistant and stay untrusted until reviewed. A confirmed import can create a private Importer Profile that suggests Educated Import Guesses later (2026-06-07).
+- `profiles/<name>.local.yaml` `profile_paths` supply path defaults for `monthly` and the per-month command. The order is: explicit flag, then profile, then built-in default. Profile paths are relative to the workspace that holds `profiles/` (2026-09-27).
 - This repo incubates the package. The public/private split comes later (2026-06-07).
 
 ## Investments (planned, not built)
