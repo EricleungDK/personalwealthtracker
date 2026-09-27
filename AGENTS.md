@@ -6,7 +6,7 @@ Project-specific guidance for coding agents working in `personalwealthtracker` (
 
 - This repository contains an implemented MVP Python CLI for local-first monthly tracker workbook updates.
 - Product requirements, architecture notes, data contracts, and domain language live under `.agent/System/`.
-- The main workflow is `wealth-tracker monthly`: newest Nordea CSV → categorization → two-model local Consensus → per-row Trust Policy authority → one Exception Sheet per month → atomic commit to a copied workbook, with Category Memory learned on commit. PDF input and the per-month flags command remain. See `docs/monthly_workflow.md`, `docs/cli_reference.md`, and ADRs in `docs/adr/`.
+- The main workflow is `wealth-tracker monthly`: newest Nordea CSV → categorization → two-model local Consensus → per-row Trust Policy authority → one Exception Sheet per month → atomic in-place commit after a backup (ADR 0007), with Category Memory learned on commit. PDF input and the per-month flags command remain. See `docs/monthly_workflow.md`, `docs/cli_reference.md`, and ADRs in `docs/adr/`.
 - Real financial inputs, generated outputs, local category memory, and local agent tooling must stay out of Git.
 
 ## Repository Discovery

@@ -443,7 +443,7 @@ def test_pipeline_dry_run_reports_missing_period_creation_without_changing_workb
     assert "create_period: Apr 2026" in report
 
 
-def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
+def test_pipeline_commit_updates_tracker_in_place_after_backup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     tracker = tmp_path / "tracker.xlsx"
     config_dir = tmp_path / "config"
@@ -460,24 +460,136 @@ def test_pipeline_commit_writes_only_to_copied_workbook(tmp_path, monkeypatch):
         commit=True,
     )
 
-    original = load_workbook(tracker)
-    copied = load_workbook(result.output_workbook_path)
+    assert result.output_workbook_path == tracker
+    [backup_path] = (tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx")
+    updated = load_workbook(tracker)
+    backup = load_workbook(backup_path)
     try:
-        original_sheet = original["Net worth"]
-        copied_sheet = copied["Net worth"]
-        assert original_sheet["C5"].value is None
-        assert original_sheet["C6"].value is None
-        assert original_sheet["C7"].value is None
-        assert copied_sheet["C5"].value == 25
-        assert copied_sheet["C6"].value == 10000
-        assert copied_sheet["C7"].value == 86.1
+        assert [updated["Net worth"][cell].value for cell in ("C5", "C6", "C7")] == [
+            25,
+            10000,
+            86.1,
+        ]
+        assert [backup["Net worth"][cell].value for cell in ("C5", "C6", "C7")] == [
+            None,
+            None,
+            None,
+        ]
     finally:
-        original.close()
-        copied.close()
+        updated.close()
+        backup.close()
 
     assert result.mode == "commit"
     assert result.review_count == 0
-    assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
+    assert not (tmp_path / "data" / "processed").exists()
+
+
+def test_consecutive_month_commits_accumulate_in_one_tracker(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+
+    def consensus():
+        votes = {"NOODLE BAR": ScriptedVote("Traveling", 0.9)}
+        return ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b"))
+
+    for month in ("Apr", "May"):
+        committed = _run_month(
+            tmp_path,
+            tracker,
+            config_dir,
+            month,
+            ["NOODLE BAR"],
+            commit=True,
+            local_llm_suggestions=True,
+            suggester=consensus(),
+        )
+        assert committed.output_workbook_path == tracker
+
+    workbook = load_workbook(tracker)
+    try:
+        assert workbook["Net worth"]["C7"].value == 40
+        assert workbook["Net worth"]["D7"].value == 40
+    finally:
+        workbook.close()
+
+
+def _noodle_consensus(category: str):
+    votes = {"NOODLE BAR": ScriptedVote(category, 0.9)}
+    return ConsensusSuggester(FakeSuggester(votes, "a"), FakeSuggester(votes, "b"))
+
+
+def _commit_noodle_april(tmp_path, tracker, config_dir, category: str):
+    return _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["NOODLE BAR"],
+        commit=True,
+        local_llm_suggestions=True,
+        suggester=_noodle_consensus(category),
+    )
+
+
+def test_recommitting_a_month_overwrites_its_own_values(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr",))
+    _create_category_registry_config(config_dir)
+    _commit_noodle_april(tmp_path, tracker, config_dir, "Traveling")
+
+    rerun = _commit_noodle_april(tmp_path, tracker, config_dir, "Traveling")
+
+    assert rerun.review_count == 0
+    assert rerun.output_workbook_path == tracker
+    workbook = load_workbook(tracker)
+    try:
+        assert workbook["Net worth"]["C7"].value == 40
+    finally:
+        workbook.close()
+
+
+def test_recommit_with_changed_category_clears_stale_committed_value(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr",))
+    _create_category_registry_config(config_dir)
+    _commit_noodle_april(tmp_path, tracker, config_dir, "Traveling")
+
+    rerun = _commit_noodle_april(tmp_path, tracker, config_dir, "Apple Cloud")
+
+    assert rerun.output_workbook_path == tracker
+    workbook = load_workbook(tracker)
+    try:
+        assert workbook["Net worth"]["C5"].value == 40
+        assert workbook["Net worth"]["C7"].value is None
+    finally:
+        workbook.close()
+
+
+def test_recommit_keeps_cell_the_user_edited_after_commit_in_review(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr",))
+    _create_category_registry_config(config_dir)
+    _commit_noodle_april(tmp_path, tracker, config_dir, "Traveling")
+    _set_workbook_label(tracker, "C7", 55)
+
+    rerun = _commit_noodle_april(tmp_path, tracker, config_dir, "Traveling")
+
+    assert rerun.review_count == 1
+    assert rerun.output_workbook_path is None
+    workbook = load_workbook(tracker)
+    try:
+        assert workbook["Net worth"]["C7"].value == 55
+    finally:
+        workbook.close()
 
 
 def test_commit_never_writes_partial_month(tmp_path, monkeypatch):
@@ -653,16 +765,13 @@ def test_rerun_with_filled_exception_sheet_commits_month_totals(tmp_path, monkey
     )
     assert rejected.suggested_category is None
     assert rejected.review_required is False
-    original = load_workbook(tracker)
-    copied = load_workbook(result.output_workbook_path)
+    assert result.output_workbook_path == tracker
+    updated = load_workbook(tracker)
     try:
-        assert original["Net worth"]["C5"].value is None
-        assert original["Net worth"]["C7"].value is None
-        assert copied["Net worth"]["C5"].value == 7.5
-        assert copied["Net worth"]["C7"].value == 40
+        assert updated["Net worth"]["C5"].value == 7.5
+        assert updated["Net worth"]["C7"].value == 40
     finally:
-        original.close()
-        copied.close()
+        updated.close()
     assert list((tmp_path / "data" / "backups").glob("tracker_backup_*.xlsx"))
 
 
@@ -736,6 +845,51 @@ def test_committed_human_decision_is_auto_next_month_via_memory(tmp_path, monkey
     assert row.suggested_category == "Traveling"
     assert row.categorization_method == "category_memory"
     assert row.authority is Authority.auto
+
+
+def test_all_digit_description_is_never_learned_as_empty_merchant(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["3084302062152494"], commit=True)
+    _fill_exception_sheet(first.review_xlsx_path, {"3084302062152494": "Traveling"})
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["3084302062152494"],
+        commit=True,
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert committed.output_workbook_path is not None
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["9999888877776666"])
+
+    assert next_month.categorized_transactions[0].categorization_method != "category_memory"
+    memory = tmp_path / "data" / "category_memory" / "category_memory.json"
+    assert '"merchant_identity": ""' not in memory.read_text(encoding="utf-8")
+
+
+def test_legacy_empty_merchant_memory_entry_never_matches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("May",))
+    _create_category_registry_config(config_dir)
+    memory_dir = tmp_path / "data" / "category_memory"
+    memory_dir.mkdir(parents=True)
+    _write(
+        memory_dir / "category_memory.json",
+        '{"mappings": [{"category": "Traveling", "merchant_identity": "", '
+        '"provenance": "human", "source_transaction_ids": ["legacy"]}]}',
+    )
+
+    result = _run_month(tmp_path, tracker, config_dir, "May", ["9999888877776666"])
+
+    assert result.categorized_transactions[0].categorization_method != "category_memory"
 
 
 def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_only(

@@ -184,6 +184,8 @@ def _observe_auto_mapping(
     committed_month: str,
 ) -> None:
     """Count a committed month for a consensus result; a changed category starts over."""
+    if not merchant_identity:
+        return
     merchant_mappings = [
         mapping for mapping in mappings if mapping["merchant_identity"] == merchant_identity
     ]
@@ -252,6 +254,8 @@ def match_category_memory(
     transaction: Transaction, memory: CategoryMemory
 ) -> CategoryMemoryMapping | None:
     merchant_identity = normalize_merchant_identity(transaction.description)
+    if not merchant_identity:
+        return None
     for mapping in memory.mappings:
         if mapping.trusted and mapping.merchant_identity == merchant_identity:
             if mapping.recurring_hint and not _matches_recurring_hint(
@@ -617,6 +621,8 @@ def _manual_guidance(path: Path) -> str:
 
 
 def _upsert_mapping(mappings: list[dict[str, object]], new_mapping: dict[str, object]) -> None:
+    if not new_mapping.get("merchant_identity"):
+        return  # an all-digit description has no merchant to remember
     for index, existing in enumerate(mappings):
         if existing.get("merchant_identity") != new_mapping.get("merchant_identity"):
             continue

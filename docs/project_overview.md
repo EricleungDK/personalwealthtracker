@@ -6,7 +6,7 @@ For the step-by-step monthly checklist, use [monthly_workflow.md](monthly_workfl
 
 ## What The Project Does
 
-Personal Wealth Tracker is a local command-line helper for updating a personal Excel wealth tracker. The main entry point is `wealth-tracker monthly`: it reads the newest Nordea CSV, infers the month, categorizes every transaction (deterministic tiers first, then two local models voting), decides per row whether it may be written without you (`auto`) or needs a decision (`review`), and writes a copied workbook only when nothing is left in review. Otherwise it writes one Exception Sheet for you to fill. Nothing leaves the machine.
+Personal Wealth Tracker is a local command-line helper for updating a personal Excel wealth tracker. The main entry point is `wealth-tracker monthly`: it reads the newest Nordea CSV, infers the month, categorizes every transaction (deterministic tiers first, then two local models voting), decides per row whether it may be written without you (`auto`) or needs a decision (`review`), and, only when nothing is left in review, backs up the tracker and writes the month into it in place. Otherwise it writes one Exception Sheet for you to fill. Nothing leaves the machine.
 
 The original tracker workbook, real bank statements, generated reports, category memory, backups, and processed workbooks stay local and ignored by Git.
 
@@ -25,7 +25,7 @@ flowchart TD
   LocalFiles["Local personal files<br/>ignored by Git"] --> Inputs["Net Worth Tracker.xlsx<br/>Nordea CSV or PDF statements"]
   Inputs --> CLI["wealth-tracker<br/>terminal command"]
   CLI --> Source["src/personal_wealth_tracker<br/>project code"]
-  Source --> Outputs["reports and copied workbooks<br/>ignored by Git"]
+  Source --> Outputs["reports, backups and Commit Ledger<br/>ignored by Git"]
 
   Config["config<br/>public categories and rules"] --> Source
   Docs["docs<br/>operator docs and project maps"] --> User["You or an agent"]
@@ -60,7 +60,7 @@ flowchart LR
   Planner -->|"rows in review"| Sheet["Exception Sheet<br/>review_required_YYYY_mon.xlsx"]
   Sheet --> Decisions["Monthly Review Decisions<br/>blank accepts, NONE rejects"]
   Decisions --> Policy
-  Planner -->|"zero rows in review"| Commit["Atomic Month Commit<br/>backup plus copied workbook"]
+  Planner -->|"zero rows in review"| Commit["Atomic Month Commit<br/>backup, then tracker updated in place"]
   Commit --> Registry["Category Registry<br/>new leaves added on commit"]
   Commit --> Memory["Category Memory<br/>learned on commit: human now, auto after two months"]
   Memory --> Rules
@@ -70,14 +70,14 @@ The important split is:
 
 - `monthly` commits by default; `--dry-run` plans and reports only and writes no memory, registry, or workbook.
 - The Trust Policy gives every row one Authority. `auto` needs a deterministic match or two agreeing local models, an amount within the cap (1000 DKK), and a category outside the never-auto list ([ADR 0001](adr/0001-per-row-authority.md), [ADR 0002](adr/0002-local-two-model-consensus.md)).
-- The copied workbook is written only when zero rows remain in review, so it never holds a partial month ([ADR 0003](adr/0003-blank-means-accept-atomic-month-commit.md)).
+- The tracker is written only when zero rows remain in review, so it never holds a partial month ([ADR 0003](adr/0003-blank-means-accept-atomic-month-commit.md)).
 - Monthly Review Decisions fix specific transactions for the selected month. Each re-run rewrites the one Exception Sheet and carries earlier decisions forward.
 - The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added. New leaves reach it only with a commit; the workbook row is inserted formula-aware ([ADR 0006](adr/0006-formula-aware-leaf-row-insertion.md)).
 - Category Memory learns committed decisions (`human`) and consensus results (`auto`, trusted after two committed months) for future months ([ADR 0004](adr/0004-memory-learned-on-commit-with-provenance.md)).
 - Guidance Aliases in ignored `config/guidance_aliases.local.yaml` map hand-written merchant patterns to leaves, right after `human` memory.
 - Proxy Split Transfer rules in ignored `rules.local.yaml` can split one intermediary transfer into fixed allocation lines plus an optional Residual Review Line.
 - Local LLM Mode: always on in `monthly`; opt-in `--local-llm-suggestions` in the per-month command. It uses local Ollama/Gemma review suggestions and reuses existing review workbook suggestion fields; a row reaches `auto` only through Consensus. Hosted models are not used ([ADR 0005](adr/0005-hosted-judgment-deferred.md)).
-- Commit mode writes only safe values into a copied workbook under `data/processed/`.
+- Commit mode backs up the tracker, then writes only safe values into it in place ([ADR 0007](adr/0007-commit-in-place-with-commit-ledger.md)).
 
 ## Main Components
 
@@ -134,7 +134,7 @@ flowchart TD
   Update --> ReviewCsv["review_required_<period>.csv<br/>simple review queue"]
   Update --> ReviewXlsx["review_required_<period>.xlsx<br/>Excel review workbook"]
   Update --> Audit["audit_<period>.jsonl<br/>machine-readable trace"]
-  Update --> CopiedWorkbook["data/processed workbook<br/>only in commit mode"]
+  Update --> CopiedWorkbook["tracker workbook in place<br/>only in commit mode"]
 ```
 
 Use the files this way:
@@ -181,12 +181,13 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Leaf Category Row: A workbook row under a parent section that can receive source-backed transaction totals, manual review decisions, and Category Memory learning.
 - Category Registry: The YAML category source in `config/categories.yaml` that records parent, leaf, derived, alias, and allowed-new-child rules.
 - Dry run: A run that plans and reports but does not write workbook values, Category Memory, or the Category Registry.
-- Commit mode: The default for `monthly`, `--commit` for the per-month command; it writes only to a copied workbook, and only when zero rows remain in review (Atomic Month Commit).
+- Commit mode: The default for `monthly`, `--commit` for the per-month command; it backs up the tracker and writes into it in place, and only when zero rows remain in review (Atomic Month Commit).
 - Authority: Per-row `auto` (may be written without you) or `review` (needs a decision), set by the Trust Policy.
 - Consensus: Two local models vote on a row; agreement can earn `auto` under the Trust Policy.
 - Exception Sheet: The `Review Required` sheet of the review workbook, listing only rows in review; one per month.
 - Audit sheet: The `Audit` sheet of the review workbook, listing every `auto` row with source, votes, and reason, and a `corrected_category` column.
 - Guidance Alias: A private hand-written merchant pattern to leaf mapping in `config/guidance_aliases.local.yaml`.
+- Commit Ledger: `data/commit_ledger.json`, the amounts each committed month wrote, so a re-commit replaces only its own values.
 - Review workbook: The Excel file where you choose `manual_category` for existing leaf rows, `new_parent_category` and `new_leaf_category` for missing leaf rows, and optional `learn_to_memory`.
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
 - Category Memory: Private learned merchant/category choices for future runs, learned on commit with `human` or `auto` provenance.

@@ -1,6 +1,6 @@
 # Public Package Workflow
 
-This guide is the public-package path for using Personal Wealth Tracker without private financial data. It shows the install, setup, the one-command `monthly` run on synthetic examples, the per-month command, the unknown-format review flow, and learning.
+This guide is the public-package path for using Personal Wealth Tracker without private financial data. It shows the install, setup, the one-command `monthly` run on synthetic examples, the per-month command, the unknown-format review flow, learning, and the in-place workbook commit.
 
 For the privacy contract behind this guide, read the public/private boundary in [public_private_boundary.md](public_private_boundary.md).
 
@@ -63,7 +63,7 @@ cp examples/synthetic-nordea-transactions.csv data/raw_statements/
 uv run wealth-tracker monthly            # add --dry-run to preview only
 ```
 
-`monthly` takes the newest CSV, infers its month, and either commits the month to a copied workbook (when no rows are in review) or writes one Exception Sheet, `reports/review_required_<year>_<mon>.xlsx`. Fill and save it (blank accepts the suggestion, `NONE` rejects) and re-run until it commits. The full checklist is in [monthly_workflow.md](monthly_workflow.md).
+`monthly` takes the newest CSV, infers its month, and either commits the month into the workbook in place after a backup (when no rows are in review) or writes one Exception Sheet, `reports/review_required_<year>_<mon>.xlsx`. Fill and save it (blank accepts the suggestion, `NONE` rejects) and re-run until it commits. The full checklist is in [monthly_workflow.md](monthly_workflow.md).
 
 ## Per-Month Command (Trusted Statement Import)
 
@@ -95,9 +95,9 @@ uv run wealth-tracker learn-category-memory \
 
 Category Memory is local profile state. It is not a public fixture and must not be committed.
 
-## Commit To A Copied Workbook
+## Commit To The Workbook
 
-After dry-run review, use `--commit` (plus `--review-decisions` if you filled the sheet) to write the month to a copied workbook. Nothing is written while any row is still in review:
+After dry-run review, use `--commit` (plus `--review-decisions` if you filled the sheet) to write the month into the workbook. Nothing is written while any row is still in review:
 
 ```bash
 uv run wealth-tracker \
@@ -109,7 +109,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Commit mode creates a backup in `data/backups/` and the updated copy in `data/processed/`, both ignored. It never writes directly to the original workbook.
+Commit mode backs up the workbook to `data/backups/` and then updates it in place, so committed months accumulate. The Commit Ledger `data/commit_ledger.json` lets a re-commit replace only its own earlier values (ADR 0007).
 
 ## Unknown Statement Review
 

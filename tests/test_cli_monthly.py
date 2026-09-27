@@ -243,12 +243,11 @@ def test_monthly_rerun_after_saving_blank_exception_sheet_commits_suggestions(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Next action: none; month committed." in output
-    (copied_path,) = (tmp_path / "data" / "processed").glob("*.xlsx")
-    copied = load_workbook(copied_path)
+    tracker = load_workbook(tmp_path / "Net Worth Tracker.xlsx")
     try:
-        assert copied["Net worth"]["C6"].value == 2500
+        assert tracker["Net worth"]["C6"].value == 2500
     finally:
-        copied.close()
+        tracker.close()
 
 
 def test_monthly_rerun_after_filling_exception_sheet_commits_month(
@@ -292,13 +291,12 @@ def test_monthly_rerun_after_filling_exception_sheet_commits_month(
     assert exit_code == 0
     assert "Rows in review: 0" in output
     assert "Next action: none; month committed." in output
-    (copied_path,) = (tmp_path / "data" / "processed").glob("*.xlsx")
-    copied = load_workbook(copied_path)
+    tracker = load_workbook(tmp_path / "Net Worth Tracker.xlsx")
     try:
-        assert copied["Net worth"]["C5"].value == 7.5
-        assert copied["Net worth"]["C6"].value == 2542.5
+        assert tracker["Net worth"]["C5"].value == 7.5
+        assert tracker["Net worth"]["C6"].value == 2542.5
     finally:
-        copied.close()
+        tracker.close()
     assert list((tmp_path / "data" / "backups").glob("*.xlsx"))
 
 
@@ -350,13 +348,12 @@ def test_monthly_commits_after_filling_rest_of_rewritten_exception_sheet(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Next action: none; month committed." in output
-    (copied_path,) = (tmp_path / "data" / "processed").glob("*.xlsx")
-    copied = load_workbook(copied_path)
+    tracker = load_workbook(tmp_path / "Net Worth Tracker.xlsx")
     try:
-        assert copied["Net worth"]["C5"].value == 7.5
-        assert copied["Net worth"]["C6"].value == 4042.5
+        assert tracker["Net worth"]["C5"].value == 7.5
+        assert tracker["Net worth"]["C6"].value == 4042.5
     finally:
-        copied.close()
+        tracker.close()
     memory = "".join(
         path.read_text(encoding="utf-8")
         for path in (tmp_path / "data" / "category_memory").rglob("*")
@@ -451,12 +448,12 @@ def test_monthly_rewrite_keeps_audit_correction_on_audit_sheet(tmp_path, monkeyp
     finally:
         rewritten.close()
     assert audit_row["corrected_category"] == "Apple Cloud"
-    newest = max((tmp_path / "data" / "processed").glob("*.xlsx"), key=os.path.getmtime)
-    copied = load_workbook(newest)
+    tracker = load_workbook(tmp_path / "Net Worth Tracker.xlsx")
     try:
-        assert copied["Net worth"]["C5"].value == 42.5
+        assert tracker["Net worth"]["C5"].value == 42.5
+        assert tracker["Net worth"]["C6"].value is None
     finally:
-        copied.close()
+        tracker.close()
 
 
 def test_monthly_clearing_a_carried_decision_puts_the_row_back_in_review(
@@ -497,20 +494,18 @@ trust_policy:
 """
 
 
-def test_monthly_commits_backup_and_copy_to_chosen_dirs(tmp_path, monkeypatch, capsys):
+def test_monthly_commits_backup_to_chosen_dir(tmp_path, monkeypatch, capsys):
     _workspace(tmp_path, monkeypatch)
     _statement(
         tmp_path, "april.csv", "2026/04/01;-25,00;975,00;DKK;APPLE.COM/BILL;Card purchase;1;2;Yes\n"
     )
     _use_suggester(monkeypatch, FakeSuggester({}))
 
-    exit_code = main(["monthly", "--backups-dir", "out/bk", "--processed-dir", "out/proc"])
+    exit_code = main(["monthly", "--backups-dir", "out/bk"])
 
     assert exit_code == 0
     assert "Next action: none; month committed." in capsys.readouterr().out
-    assert list((tmp_path / "out" / "proc").glob("*.xlsx"))
     assert list((tmp_path / "out" / "bk").glob("*.xlsx"))
-    assert not (tmp_path / "data" / "processed").exists()
     assert not (tmp_path / "data" / "backups").exists()
 
 
@@ -532,22 +527,23 @@ profile_paths:
   tracker_workbook: "books/tracker.xlsx"
   raw_statements_dir: "stmts"
   reports_dir: "out/reports"
-  category_memory_dir: "out/memory"
-  processed_workbooks_dir: "out/proc"
   backups_dir: "out/bk"
 """,
     )
     _use_suggester(monkeypatch, FakeSuggester({}))
 
-    exit_code = main(["monthly", "--processed-dir", "flag/proc"])
+    exit_code = main(["monthly", "--backups-dir", "flag/bk"])
 
     assert exit_code == 0
     assert "Next action: none; month committed." in capsys.readouterr().out
     assert list((tmp_path / "out" / "reports").glob("*.md"))
-    assert list((tmp_path / "out" / "bk").glob("*.xlsx"))
-    assert list((tmp_path / "flag" / "proc").glob("*.xlsx"))
-    assert not (tmp_path / "out" / "proc").exists()
-
+    assert list((tmp_path / "flag" / "bk").glob("*.xlsx"))
+    assert not (tmp_path / "out" / "bk").exists()
+    committed = load_workbook(tmp_path / "books" / "tracker.xlsx")
+    try:
+        assert committed["Net worth"]["C5"].value == 25
+    finally:
+        committed.close()
 
 def _workspace(tmp_path: Path, monkeypatch, trust_policy: str = "") -> None:
     monkeypatch.chdir(tmp_path)
