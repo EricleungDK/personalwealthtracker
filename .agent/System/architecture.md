@@ -1,25 +1,28 @@
 # Architecture
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 ## Runtime Flow
 
-1. CLI receives tracker path, Nordea statement path, target year/month, config directory, output directory, statement-format selection, and optional commit flag.
-2. Config is loaded from YAML files in `config/`.
-3. `pipeline.py` routes the bank statement by `--statement-format`: `auto` infers `.csv` as `nordea-csv` and `.pdf` as `nordea-pdf`; explicit modes override extension inference.
-4. `nordea_csv.py` parses Nordea CSV exports into normalized bank transactions using merchant-rich fields for categorization and raw CSV fields for audit.
-5. `nordea_pdf.py` remains available as a fallback/legacy parser for Nordea PDFs with embedded text.
-6. The statement currency is validated against config before transactions are normalized.
-7. `categorizer.py` applies Category Memory first, then Guidance Aliases (`config/guidance_aliases.local.yaml`), historical mappings, recurring amount/date rules, and keyword rules.
-8. The pipeline rejects statements containing transactions outside the requested target month.
-9. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
-10. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
-11. Reviewed monthly decisions, when supplied, override categorization by exact transaction ID.
-12. Reviewed new leaf category requests validate against the YAML category registry and are registered in memory for workbook planning; `config/categories.yaml` gains them (minimal text insert with a description) only after the month commit succeeds (issue #19).
-13. `workbook.py` locates the `Net worth` sheet, target month column, and category rows.
-14. `workbook.py` plans missing registered leaf rows at the end of their parent SUM section; `row_insertion.py` inserts them formula-aware and fails closed on a structural and numeric before/after check (ADR 0006).
-15. `reporting.py` writes report, audit, categorized CSV, review CSV, and review XLSX outputs with the statement parser name.
-16. Commit mode creates a backup and writes eligible updates into the tracker in place, recording them in the Commit Ledger (ADR 0007).
+Entry points (`cli.py`): `wealth-tracker monthly` (default operator path, `pipeline.run_monthly`) and the per-month flags command (`--tracker --statement --year --month`, `pipeline.run_pipeline`). `monthly` picks the newest CSV in `data/raw_statements/`, infers the month from row dates, reuses `reports/review_required_<year>_<mon>.xlsx` as decisions when present, always asks the local Consensus, and commits unless `--dry-run`.
+
+1. Config is loaded from YAML files in `config/` (`config.py`), including the category registry, `trust_policy`, and `local_llm` settings.
+2. `statement_adapters.py` routes the bank statement by `--statement-format`: `auto` infers `.csv` as `nordea-csv` and `.pdf` as `nordea-pdf`; explicit modes override extension inference. Currency and target month are validated here; out-of-period rows block the run.
+3. `nordea_csv.py` parses Nordea CSV exports (both date formats) into normalized bank transactions using merchant-rich fields for categorization and raw CSV fields for audit.
+4. `nordea_pdf.py` remains available as a fallback/legacy parser for Nordea PDFs with embedded text.
+5. `categorizer.py` applies private proxy split rules to matching transfers, then per row Category Memory first, Guidance Aliases (`config/guidance_aliases.local.yaml`), historical mappings, recurring amount/date rules, and keyword rules.
+6. Refunds are assigned to the reporting month where they appear; prior workbook periods are not reopened automatically.
+7. Deterministic reimbursement/claim matches can map to existing workbook rows such as `Expense claims`; no separate offset model is introduced.
+8. Reviewed monthly decisions (the Exception Sheet, or `--review-decisions`) override categorization by exact transaction ID (`review_decisions.py`).
+9. Local model suggestions go through the Suggester port (`suggester.py`); `ConsensusSuggester` asks two local Ollama models (`local_llm.py`) and records their votes (ADR 0002).
+10. `trust_policy.py` stamps each row `auto` or `review` with a reason (ADR 0001), re-stamped after decisions and votes.
+11. Reviewed new leaf category requests validate against the YAML category registry and are registered in memory for workbook planning; `config/categories.yaml` gains them (minimal text insert with a description) only after the month commit succeeds (issue #19).
+12. `workbook.py` locates the `Net worth` sheet, target month column, and category rows, and plans value updates.
+13. `workbook.py` plans missing registered leaf rows at the end of their parent SUM section; `row_insertion.py` inserts them formula-aware and fails closed on a structural and numeric before/after check (ADR 0006).
+14. `reporting.py` writes report, JSONL audit, categorized CSV, review CSV, and the Exception Sheet XLSX (`Review Required` + `Audit`); `monthly` rewrites one sheet per month with decisions carried forward (issue #20).
+15. Atomic Month Commit (ADR 0003): only when zero rows are in review, commit creates a backup under `data/backups/`, writes eligible updates into the tracker in place (sibling save + `os.replace`), records them in the Commit Ledger `data/commit_ledger.json` (`commit_ledger.py`, ADR 0007), persists new leaves, and learns Category Memory with provenance (`category_memory.py`, ADR 0004). Otherwise nothing is written besides outputs.
+
+Supporting modules: `setup_workspace.py` (`setup`), `template_workbook.py` (`template-workbook`), `statement_import_assistant.py` (`import-statement`, untrusted unknown formats), `importer_profiles.py` (`importer-profile`), `cleanup.py` (`cleanup-currency-labels`, still writes a copy to `data/processed/`), `outbound_redaction.py` (unused hosted allowlist, ADR 0005), `models.py`, `utils.py`.
 
 ## Parser Design
 
@@ -40,21 +43,20 @@ Workbook updates are planned before writing. A planned value update becomes writ
 - the category row exists,
 - the category is a leaf category in the registry or otherwise allowed by compatibility rules,
 - the target month column exists,
-- all source transactions are high-confidence,
+- all source transactions have `auto` authority from the Trust Policy,
 - all parsed transactions belong to the requested target month,
 - the statement currency matches the configured tracker currency,
 - the category is not a protected fixed row,
 - the target cell is empty,
 - the target cell is not a formula.
-- all included transactions have high-confidence deterministic category matches.
 
 Reviewed `new_parent_category` and `new_leaf_category` values create a category-registry update, not a financial workbook value write. If the new leaf is missing from the workbook, dry-run reports an `insert_leaf_category` structure change. Planning applies structure changes in order to the in-memory workbook so update rows are final; commit replays them on the tracker after a backup. Unsupported parent formula shapes or a failed safety check keep the change in review.
 
-Commit mode writes only planned updates whose action is `write`.
+Commit mode writes only planned updates whose action is `write`, and only when no row or update is in review (Atomic Month Commit).
 
 ## Future Extension Points
 
-- Additional statement parsers can be added beside `nordea_pdf.py`.
+- Additional statement parsers can be added as Trusted Statement Adapters beside `nordea_csv.py` and `nordea_pdf.py`.
 - Investment account statement ingestion should use a separate contract for asset values or holdings rather than reusing Nordea bank transaction semantics.
 - Payroll/tax workbook rows should preserve existing formulas or manual workbook logic rather than infer payroll breakdowns from Nordea salary deposits.
 - Salary categorization may plan writes to `Full-time job (net)` from matched Nordea net salary deposits, but must not overwrite formulas/manual values or write derived payroll/tax rows.
@@ -75,14 +77,13 @@ Commit mode writes only planned updates whose action is `write`.
 - Investment workbook planning should map explicit holding values to individual asset rows; total-only values require a configured total row or review.
 - Digital asset rows should not be automated from bank or investment account statements unless a future dedicated valuation source is added.
 - Cross-source checks should report mismatches between related cashflow and investment evidence without changing the authority of either source outside its own evidence type.
-- Category memory is a private local store under `data/category_memory/`, populated only from confirmed review decisions and kept separate from `config/rules.local.yaml`; one confirmed decision can become a deterministic future match, but automatic workbook writes still require all writer safeguards.
+- Category memory is a private local store under `data/category_memory/`, kept separate from `config/rules.local.yaml`. It is learned on a successful month commit (dry run writes none): human decisions as `human`, consensus results as `auto`, which categorise only after two consistent committed months (ADR 0004). Automatic workbook writes still require all writer safeguards.
 - Category Memory learning validates targets against YAML leaf categories and skips parent, derived, missing, or non-leaf labels.
-- The learning workflow is a separate CLI path that imports a reviewed decision file into category memory, rather than prompting during monthly dry-run or commit execution.
-- Commit mode should not import category memory in the same command; changed category memory should be validated through a later dry run before workbook writing.
+- `learn-category-memory` remains a separate manual import path for reviewed workbooks.
 - Proxy split rules can be introduced as a deterministic categorization step for one source transaction that needs multiple category allocations. Concrete personal rules should be read from ignored local config, while tracked code validates that allocation targets are registry leaf categories, that the source amount covers all fixed allocations before splitting, and that recurring monthly split limits are not exceeded.
 - Bank API ingestion can feed the same normalized transaction model.
-- Local LLM classification is an explicit opt-in step for unmatched transactions and low-confidence deterministic suggestions that already require review.
-- Future Local LLM Mode should integrate with Ollama through its local HTTP API rather than shelling out to `ollama run`, so provider calls can be mocked, timed out, and validated as structured suggestions whose authority the Trust Policy decides.
+- Local LLM classification runs on every `monthly` run and with `--local-llm-suggestions` on the per-month command, for unmatched transactions and low-confidence deterministic suggestions; high-confidence deterministic matches are not replaced.
+- Local LLM Mode integrates with Ollama through its local HTTP API rather than shelling out to `ollama run`, so provider calls can be mocked, timed out, and validated as structured suggestions whose authority the Trust Policy decides.
 - Local LLM provider failures, timeouts, unavailable models, and invalid structured responses should not fail the monthly planning run. The run should keep the original deterministic or unmatched review state and report a warning.
 - Local LLM Mode runs Consensus: `gemma4:26b` (`model`) and `gemma4:12b` (`second_model`) each vote per row, with installed `qwen3:14b` as either voter's fallback model (ADR 0002). Category models sit behind the Suggester port; the Ollama adapter uses the chat API with a JSON schema of enum leaves plus `NONE`, temperature 0, keep-alive, and a 180-second cold-start timeout, and may retry the fallback model for a row when the primary model times out or fails.
 - Google Drive integration can wrap workbook download/upload while preserving the same writer safeguards.

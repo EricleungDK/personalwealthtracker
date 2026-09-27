@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import yaml
+
 from .category_memory import import_reviewed_decisions
 from .cleanup import run_currency_label_cleanup
 from .importer_profiles import (
@@ -19,9 +21,27 @@ from .template_workbook import create_template_workbook, customize_template_work
 from .workbook import rows_in_review
 
 
+SUBCOMMANDS = (
+    ("monthly", "Main flow: categorise the newest statement and commit the month."),
+    ("learn-category-memory", "Import reviewed decisions into Category Memory by hand."),
+    ("cleanup-currency-labels", "One-off workbook currency label cleanup."),
+    ("import-statement", "Review artifact for an unknown statement format."),
+    ("importer-profile", "Learn, export or reset private Importer Profiles."),
+    ("template-workbook", "Create or customize the synthetic Template Workbook."),
+    ("setup", "Initialize a local workspace from the public template."),
+)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Update a personal wealth tracker from a statement."
+        prog="wealth-tracker",
+        description=(
+            "Update a personal wealth tracker from a statement. Without a subcommand this "
+            "runs one explicit month (the per-month command below)."
+        ),
+        epilog="subcommands (run `wealth-tracker <subcommand> --help`):\n"
+        + "\n".join(f"  {name:<25}{summary}" for name, summary in SUBCOMMANDS),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--tracker", required=True, type=Path, help="Path to the tracker workbook.")
     parser.add_argument(
@@ -36,15 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--year", required=True, type=int, help="Target tracker year.")
     parser.add_argument("--month", required=True, help="Target tracker month, e.g. Feb.")
     parser.add_argument("--config-dir", type=Path, default=Path("config"), help="Config directory.")
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path("reports"), help="Report output directory."
-    )
-    parser.add_argument(
-        "--category-memory-dir",
-        type=Path,
-        default=Path("data/category_memory"),
-        help="Private generated category memory directory.",
-    )
+    _add_profile_path_args(parser)
     parser.add_argument(
         "--review-decisions",
         type=Path,
@@ -53,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--local-llm-suggestions",
         action="store_true",
-        help="Explicitly enable local Ollama/Gemma review-only category suggestions.",
+        help="Ask the two local Ollama models (Consensus); `monthly` always does.",
     )
     parser.add_argument(
         "--commit",
@@ -68,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def build_monthly_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker monthly",
         description=(
             "Categorise the newest statement export for its month; commit when no rows "
             "remain in review, otherwise write the Exception Sheet."
@@ -76,25 +89,18 @@ def build_monthly_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--tracker",
         type=Path,
-        default=Path("Net Worth Tracker.xlsx"),
-        help="Path to the tracker workbook.",
+        help="Path to the tracker workbook (default: profile, else 'Net Worth Tracker.xlsx').",
     )
     parser.add_argument(
         "--statements-dir",
         type=Path,
-        default=Path("data/raw_statements"),
-        help="Raw statements folder; the newest CSV is used.",
+        help=(
+            "Raw statements folder; the newest CSV is used "
+            "(default: profile, else data/raw_statements)."
+        ),
     )
     parser.add_argument("--config-dir", type=Path, default=Path("config"), help="Config directory.")
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path("reports"), help="Report output directory."
-    )
-    parser.add_argument(
-        "--category-memory-dir",
-        type=Path,
-        default=Path("data/category_memory"),
-        help="Private generated category memory directory.",
-    )
+    _add_profile_path_args(parser)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -105,6 +111,7 @@ def build_monthly_parser() -> argparse.ArgumentParser:
 
 def build_category_memory_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker learn-category-memory",
         description="Import confirmed reviewed decisions into category memory."
     )
     parser.add_argument(
@@ -130,6 +137,7 @@ def build_category_memory_parser() -> argparse.ArgumentParser:
 
 def build_cleanup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker cleanup-currency-labels",
         description="Run one-off tracker workbook cleanup tasks."
     )
     parser.add_argument("--tracker", required=True, type=Path, help="Path to the tracker workbook.")
@@ -154,6 +162,7 @@ def build_cleanup_parser() -> argparse.ArgumentParser:
 
 def build_import_statement_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker import-statement",
         description="Create a review artifact for an unknown statement format."
     )
     parser.add_argument(
@@ -195,6 +204,7 @@ def build_import_statement_parser() -> argparse.ArgumentParser:
 
 def build_importer_profile_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker importer-profile",
         description="Manage private local Importer Profiles."
     )
     subparsers = parser.add_subparsers(dest="profile_command", required=True)
@@ -242,6 +252,7 @@ def build_importer_profile_parser() -> argparse.ArgumentParser:
 
 def build_template_workbook_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker template-workbook",
         description="Create the public synthetic Template Workbook."
     )
     subparsers = parser.add_subparsers(dest="template_command", required=True)
@@ -304,6 +315,7 @@ def build_template_workbook_parser() -> argparse.ArgumentParser:
 
 def build_setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="wealth-tracker setup",
         description="Initialize a local workspace from the public template."
     )
     parser.add_argument(
@@ -350,6 +362,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "monthly":
         args = build_monthly_parser().parse_args(argv[1:])
         try:
+            _apply_profile_paths(args, MONTHLY_PROFILE_PATHS)
             result = run_monthly(
                 tracker_path=args.tracker,
                 statements_dir=args.statements_dir,
@@ -357,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 category_memory_dir=args.category_memory_dir,
                 dry_run=args.dry_run,
+                backups_dir=args.backups_dir,
             )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
@@ -488,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     try:
+        _apply_profile_paths(args, PROFILE_PATHS)
         result = run_pipeline(
             tracker_path=args.tracker,
             statement_path=args.statement,
@@ -500,6 +515,7 @@ def main(argv: list[str] | None = None) -> int:
             statement_format=args.statement_format,
             review_decisions_path=args.review_decisions,
             local_llm_suggestions=args.local_llm_suggestions,
+            backups_dir=args.backups_dir,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -549,6 +565,66 @@ def _print_monthly_summary(result: RunResult, output_dir: Path) -> None:
         )
     else:
         print("Next action: re-run `wealth-tracker monthly` without --dry-run to commit.")
+
+
+DEFAULT_PROFILE = Path("profiles/default.local.yaml")
+
+# CLI dest -> (profile_paths key, fallback when neither flag nor profile sets it)
+PROFILE_PATHS = {
+    "output_dir": ("reports_dir", Path("reports")),
+    "category_memory_dir": ("category_memory_dir", Path("data/category_memory")),
+    "backups_dir": ("backups_dir", Path("data/backups")),
+}
+MONTHLY_PROFILE_PATHS = {
+    "tracker": ("tracker_workbook", Path("Net Worth Tracker.xlsx")),
+    "statements_dir": ("raw_statements_dir", Path("data/raw_statements")),
+    **PROFILE_PATHS,
+}
+
+
+def _add_profile_path_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--profile",
+        type=Path,
+        help=(
+            f"Profile whose profile_paths set the path defaults (default: {DEFAULT_PROFILE} "
+            "when it exists). Paths are relative to the workspace that holds profiles/."
+        ),
+    )
+    for flag, dest in (
+        ("--output-dir", "output_dir"),
+        ("--category-memory-dir", "category_memory_dir"),
+        ("--backups-dir", "backups_dir"),
+    ):
+        key, fallback = PROFILE_PATHS[dest]
+        parser.add_argument(
+            flag, dest=dest, type=Path, help=f"Default: profile {key}, else {fallback}."
+        )
+
+
+def _apply_profile_paths(
+    args: argparse.Namespace, defaults: dict[str, tuple[str, Path]]
+) -> None:
+    """Fill unset path flags: explicit flag, then profile, then built-in fallback."""
+    profile_paths = _load_profile_paths(args.profile)
+    for dest, (key, fallback) in defaults.items():
+        if getattr(args, dest) is None:
+            setattr(args, dest, profile_paths.get(key, fallback))
+
+
+def _load_profile_paths(profile: Path | None) -> dict[str, Path]:
+    if profile is None:
+        if not DEFAULT_PROFILE.exists():
+            return {}
+        profile = DEFAULT_PROFILE
+    elif not profile.exists():
+        raise ValueError(f"Profile not found: {profile}")
+    document = yaml.safe_load(profile.read_text(encoding="utf-8")) or {}
+    raw_paths = document.get("profile_paths") or {}
+    if not isinstance(raw_paths, dict):
+        raise ValueError(f"Profile {profile}: profile_paths must be a mapping.")
+    workspace = profile.parent.parent if profile.parent.name == "profiles" else profile.parent
+    return {key: workspace / str(value) for key, value in raw_paths.items()}
 
 
 def _parse_label_renames(raw_renames: list[str]) -> dict[str, str]:

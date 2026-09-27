@@ -191,8 +191,16 @@ local_llm:
   model: "gemma4:26b"
   second_model: "gemma4:12b"
   fallback_model: "qwen3:14b"
-  timeout_seconds: 60
+  timeout_seconds: 180
+  keep_alive: "30m"
   include_raw_description: false
+
+trust_policy:
+  auto_max_amount: 1000
+  min_agreement: 2
+  never_auto_categories:
+    - "Rent (monthly)"
+    - "Full-time job (net)"
 """
 
 
@@ -291,7 +299,7 @@ profile_paths:
 privacy:
   original_workbook_write_policy: "never_modify_directly"
   commit_target_policy: "copied_workbook_only"
-  model_output_policy: "review_only"
+  model_output_policy: "consensus_or_review"
   importer_profile_storage: "private_local_default"
 """
 

@@ -1,12 +1,12 @@
 # Project Overview
 
-This page is the non-technical map of PersonalWorthTracker. It explains what lives where, how a monthly run moves through the project, and which files are scripts, components, or documentation.
+This page is the non-technical map of Personal Wealth Tracker (GitHub repo `personalwealthtracker`, Python package `personal-wealth-tracker`, command `wealth-tracker`). It explains what lives where, how a monthly run moves through the project, and which files are scripts, components, or documentation.
 
 For the step-by-step monthly checklist, use [monthly_workflow.md](monthly_workflow.md). For the public setup, synthetic examples, adapter contracts, and v1 non-goals, use [docs/public_package_workflow.md](public_package_workflow.md), the Public Package Workflow.
 
 ## What The Project Does
 
-PersonalWorthTracker is a local command-line helper for updating a personal Excel wealth tracker. It reads a Nordea bank statement, classifies the transactions, checks the tracker workbook for safe target cells, and writes review outputs before anything is committed to the tracker workbook (in place, after a backup).
+Personal Wealth Tracker is a local command-line helper for updating a personal Excel wealth tracker. The main entry point is `wealth-tracker monthly`: it reads the newest Nordea CSV, infers the month, categorizes every transaction (deterministic tiers first, then two local models voting), decides per row whether it may be written without you (`auto`) or needs a decision (`review`), and, only when nothing is left in review, backs up the tracker and writes the month into it in place. Otherwise it writes one Exception Sheet for you to fill. Nothing leaves the machine.
 
 The original tracker workbook, real bank statements, generated reports, category memory, backups, and processed workbooks stay local and ignored by Git.
 
@@ -40,41 +40,44 @@ Read this diagram as:
 - `src/personal_wealth_tracker` is where the application logic lives.
 - `config` contains committed shared rules; private merchant-specific rules and proxy split rules belong in ignored local files such as `rules.local.yaml`.
 - `docs` is the user-facing place to understand and operate the project.
-- `.agent` is the working memory and issue tracker for coding agents.
+- `.agent` is the working memory for coding agents. `.agent/issues/` is the historical local tracker; GitHub Issues is canonical since 2026-09-25.
 
 ## Monthly Run Flow
 
 ```mermaid
 flowchart LR
-  Statement["Nordea statement<br/>CSV preferred, PDF fallback"] --> Parser["Parser<br/>turns bank rows into transactions"]
+  Statement["Nordea statement<br/>newest CSV; PDF via per-month command"] --> Parser["Parser<br/>turns bank rows into transactions"]
   Tracker["Tracker workbook<br/>existing Excel file"] --> WorkbookRead["Workbook reader<br/>finds rows, months, formulas, existing values"]
-  Rules["Config, category registry, category memory, and local proxy split rules<br/>known categories and learned choices"] --> Categorizer["Categorizer<br/>chooses transaction categories"]
-  LocalLLM["Local LLM Mode<br/>optional review-only Ollama/Gemma suggestions"] --> Planner
+  Rules["Category Registry, human Category Memory, Guidance Aliases,<br/>trusted auto memory, rules, proxy split rules"] --> Categorizer["Categorizer<br/>deterministic tiers first"]
 
   Parser --> Categorizer
-  Categorizer --> Planner["Workbook planner<br/>decides write, skip, or review"]
+  Categorizer -->|"unmatched or low-confidence rows"| Suggester["Suggester: Consensus<br/>two local Ollama models vote"]
+  Categorizer --> Policy["Trust Policy<br/>Authority per row: auto or review"]
+  Suggester --> Policy
+  Policy --> Planner["Workbook planner<br/>cells, new leaf rows, period columns"]
   WorkbookRead --> Planner
 
-  Planner --> DryRun["Dry-run outputs<br/>report, audit, CSV, review workbook"]
-  DryRun --> Review["Manual review workbook<br/>choose manual_category, new_parent_category, new_leaf_category, and learn_to_memory"]
-  Review --> Decisions["Monthly Review Decisions<br/>current-month overrides"]
-  Review --> Registry["Category Registry<br/>validated new leaf registrations"]
-  Registry --> Rules
-  Decisions --> Planner
-  Memory --> Rules
-  Planner --> Commit["Commit mode<br/>backup, then tracker updated in place"]
+  Planner -->|"rows in review"| Sheet["Exception Sheet<br/>review_required_YYYY_mon.xlsx"]
+  Sheet --> Decisions["Monthly Review Decisions<br/>blank accepts, NONE rejects"]
+  Decisions --> Policy
+  Planner -->|"zero rows in review"| Commit["Atomic Month Commit<br/>backup, then tracker updated in place"]
+  Commit --> Registry["Category Registry<br/>new leaves added on commit"]
   Commit --> Memory["Category Memory<br/>learned on commit: human now, auto after two months"]
+  Memory --> Rules
 ```
 
 The important split is:
 
-- Dry run means plan and report only.
-- Monthly Review Decisions fix specific transactions for the selected month.
-- The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added.
-- Category Memory learns committed decisions (`human`) and consensus results (`auto`, trusted after two committed months) for future months.
+- `monthly` commits by default; `--dry-run` plans and reports only and writes no memory, registry, or workbook.
+- The Trust Policy gives every row one Authority. `auto` needs a deterministic match or two agreeing local models, an amount within the cap (1000 DKK), and a category outside the never-auto list ([ADR 0001](adr/0001-per-row-authority.md), [ADR 0002](adr/0002-local-two-model-consensus.md)).
+- The tracker is written only when zero rows remain in review, so it never holds a partial month ([ADR 0003](adr/0003-blank-means-accept-atomic-month-commit.md)).
+- Monthly Review Decisions fix specific transactions for the selected month. Each re-run rewrites the one Exception Sheet and carries earlier decisions forward.
+- The Category Registry in `config/categories.yaml` defines Parent/Section Row labels, Leaf Category Row labels, derived rows, aliases, and where missing leaf categories may be added. New leaves reach it only with a commit; the workbook row is inserted formula-aware ([ADR 0006](adr/0006-formula-aware-leaf-row-insertion.md)).
+- Category Memory learns committed decisions (`human`) and consensus results (`auto`, trusted after two committed months) for future months ([ADR 0004](adr/0004-memory-learned-on-commit-with-provenance.md)).
+- Guidance Aliases in ignored `config/guidance_aliases.local.yaml` map hand-written merchant patterns to leaves, right after `human` memory.
 - Proxy Split Transfer rules in ignored `rules.local.yaml` can split one intermediary transfer into fixed allocation lines plus an optional Residual Review Line.
-- Local LLM Mode: optional `--local-llm-suggestions` review assistance using local Ollama/Gemma; suggestions stay review-only and reuse existing review workbook suggestion fields.
-- Commit mode backs up the tracker, then writes only safe values into it in place (ADR 0007).
+- Local LLM Mode: always on in `monthly`; opt-in `--local-llm-suggestions` in the per-month command. It uses local Ollama/Gemma review suggestions and reuses existing review workbook suggestion fields; a row reaches `auto` only through Consensus. Hosted models are not used ([ADR 0005](adr/0005-hosted-judgment-deferred.md)).
+- Commit mode backs up the tracker, then writes only safe values into it in place ([ADR 0007](adr/0007-commit-in-place-with-commit-ledger.md)).
 
 ## Main Components
 
@@ -90,8 +93,11 @@ flowchart TD
   Pipeline --> Memory["category_memory.py<br/>private learned categories"]
   Pipeline --> Review["review_decisions.py<br/>reads reviewed XLSX or CSV"]
   Pipeline --> Categorizer["categorizer.py<br/>matches transactions to categories"]
-  Pipeline --> LocalLLM["local_llm.py<br/>optional local Gemma review suggestions"]
+  Pipeline --> LocalLLM["local_llm.py<br/>Ollama Suggester and local Consensus"]
+  LocalLLM --> Suggester["suggester.py<br/>Suggester port, Fake and Consensus adapters"]
+  Pipeline --> Trust["trust_policy.py<br/>decides auto or review per row"]
   Pipeline --> Workbook["workbook.py<br/>plans and writes workbook changes safely"]
+  Workbook --> RowInsert["row_insertion.py<br/>formula-aware leaf row insertion"]
   Pipeline --> Reporting["reporting.py<br/>writes reports, audit logs, review files"]
   Pipeline --> Models["models.py<br/>shared data shapes"]
   Cleanup["cleanup.py<br/>separate workbook maintenance"] --> Workbook
@@ -100,15 +106,19 @@ flowchart TD
 Plain-language component roles:
 
 - `cli.py` is the front door. It turns terminal options into a command.
-- `pipeline.py` is the coordinator. It decides which step runs next.
+- `pipeline.py` is the coordinator. It decides which step runs next; `run_monthly` is the `monthly` command.
 - `statement_adapters.py` routes trusted known statement formats and records import diagnostics.
 - `statement_import_assistant.py` creates untrusted review artifacts for unknown statement formats.
 - `setup_workspace.py` creates a public-template local workspace with generic config, local profile paths, and synthetic examples.
 - `nordea_csv.py` and `nordea_pdf.py` turn known Nordea bank files into transaction records.
 - `categorizer.py` decides what each transaction probably is.
-- `review_decisions.py` applies your reviewed Excel decisions by exact transaction ID.
-- `category_memory.py` stores future learned category choices in ignored local data.
-- `local_llm.py` talks to Ollama's local HTTP API when `--local-llm-suggestions` is enabled and keeps model output review-only.
+- `review_decisions.py` reads Exception Sheet decisions (blank accepts, `NONE` rejects) and Audit corrections by exact transaction ID.
+- `category_memory.py` learns category choices on commit, with `human` or `auto` provenance, in ignored local data.
+- `local_llm.py` talks to Ollama's local HTTP API (always in `monthly`, with `--local-llm-suggestions` in the per-month command) and builds the two-model Consensus.
+- `suggester.py` is the Suggester port every category model sits behind, so tests use a Fake adapter instead of Ollama.
+- `trust_policy.py` is the one place that decides each row's Authority (`auto` or `review`).
+- `row_insertion.py` inserts a new leaf row and rewrites formulas, or refuses and leaves the row in review.
+- `outbound_redaction.py` is tested but unused: it would redact rows for a future hosted model (ADR 0005).
 - `workbook.py` protects the tracker workbook from unsafe writes.
 - `reporting.py` produces the files you inspect after a dry run.
 - `cleanup.py` is for separate workbook maintenance tasks, not monthly transaction updates.
@@ -130,7 +140,7 @@ flowchart TD
 Use the files this way:
 
 - Start with the Markdown report to understand the run quality and planned workbook changes.
-- Use `review_required_<period>.xlsx` when you need to manually classify transactions.
+- Use `review_required_<period>.xlsx` (the Exception Sheet; `<period>` is `<year>_<mon>`, e.g. `2026_sep`) to decide rows in review. `monthly` rewrites it in place and records a `.written` fingerprint so blank rows count as accepted only after you save it.
 - Use `Audit` inside the review workbook to spot-check `auto` rows (source, votes, reason).
 - `Category Options`, `Decision Options` and `Run Metadata` are hidden helper sheets (dropdown lists, run period); unhide them only to inspect workbook fields and safety notes.
 - Use the audit log only when you need a detailed machine-readable trace.
@@ -157,7 +167,9 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - [.agent/System/architecture.md](../.agent/System/architecture.md) - deeper technical architecture notes.
 - [.agent/System/domain_language.md](../.agent/System/domain_language.md) - project vocabulary used by agents.
 - [.agent/System/data_contracts.md](../.agent/System/data_contracts.md) - expected data shapes and safety contracts.
-- [.agent/issues/kanban.md](../.agent/issues/kanban.md) - local issue tracker.
+- [cli_reference.md](cli_reference.md) - every command and flag.
+- [adr/](adr/) - architecture decisions for the monthly flow (authority, consensus, atomic commit, memory, hosted judgment, row insertion).
+- [GitHub Issues](https://github.com/EricleungDK/personalwealthtracker/issues) - canonical issue tracker; [.agent/issues/kanban.md](../.agent/issues/kanban.md) is the historical local tracker.
 
 ## Glossary
 
@@ -168,14 +180,20 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Parent/Section Row: A workbook row such as `Living expenses`, `Services`, or `Insurance` that groups or totals child rows and is not a valid transaction category target.
 - Leaf Category Row: A workbook row under a parent section that can receive source-backed transaction totals, manual review decisions, and Category Memory learning.
 - Category Registry: The YAML category source in `config/categories.yaml` that records parent, leaf, derived, alias, and allowed-new-child rules.
-- Dry run: A run that plans and reports but does not write workbook values.
-- Commit mode: A run with `--commit`; it backs up the tracker and writes eligible values into it in place.
+- Dry run: A run that plans and reports but does not write workbook values, Category Memory, or the Category Registry.
+- Commit mode: The default for `monthly`, `--commit` for the per-month command; it backs up the tracker and writes into it in place, and only when zero rows remain in review (Atomic Month Commit).
+- Authority: Per-row `auto` (may be written without you) or `review` (needs a decision), set by the Trust Policy.
+- Consensus: Two local models vote on a row; agreement can earn `auto` under the Trust Policy.
+- Exception Sheet: The `Review Required` sheet of the review workbook, listing only rows in review; one per month.
+- Audit sheet: The `Audit` sheet of the review workbook, listing every `auto` row with source, votes, and reason, and a `corrected_category` column.
+- Guidance Alias: A private hand-written merchant pattern to leaf mapping in `config/guidance_aliases.local.yaml`.
+- Commit Ledger: `data/commit_ledger.json`, the amounts each committed month wrote, so a re-commit replaces only its own values.
 - Review workbook: The Excel file where you choose `manual_category` for existing leaf rows, `new_parent_category` and `new_leaf_category` for missing leaf rows, and optional `learn_to_memory`.
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
-- Category Memory: Private learned merchant/category choices for future runs.
-- Local LLM Mode: Explicit opt-in `--local-llm-suggestions` mode that can add review-only local Ollama/Gemma hints to unmatched or low-confidence rows.
-- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `confidence`, and `reason` fields (the method is appended to `reason` in brackets); it is not a confirmed decision.
-- LLM New Leaf Candidate: A model hint that a missing leaf row may be needed. It does not fill `new_parent_category` or `new_leaf_category` for you.
+- Category Memory: Private learned merchant/category choices for future runs, learned on commit with `human` or `auto` provenance.
+- Local LLM Mode: Local Ollama/Gemma suggestions for unmatched or low-confidence rows; always on in `monthly`, opt-in `--local-llm-suggestions` in the per-month command. Suggestions are review-only unless Consensus earns `auto`.
+- LLM Category Suggestion: A model hint shown in the existing `suggested_category`, `confidence`, and `reason` fields (the method is appended to `reason` in brackets); blank `manual_category` accepts it.
+- Subscription Leaf Proposal: A model hint that a recurring subscription needs its own `<Service> subscription` leaf under `Services`; always `review`, and accepting it on the Exception Sheet adds the leaf on commit.
 - Statement Import Assistant: A review-only path for unknown statement formats. It writes untrusted import review artifacts and does not feed monthly planning until a later confirmed-import workflow exists.
 - Importer Profile: Private local JSON learned from confirmed unknown-import review rows. It can produce filterable Educated Import Guesses for similar future sources and is exported only by explicit command.
 - Educated Import Guess: A review-only suggested field mapping or category from a local Importer Profile, shown with `guess_state`, `guess_confidence`, `guess_reason`, and `guess_profile`.

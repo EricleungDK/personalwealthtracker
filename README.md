@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💰 PersonalWorthTracker
+# 💰 Personal Wealth Tracker
 
 **Turn your monthly bank export into an up-to-date Excel net-worth tracker — without your data ever leaving your machine.**
 
@@ -57,13 +57,13 @@ cp examples/synthetic-nordea-transactions.csv data/raw_statements/
 uv run wealth-tracker monthly            # add --dry-run to preview only
 ```
 
-If anything needs you, open `reports/review_required_<year>_<mon>.xlsx`, save it, and run `monthly` again. When `Rows in review: 0`, the month is committed.
+If anything needs you, open `reports/review_required_<year>_<mon>.xlsx` (e.g. `review_required_2026_apr.xlsx`), fill it, save it, and run `monthly` again. When `Rows in review: 0`, the month is committed.
 
 > **Using your own data:** swap in your real tracker as `Net Worth Tracker.xlsx` and drop the Nordea CSV export into `data/raw_statements/`. Both paths are git-ignored.
 
 ### Optional: local LLM suggestions
 
-Install [Ollama](https://ollama.com) and pull the models in [`config/settings.yaml`](config/settings.yaml) (`gemma4:26b`, `gemma4:12b`, fallback `qwen3:14b`). `monthly` uses them automatically when running; on single-statement runs pass `--local-llm-suggestions` for local Ollama/Gemma review suggestions. No model running? Everything still works; unmatched rows simply go to the Exception Sheet.
+Install [Ollama](https://ollama.com) and pull the models in [`config/settings.yaml`](config/settings.yaml) (`gemma4:26b`, `gemma4:12b`, fallback `qwen3:14b`). `monthly` uses them automatically when running; on single-statement runs pass `--local-llm-suggestions` to ask the two local Ollama models. No model running? Everything still works; unmatched rows simply go to the Exception Sheet.
 
 ## How it works
 
@@ -91,7 +91,10 @@ Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) — e.g. [blan
 | `wealth-tracker --statement … --year … --month …` | Single-statement dry run (`--commit` to write) |
 | `wealth-tracker import-statement` | Turn an unknown bank format into a review-only import |
 | `wealth-tracker importer-profile learn` | Learn a private Importer Profile from a reviewed import |
+| `wealth-tracker template-workbook create` | Generate the synthetic Template Workbook |
 | `wealth-tracker template-workbook customize` | Rename labels / currency in the Template Workbook |
+| `wealth-tracker learn-category-memory` | Manually learn reviewed decisions (normally automatic on commit) |
+| `wealth-tracker cleanup-currency-labels` | One-off workbook currency-label cleanup (dry run unless `--commit`) |
 
 Every flag and output: **[docs/cli_reference.md](docs/cli_reference.md)**.
 

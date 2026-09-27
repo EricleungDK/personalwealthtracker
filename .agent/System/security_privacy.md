@@ -1,6 +1,6 @@
 # Security And Privacy
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 ## Public/Private Boundary
 
@@ -16,17 +16,20 @@ The following are local-only and ignored:
 
 - real bank statements, including local Nordea CSV exports and `bank-statement.pdf`,
 - tracker workbooks and generated workbook copies,
-- CSV/JSONL reports and audit logs,
+- generated `reports/` (Exception Sheets, `.written` fingerprints, CSV/JSONL reports, audit logs) and `logs/`,
 - backups and processed files,
 - Category Memory and Importer Profiles,
 - private local rules, proxy split rules, and local profile files,
-- credentials, tokens, and environment files.
+- credentials, tokens, and environment files (`.env*`, `credentials.json`, `token.json`),
+- local agent tooling (`.agents/`, `skills-lock.json`).
+
+`.gitignore` also ignores every `*.pdf`, `*.xlsx`, `*.csv`, and `*.jsonl` repo-wide, except redacted/synthetic fixtures under `tests/fixtures/`.
 
 Only redacted or synthetic fixtures should be committed for parser tests. Real CSV exports may be used for local smoke validation only while they remain in ignored paths.
 
 ## Data Handling Defaults
 
-- MVP 1 does not send financial data to external APIs or LLMs.
+- No command sends financial data to external APIs or hosted LLMs; model calls go only to the local Ollama API.
 - Hosted Judgment is opt-in only and not enabled: no hosted model is called by any command and no setting turns one on (`docs/adr/0005-hosted-judgment-deferred.md`).
 - `outbound_redaction` (allowlist: redacted merchant, amount band, direction) stays in the package, tested but unused, for any future hosted adapter.
 - The TypeSafe SDK is only the optional `hosted` extra; a default install does not include it.
@@ -57,4 +60,5 @@ The writer skips or flags:
 - missing category rows,
 - missing target month columns,
 - unmatched transactions,
-- low-confidence transactions.
+- low-confidence transactions,
+- rows with Trust Policy `review` authority; any such row blocks the whole month commit (ADR 0003).

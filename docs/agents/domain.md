@@ -31,4 +31,4 @@ If the concept you need isn't in the glossary yet, either you're inventing langu
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0003 (review-only financial authority), but worth reopening because…_
+> _Contradicts ADR-0003 (blank means accept, atomic month commit), but worth reopening because…_

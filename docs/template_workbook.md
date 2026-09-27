@@ -1,6 +1,6 @@
 # Template Workbook
 
-The public Local Wealth-Tracker Agent can generate a clean synthetic Template Workbook. The template is a supported starting point for future setup work; it is not copied from the owner's private tracker.
+The public Local Wealth-Tracker Agent can generate a clean synthetic Template Workbook. `setup` creates it automatically, and it is a supported starting point for your own tracker; it is not copied from the owner's private tracker.
 
 ## Template Workbook Version
 
@@ -8,7 +8,7 @@ The public Local Wealth-Tracker Agent can generate a clean synthetic Template Wo
 - `template_version`: `1.0`
 - `workbook_kind`: `synthetic_template`
 - `template_schema`: `net-worth-v1`
-- Sheet name: `Net worth`
+- Sheet name: `Net worth` (change with `--sheet-name` on `create`)
 - Metadata sheet: `Template Metadata`
 - Default Tracker Currency: `DKK`
 
@@ -60,6 +60,7 @@ The template uses the same supported workbook dimensions as the current planner:
 The v1 template contains generic section labels and leaf rows:
 
 - `Income (net)` with `Full-time job (net)` and `Other income`.
+- `Cashflow` as a derived row.
 - `Living expenses` with `Rent (monthly)`, `Groceries (monthly)`, and `Transportation`.
 - `Services` with `Mobile phone (monthly)`, `Internet (monthly)`, and `Cloud services`.
 - `Insurance` with `Insurance (monthly)`.
@@ -71,6 +72,6 @@ The template contains no real values, no private categories, no personal sheet n
 
 ## V1 Customization Boundary
 
-Setup and template commands may customize known workbook dimensions such as categories, section labels, period columns, currency settings, and profile paths. Formula and layout customization are out of scope for v1 until workbook schemas and template versions make those changes safe.
+Setup and template commands may customize known workbook dimensions such as categories, section labels, period columns, currency settings, and profile paths. Formula and layout customization are out of scope for v1 until workbook schemas and template versions make those changes safe. The one supported structural change is a new leaf row you approve on the monthly Exception Sheet: on commit it is inserted at the end of its parent section in the tracker, with formulas shifted and the parent `SUM` expanded; if the parent formula is not a simple `SUM`, nothing is written (see [ADR 0006](adr/0006-formula-aware-leaf-row-insertion.md)).
 
 The original Tracker Workbook safety rules still apply to template-based workbooks: formula-owned cells, populated manual cells, derived rows, fixed rows, section totals, unsupported rows, unsupported columns, and ambiguous structure are not direct write targets.

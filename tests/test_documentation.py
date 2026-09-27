@@ -216,9 +216,7 @@ def test_category_registry_leaf_lifecycle_documentation_is_in_sync():
     data_contracts = (REPO_ROOT / ".agent" / "System" / "data_contracts.md").read_text(
         encoding="utf-8"
     )
-    agent_context = (REPO_ROOT / ".agent" / "Tasks" / "context.md").read_text(
-        encoding="utf-8"
-    )
+    decisions = (REPO_ROOT / ".agent" / "System" / "decisions.md").read_text(encoding="utf-8")
 
     workflow_phrases = [
         "Parent/Section Row",
@@ -264,12 +262,12 @@ def test_category_registry_leaf_lifecycle_documentation_is_in_sync():
     for phrase in contract_phrases:
         assert phrase in data_contracts
 
-    context_phrases = [
+    decision_phrases = [
         "Make YAML the durable category registry for parent/leaf semantics",
         "Category Memory may learn newly added categories only after leaf registry validation succeeds",
     ]
-    for phrase in context_phrases:
-        assert phrase in agent_context
+    for phrase in decision_phrases:
+        assert phrase in decisions
 
 
 def test_local_llm_mode_documentation_is_in_sync():
@@ -299,7 +297,7 @@ def test_local_llm_mode_documentation_is_in_sync():
 
     for phrase in [
         "--local-llm-suggestions",
-        "local Ollama/Gemma review suggestions",
+        "two local Ollama models",
     ]:
         assert phrase in readme
 
