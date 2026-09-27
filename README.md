@@ -33,7 +33,7 @@ Nordea CSV ──▶ rules + memory + local LLMs ──▶ Trust Policy ──�
 ## Features
 
 - 🔒 **Local-first.** No cloud, no bank API, no telemetry. Statements, workbooks and reports are git-ignored by default.
-- 🧾 **Your workbook, never overwritten.** Writes go to a timestamped copy in `data/processed/`, after a backup. Formulas and fixed rows are skipped.
+- 🧾 **One workbook, every month.** Each commit updates `Net Worth Tracker.xlsx` in place after a timestamped backup in `data/backups/`, so months accumulate. Formulas, fixed rows and cells you edited are never overwritten.
 - 🧠 **Learns from you.** Committed decisions become Category Memory, so next month's repeat merchants categorise themselves.
 - 🤝 **Two-model consensus (optional).** Two local Ollama models vote; a row is auto-accepted only when both agree, the amount is small, and the category isn't flagged never-auto. Prompts are minimised (merchant, amount, date) and never leave your machine.
 - 📋 **One Exception Sheet.** Uncertain rows land in a single `.xlsx`: leave blank to accept the suggestion, type `NONE` to reject, or pick a category from the dropdown.
@@ -76,7 +76,7 @@ flowchart LR
   T -->|confident| W[Workbook planner]
   T -->|unsure| X[Exception Sheet]
   X -->|your decisions| T
-  W --> O[Copied workbook<br/>+ backup + audit]
+  W --> O[Tracker updated in place<br/>+ backup + audit]
   O --> M[(Category Memory)]
 ```
 

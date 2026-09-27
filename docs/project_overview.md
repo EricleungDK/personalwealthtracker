@@ -6,7 +6,7 @@ For the step-by-step monthly checklist, use [monthly_workflow.md](monthly_workfl
 
 ## What The Project Does
 
-PersonalWorthTracker is a local command-line helper for updating a personal Excel wealth tracker. It reads a Nordea bank statement, classifies the transactions, checks the tracker workbook for safe target cells, and writes review outputs before anything is committed to a copied workbook.
+PersonalWorthTracker is a local command-line helper for updating a personal Excel wealth tracker. It reads a Nordea bank statement, classifies the transactions, checks the tracker workbook for safe target cells, and writes review outputs before anything is committed to the tracker workbook (in place, after a backup).
 
 The original tracker workbook, real bank statements, generated reports, category memory, backups, and processed workbooks stay local and ignored by Git.
 
@@ -25,7 +25,7 @@ flowchart TD
   LocalFiles["Local personal files<br/>ignored by Git"] --> Inputs["Net Worth Tracker.xlsx<br/>Nordea CSV or PDF statements"]
   Inputs --> CLI["wealth-tracker<br/>terminal command"]
   CLI --> Source["src/personal_wealth_tracker<br/>project code"]
-  Source --> Outputs["reports and copied workbooks<br/>ignored by Git"]
+  Source --> Outputs["reports, backups and Commit Ledger<br/>ignored by Git"]
 
   Config["config<br/>public categories and rules"] --> Source
   Docs["docs<br/>operator docs and project maps"] --> User["You or an agent"]
@@ -62,7 +62,7 @@ flowchart LR
   Registry --> Rules
   Decisions --> Planner
   Memory --> Rules
-  Planner --> Commit["Commit mode<br/>writes only to a copied workbook"]
+  Planner --> Commit["Commit mode<br/>backup, then tracker updated in place"]
   Commit --> Memory["Category Memory<br/>learned on commit: human now, auto after two months"]
 ```
 
@@ -74,7 +74,7 @@ The important split is:
 - Category Memory learns committed decisions (`human`) and consensus results (`auto`, trusted after two committed months) for future months.
 - Proxy Split Transfer rules in ignored `rules.local.yaml` can split one intermediary transfer into fixed allocation lines plus an optional Residual Review Line.
 - Local LLM Mode: optional `--local-llm-suggestions` review assistance using local Ollama/Gemma; suggestions stay review-only and reuse existing review workbook suggestion fields.
-- Commit mode writes only safe values into a copied workbook under `data/processed/`.
+- Commit mode backs up the tracker, then writes only safe values into it in place (ADR 0007).
 
 ## Main Components
 
@@ -124,7 +124,7 @@ flowchart TD
   Update --> ReviewCsv["review_required_<period>.csv<br/>simple review queue"]
   Update --> ReviewXlsx["review_required_<period>.xlsx<br/>Excel review workbook"]
   Update --> Audit["audit_<period>.jsonl<br/>machine-readable trace"]
-  Update --> CopiedWorkbook["data/processed workbook<br/>only in commit mode"]
+  Update --> CopiedWorkbook["tracker workbook in place<br/>only in commit mode"]
 ```
 
 Use the files this way:
@@ -169,7 +169,7 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - Leaf Category Row: A workbook row under a parent section that can receive source-backed transaction totals, manual review decisions, and Category Memory learning.
 - Category Registry: The YAML category source in `config/categories.yaml` that records parent, leaf, derived, alias, and allowed-new-child rules.
 - Dry run: A run that plans and reports but does not write workbook values.
-- Commit mode: A run with `--commit`; it writes eligible values only to a copied workbook.
+- Commit mode: A run with `--commit`; it backs up the tracker and writes eligible values into it in place.
 - Review workbook: The Excel file where you choose `manual_category` for existing leaf rows, `new_parent_category` and `new_leaf_category` for missing leaf rows, and optional `learn_to_memory`.
 - Monthly Review Decisions: Current-month manual choices applied by exact transaction ID.
 - Category Memory: Private learned merchant/category choices for future runs.

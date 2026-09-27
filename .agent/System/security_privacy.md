@@ -32,7 +32,7 @@ Only redacted or synthetic fixtures should be committed for parser tests. Real C
 - The TypeSafe SDK is only the optional `hosted` extra; a default install does not include it.
 - The parser and categorizer run locally.
 - The original workbook is never modified directly.
-- Commit mode creates a backup and writes to a copied workbook.
+- Commit mode creates a backup, then writes into the tracker in place; the Commit Ledger stays local.
 - Reports and audit logs are traceable but local-only because they contain transaction descriptions.
 
 ## Local LLM Mode
