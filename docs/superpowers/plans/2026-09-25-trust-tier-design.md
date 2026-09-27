@@ -1,6 +1,11 @@
 # Design: one-command monthly import with calibrated trust
 
-Status: proposed, 2026-09-25. Supersedes the "proposed design" section of the
+Status: superseded, 2026-09-25, by the spec
+[2026-09-25-local-consensus-monthly-flow.md](../specs/2026-09-25-local-consensus-monthly-flow.md)
+(config A, now implemented; see [docs/adr/](../../adr/)). Not built: config B,
+`TypeSafeSuggester`, `CascadeSuggester` (hosted judgment deferred, ADR 0005). The
+guidance file shipped as `config/guidance_aliases.local.yaml`. Benchmark numbers
+below remain the reference. Originally superseded the "proposed design" section of the
 2026-09 handoff. Written with the codebase-design vocabulary (module, interface,
 seam, adapter).
 

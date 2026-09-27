@@ -1,6 +1,6 @@
 # Reviewed Policy Memory Implementation Plan
 
-Status: Implementation completed. Validated on 2026-09-05 as part of the full suite (204 passing tests). The checklist below preserves the original implementation plan.
+Status: Implementation completed. Validated on 2026-09-05 as part of the full suite (204 passing tests). The checklist below preserves the original implementation plan. Later changes: Category Memory is now learned on commit with provenance and the reviewed policy lists `human` mappings only ([ADR 0004](../../adr/0004-memory-learned-on-commit-with-provenance.md)); the Local LLM prompt now includes raw merchant text (GitHub issue #17).
 
 **Goal:** Generate an editable local reviewed policy from confirmed learned review decisions and include relevant policy context in Local LLM prompts.
 

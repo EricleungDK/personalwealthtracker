@@ -5,6 +5,8 @@ updated: 2026-06-07
 
 # Local Issue Kanban
 
+> Historical, read-only (frozen 2026-06-07). Issue tracking moved to GitHub Issues in `EricleungDK/personalwealthtracker` on 2026-09-25; see `docs/agents/issue-tracker.md`. ISSUE-005/006 (investment evidence) were never scheduled; investment evidence is still unimplemented.
+
 ## Ready For Agent
 
 No issues currently ready for agent.

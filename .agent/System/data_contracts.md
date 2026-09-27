@@ -1,6 +1,6 @@
 # Data Contracts
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 ## Template Workbook Metadata
 
@@ -290,4 +290,8 @@ Matching keys should use a normalized merchant identity by default. Recurring le
 
 Reviewed policy guidance lives beside Category Memory as `data/category_memory/reviewed_policy.local.md`. It is generated from `human` mappings and preserves an editable `## Manual Guidance` section. Local LLM prompts may use this policy as review guidance, but the policy is not a confirmed transaction decision, does not bypass Category Memory gating, and does not authorize workbook writes.
 
-A future reviewed decision import should be a separate input contract from raw review output. It should contain the transaction identifier or source fingerprint, the confirmed category, and enough metadata to derive the merchant identity and optional recurring match hints.
+The manual `learn-category-memory` import reads a reviewed CSV or Exception Sheet XLSX (XLSX validated via `Run Metadata`) and learns only `learn_to_memory` `yes`/truthy rows, keyed by transaction ID with merchant identity and optional recurring match hints.
+
+## Guidance Aliases
+
+Ignored `config/guidance_aliases.local.yaml` (synthetic template: `config/guidance_aliases.local.example.yaml`) is a flat YAML mapping of merchant pattern → leaf category. Patterns match case-insensitively as substrings of the normalized description, directly after Category Memory (`categorization_method` `guidance_alias`), and are also passed to the Suggester context. An unknown leaf fails config load.

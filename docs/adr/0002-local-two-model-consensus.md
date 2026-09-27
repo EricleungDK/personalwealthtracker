@@ -1,6 +1,6 @@
 # 0002: Local two-model consensus with amount cap as write authority
 
-Status: accepted, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issue #7.
+Status: accepted and implemented, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issues #6, #7; amended by #14.
 Related: [0001](0001-per-row-authority.md), [0003](0003-blank-means-accept-atomic-month-commit.md), [0004](0004-memory-learned-on-commit-with-provenance.md), [0005](0005-hosted-judgment-deferred.md).
 
 ## Context

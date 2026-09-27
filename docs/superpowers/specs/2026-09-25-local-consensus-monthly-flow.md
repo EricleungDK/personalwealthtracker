@@ -1,5 +1,12 @@
 # Spec: one-command monthly flow with local consensus authority (config A)
 
+Status: implemented. Tracked as GitHub issue #2, built in issues #3-#20, merged in PR #15.
+Later issues changed details below: per-service `<Service> subscription` leaves
+replace the generic Subscriptions leaf (#14), the prompt sends raw merchant text
+(#17), one Exception Sheet per month carries decisions forward (#20). Hosted
+judgment stays deferred ([ADR 0005](../../adr/0005-hosted-judgment-deferred.md)).
+Current decisions: [docs/adr/](../../adr/).
+
 Decided 2026-09-25 after the trust-tier design discussion and the Jev vs local
 benchmark (`docs/superpowers/plans/2026-09-25-trust-tier-design.md`).
 
@@ -77,7 +84,7 @@ machine.
 - **Monthly command**: newest CSV in the raw statements folder, month inferred from row dates, runs categorise → suggest → policy → exception sheet or commit, prints summary; `--dry-run` skips memory and workbook writes.
 - **Financial authority invariant kept**: Untrusted Imported Transactions and Educated Import Guesses stay `review`; only Trusted Statement Adapter rows can reach `auto`.
 - **Privacy**: `outbound_redaction` module stays in the package (tested, unused by the flow) and the TypeSafe SDK stays an optional extra. Security doc gains a line that hosted judgment is opt-in only and not enabled.
-- **ADRs** (new `docs/adr/`): 0001 per-row authority replaces cell blocking; 0002 local two-model consensus with amount cap as write authority; 0003 blank-means-accept and atomic month commit; 0004 hosted judgment deferred, local-only boundary kept.
+- **ADRs** (new `docs/adr/`): 0001 per-row authority replaces cell blocking; 0002 local two-model consensus with amount cap as write authority; 0003 blank-means-accept and atomic month commit; 0004 hosted judgment deferred, local-only boundary kept. (As built: 0004 is memory learned on commit with provenance, 0005 hosted judgment deferred, 0006 formula-aware leaf row insertion.)
 - **Glossary additions** for domain_language.md: Authority, Trust Policy, Suggester, Consensus, Exception Sheet, Guidance Alias, Atomic Month Commit.
 - Dead code `pipeline._validate_target_period` removed after confirming the trusted import covers period checks.
 

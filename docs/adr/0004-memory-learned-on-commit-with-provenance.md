@@ -1,6 +1,6 @@
 # 0004: Category Memory learned on commit, with provenance
 
-Status: accepted, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issue #9.
+Status: accepted and implemented, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issues #9, #10.
 Supersedes the earlier rule that Category Memory is learned only by a separate
 import of `learn_to_memory=yes` rows and never from automatic matches.
 Related: [0001](0001-per-row-authority.md), [0002](0002-local-two-model-consensus.md), [0003](0003-blank-means-accept-atomic-month-commit.md), [0005](0005-hosted-judgment-deferred.md).
