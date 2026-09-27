@@ -1,6 +1,6 @@
 # 0003: Blank means accept, atomic month commit
 
-Status: accepted, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issue #8.
+Status: accepted and implemented, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issue #8; amended by #13, #18, #19, #20.
 Related: [0001](0001-per-row-authority.md), [0002](0002-local-two-model-consensus.md), [0004](0004-memory-learned-on-commit-with-provenance.md), [0005](0005-hosted-judgment-deferred.md).
 
 ## Context

@@ -1,6 +1,6 @@
 # 0006: Formula-aware leaf row insertion, fail closed
 
-Status: accepted, 2026-09-26. Implemented in issue #16.
+Status: accepted and implemented, 2026-09-26. Implemented in issue #16.
 Related: [0003](0003-blank-means-accept-atomic-month-commit.md).
 
 ## Context

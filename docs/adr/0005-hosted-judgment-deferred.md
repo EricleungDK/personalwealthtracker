@@ -1,6 +1,6 @@
 # 0005: Hosted judgment deferred, local-only boundary kept
 
-Status: accepted, 2026-09-25. Parent spec: GitHub issue #2. Recorded in issue #12.
+Status: accepted, 2026-09-25 (decision is to defer; nothing hosted is built). Parent spec: GitHub issue #2. Recorded in issue #12.
 Related: [0001](0001-per-row-authority.md), [0002](0002-local-two-model-consensus.md), [0003](0003-blank-means-accept-atomic-month-commit.md), [0004](0004-memory-learned-on-commit-with-provenance.md).
 
 ## Context

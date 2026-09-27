@@ -20,7 +20,7 @@ uv run wealth-tracker monthly
 `monthly`:
 
 - takes the most recently modified CSV in `data/raw_statements/` (by file time, not statement date) and infers the month from its row dates; a CSV spanning several months fails,
-- categorises every row (Category Memory, Guidance Aliases, rules, then the two local model voters) and lets the Trust Policy mark each row `auto` or `review`,
+- categorises every row (Category Memory, Guidance Aliases from the optional ignored `config/guidance_aliases.local.yaml` (merchant text to leaf; start from `guidance_aliases.local.example.yaml`), rules, then the two local model voters) and lets the Trust Policy (the per-row rule deciding what may be written without you) mark each row `auto` or `review`,
 - reads `reports/review_required_<year>_<mon>.xlsx` (e.g. `review_required_2026_apr.xlsx`) as decisions; a sheet unchanged since the tool wrote it counts only its filled cells (blank does not accept) and the next action says `Exception sheet not reviewed yet: <path>`,
 - commits the month when zero rows remain in review, otherwise stops,
 - rewrites that same sheet every run: your decisions are kept, rows still needing a decision come first, and rows newly in review are added; a sheet it cannot read, or cannot rewrite because it is open in Excel, stops the run with an error before anything is committed and is left untouched,
@@ -100,7 +100,7 @@ Without a running local model the run still completes: provider failures, timeou
 
 ## 8. Per-Month Command (Older Months, PDF Fallback)
 
-`monthly` always uses the newest CSV. For another month, or a PDF when no CSV export exists, run the per-month command. It does not ask the local models unless `--local-llm-suggestions` is given, and it is a dry run unless `--commit` is given:
+`monthly` always uses the newest CSV. For another month, or a PDF when no CSV export exists, run the per-month command. It does not ask the local models unless `--local-llm-suggestions` is given, and it is a dry run unless `--commit` is given. A commit here learns Category Memory and adds new leaves exactly as in step 5; with `--review-decisions` pointing at the month's Exception Sheet, the refreshed sheet is written to `review_required_<year>_<mon>_after_decisions.xlsx`, leaving yours untouched:
 
 ```bash
 uv run wealth-tracker \
@@ -114,7 +114,7 @@ uv run wealth-tracker \
   --commit
 ```
 
-Use `--statement-format nordea-pdf` for a PDF; expect more review because PDFs carry less merchant detail. `--config-dir` and `--output-dir` work as for `monthly`.
+Use `--statement-format nordea-pdf` for a PDF; expect more review because PDFs carry less merchant detail. `--config-dir`, `--output-dir` and `--category-memory-dir` work as for `monthly`.
 
 ## 9. Proxy Split Transfer Rows
 

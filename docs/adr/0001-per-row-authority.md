@@ -1,6 +1,6 @@
 # 0001: Per-row authority replaces cell blocking
 
-Status: accepted, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issue #5.
+Status: accepted and implemented, 2026-09-25. Parent spec: GitHub issue #2. Implemented in issue #5.
 Related: [0002](0002-local-two-model-consensus.md), [0003](0003-blank-means-accept-atomic-month-commit.md), [0004](0004-memory-learned-on-commit-with-provenance.md), [0005](0005-hosted-judgment-deferred.md).
 
 ## Context

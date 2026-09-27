@@ -1,6 +1,6 @@
 # Product Requirements
 
-Last updated: 2026-05-27
+Last updated: 2026-09-27
 
 ## Goal
 
@@ -10,24 +10,26 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 
 ## Current MVP Scope
 
-- Run as a Python CLI managed by `uv` and `pyproject.toml`.
+- Run as a Python CLI (`wealth-tracker`, package `personal-wealth-tracker`) managed by `uv` and `pyproject.toml`.
+- Provide one-command month-end processing with `wealth-tracker monthly` (newest CSV, inferred month, `--dry-run` preview); keep the per-month flags command for explicit paths and PDF input.
 - Use Nordea CSV exports as the preferred bank cashflow input.
 - Keep Nordea `Kontoudskrift` PDFs with embedded text as fallback/legacy input.
 - Treat DKK as the tracker currency for bank cashflow runs.
 - Route statement parsing with `--statement-format auto`, `nordea-csv`, or `nordea-pdf`.
 - Normalize transaction dates, descriptions, DKK amounts, direction, balances, source metadata, and deterministic transaction IDs.
-- Categorize transactions with Category Memory, historical rules, recurring amount/date rules, keyword rules, reviewed monthly decisions, and explicit unmatched review paths.
+- Categorize transactions with Category Memory, Guidance Aliases, historical rules, recurring amount/date rules, keyword rules, reviewed monthly decisions, local two-model Consensus suggestions, and explicit unmatched review paths.
+- Decide per-row `auto`/`review` authority with one Trust Policy (amount cap, never-auto categories, `min_agreement` model votes, deterministic confidence threshold).
 - Use `config/categories.yaml` as the durable YAML category registry for Parent/Section Row, Leaf Category Row, derived row, alias, and allowed-new-child semantics.
-- Generate Markdown reports, JSONL audit logs, categorized transaction CSV files, review-required CSV files, and review-required XLSX workbooks.
-- Use the review workbook for `manual_category`, `new_parent_category`, `new_leaf_category`, and `learn_to_memory` decisions.
-- Apply Monthly Review Decisions only when the operator explicitly supplies `--review-decisions`.
+- Generate Markdown reports, JSONL audit logs, categorized transaction CSV files, review-required CSV files, and one Exception Sheet XLSX per month (`Review Required` + `Audit`) with decisions carried forward across runs.
+- Use the Exception Sheet for `manual_category` (blank accepts the suggestion, `NONE` rejects), `new_parent_category`, `new_leaf_category`, and `learn_to_memory` decisions.
+- Apply Monthly Review Decisions from the saved Exception Sheet (`monthly`) or an explicit `--review-decisions` file; an Exception Sheet unchanged since the tool wrote it accepts no blank rows.
 - Register validated new leaf categories from reviewed runs in memory before workbook planning; persist them to `config/categories.yaml` only on a successful month commit.
 - Learn Category Memory when a month commits: decisions as `human`, consensus results as `auto` trusted after two committed months; targets must be valid leaf categories.
 - Keep Category Memory in ignored private local data under `data/category_memory/`.
 - Support private local rule overlays in ignored `config/rules.local.yaml`.
 - Support private proxy split rules that split one intermediary transfer into allocation lines plus optional residual review lines.
 - Plan workbook value updates and structure changes before writing.
-- In commit mode, create backups and write eligible changes only to copied workbooks under `data/processed/`.
+- Commit a month atomically: only with zero rows in review, create a backup and write eligible changes only to a copied workbook under `data/processed/`.
 - Keep the original tracker workbook unchanged.
 
 ## Workbook Safety Requirements
@@ -56,7 +58,8 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - Google Drive read/write.
 - Bank API or Open Banking ingestion.
 - Scheduler and monthly notifications.
-- LLM categorization as an auto-write source.
+- LLM categorization as an auto-write source except via two-model local Consensus under the Trust Policy (ADR 0002).
+- Hosted (cloud) model judgment; deferred, with outbound redaction and the optional `hosted` extra kept unused (ADR 0005).
 - Generic multi-bank ingestion.
 - OCR and scanned PDF parsing.
 - Live FX lookup.
@@ -69,4 +72,3 @@ The product is a monthly tracker workbook updater, not a personal finance ledger
 - USD investment values should convert to DKK using a user-maintained fixed rate and record the applied rate in reports/audit logs.
 - Combined monthly planning should eventually merge bank cashflow evidence and investment valuation evidence while reporting cross-source mismatches.
 - Missing period/year creation should create safe workbook structure only when the existing workbook pattern is unambiguous.
-- Local LLM categorization may be added as an explicit opt-in review-assistance layer for unmatched transactions and low-confidence deterministic suggestions, using minimized on-device prompt context and existing review workbook suggestion fields.

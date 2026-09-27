@@ -9,15 +9,15 @@ A tool that proposes or writes monthly category totals into the existing tracker
 _Avoid_: Personal finance ledger, accounting system
 
 **Local Wealth-Tracker Agent**:
-A local-first assistant that guides setup and maintenance of a template-based wealth tracker using deterministic automation, review artifacts, and optional review-only local model suggestions.
+A local-first assistant that guides setup and maintenance of a template-based wealth tracker using deterministic automation, review artifacts, and local model suggestions that reach the workbook only through **Consensus** and the **Trust Policy**.
 _Avoid_: Autonomous finance agent, remote AI finance app, generic accounting system
 
 **Tracker Workbook**:
 The existing spreadsheet that remains the source of truth for net worth and monthly category values.
 _Avoid_: Ledger database, canonical transaction store
 
-**Template Excel Workbook**:
-A supported starter workbook schema that users may customize through known categories, sections, period columns, currency settings, and profile paths.
+**Template Workbook**:
+A supported starter workbook schema that users may customize through known categories, sections, period columns, currency settings, and profile paths (`docs/template_workbook.md`). Older issues call it Template Excel Workbook.
 _Avoid_: Arbitrary spreadsheet, unsupported formula layout
 
 **Statement Import Assistant**:
@@ -35,6 +35,14 @@ _Avoid_: Cell blocking
 **Exception Sheet**:
 The `Review Required` sheet listing rows in review, suggestion prefilled, then rows already decided with the decision prefilled; one per month, rewritten by each `monthly` run. Blank accepts the suggestion; `NONE` rejects it.
 _Avoid_: Whole-month review workbook
+
+**Audit Sheet**:
+The `Audit` sheet next to the Exception Sheet, listing every `auto` row not in review with source, votes and reason; a filled `corrected_category` becomes a Monthly Review Decision and, on commit, a `human` Category Memory mapping (ADR 0004).
+_Avoid_: Audit log (the `audit_<period>.jsonl` trace)
+
+**Monthly Review Decision**:
+A current-month decision read from the Exception Sheet or Audit Sheet and applied by exact transaction ID: a leaf, a New Leaf Category Request, or `NONE`. Always `auto` Authority; a category decision is a **Confirmed Review Decision**.
+_Avoid_: Memory entry, override rule
 
 **Carried Decision**:
 A Monthly Review Decision or Audit correction read from the Exception Sheet and written back, prefilled, when `monthly` rewrites it, so it keeps applying without another save (ADR 0003).
@@ -173,7 +181,7 @@ A category assignment made by an explicit historical, recurring, amount/date, or
 _Avoid_: Guess, fuzzy match
 
 **Review-Only Transaction**:
-A transaction that may be reported with a suggestion but must not be written automatically.
+A transaction with `review` **Authority**: it may be reported with a suggestion but is not written until a Monthly Review Decision settles it.
 _Avoid_: Auto-write candidate
 
 **Local LLM Mode**:
@@ -184,8 +192,12 @@ _Avoid_: Remote API mode, deterministic rule
 The port every category model sits behind: `suggest(rows, context) -> suggestions`, with Ollama, Fake and Consensus adapters.
 _Avoid_: LLM client, provider
 
+**Vote**:
+One model's answer for a row (category or NONE, confidence, source); failed voters cast no vote, and agreement counts distinct sources.
+_Avoid_: Confidence score
+
 **Consensus**:
-The Suggester adapter that asks two local models per row and records each answer as a vote; the Trust Policy grants `auto` only when enough distinct models agree.
+The Suggester adapter (`ConsensusSuggester`) that asks two local models per row and records each answer as a **Vote**; the Trust Policy grants `auto` only when enough distinct models agree.
 _Avoid_: Ensemble, majority vote, confidence threshold
 
 **Hosted Judgment**:
@@ -289,7 +301,7 @@ A tracker workbook row whose value is calculated by workbook formula or workbook
 _Avoid_: Direct write target, statement total row
 
 **Leaf Workbook Row**:
-A tracker workbook row that can receive a source-backed value directly when workbook safety checks pass.
+Same row as a **Leaf Category Row**, named from the workbook-write side: it can receive a source-backed value directly when workbook safety checks pass.
 _Avoid_: Section total, derived row
 
 **Asset Value Row**:
@@ -368,7 +380,7 @@ _Avoid_: Credit card settlement, liability payment
 - A **Residual Review Line** should use the same source transaction with a split-specific identifier so the user can categorize the leftover amount separately.
 - A **Residual Review Line** should not create **Category Memory** because the residual is a leftover allocation, not a stable merchant identity.
 - A **Pre-Filled Recurring Value** is a kind of **Manual Workbook Value** and remains untouched by default.
-- A **Deterministic Category Match** can support an automatic write only when all workbook safety checks also pass.
+- A **Deterministic Category Match** can support an automatic write only when the **Trust Policy** grants `auto` and all workbook safety checks also pass.
 - A **Review-Only Transaction** can appear in reports but does not contribute to an automatic workbook write.
 - A **Parent/Section Row** may appear in workbook context and review option metadata, but it must not be selected as a transaction category.
 - A **Leaf Category Row** is the normal target for `manual_category`, workbook value planning, and Category Memory learning.
@@ -386,7 +398,7 @@ _Avoid_: Credit card settlement, liability payment
 - **Category Memory** is generated private data and remains separate from a hand-written **Local Rule**.
 - **Category Memory** uses **Merchant Identity** as its default matching key.
 - A recurring **Confirmed Review Decision** can add a **Recurring Match Hint** to narrow future matches.
-- A single **Confirmed Review Decision** can make future matching **Category Memory** review-free, but it does not bypass workbook safety checks.
+- A single **Confirmed Review Decision** becomes `human` **Category Memory** that categorises from the next month, but the **Trust Policy** (amount cap, never-auto list) and workbook safety checks still apply.
 - Committing a month learns its **Confirmed Review Decision** records into **Category Memory**; a **Reviewed Decision File** import remains a manual escape hatch.
 - A dry run never writes **Category Memory**.
 - A **Bank Statement** can support **Cashflow Row** updates.
@@ -438,10 +450,10 @@ _Avoid_: Credit card settlement, liability payment
 > **Domain expert:** "No. Leave the pre-filled value alone and treat the statement as confirmation."
 
 > **Dev:** "The merchant text says APPLE. Should I write it to Apple Cloud?"
-> **Domain expert:** "Only if a deterministic rule says so. Otherwise report it for review."
+> **Domain expert:** "Only if a deterministic rule says so, or both local models agree and the Trust Policy allows `auto`. Otherwise report it for review."
 
 > **Dev:** "I reviewed an unmatched merchant and assigned it to Food. Should future runs remember that?"
-> **Domain expert:** "Yes. Learn from my confirmed review decision, but not from an unreviewed guess."
+> **Domain expert:** "Yes, when the month commits. A consensus answer I did not review is learned only as an `auto` hint until two committed months agree."
 
 > **Dev:** "Should the learned merchant mapping be written into my local rules file?"
 > **Domain expert:** "No. Keep learned category memory separate from hand-written local rules."
@@ -450,13 +462,13 @@ _Avoid_: Credit card settlement, liability payment
 > **Domain expert:** "No. Store a normalized merchant identity, and add amount/date hints only when the payment is recurring."
 
 > **Dev:** "Do I need to confirm the same merchant several times before it is trusted?"
-> **Domain expert:** "No. One confirmed review decision is enough for future categorization, but writing still needs normal workbook safety checks."
+> **Domain expert:** "No. One confirmed review decision is enough for future categorization, but writing still needs the Trust Policy and normal workbook safety checks."
 
 > **Dev:** "Should the monthly run ask me questions interactively?"
-> **Domain expert:** "No. Produce review output first, then import my reviewed decision file into category memory."
+> **Domain expert:** "No. Write the Exception Sheet; I fill and save it, then re-run `monthly`."
 
 > **Dev:** "Can I import reviewed decisions and commit workbook changes in one command?"
-> **Domain expert:** "No. Import decisions, dry-run again, then commit the workbook update after reviewing the result."
+> **Domain expert:** "Yes. `monthly` reads the saved Exception Sheet, commits when nothing is left in review, and learns Category Memory in the same step. Use `--dry-run` to preview."
 
 > **Dev:** "Should the investment statement be processed in a separate monthly workflow?"
 > **Domain expert:** "No. Keep the source contracts separate, but combine their evidence into one monthly planning run."
@@ -540,7 +552,7 @@ _Avoid_: Credit card settlement, liability payment
 - "split transfer" means a **Proxy Split Transfer** only when one source transaction intentionally backs multiple category allocations.
 - "fixed conversion rate" for a split transfer means a configured **Proxy Split Conversion Rate**, not a live or inferred rate.
 - "credit card payment" means **Credit Card Settlement**, not the underlying **Card Purchase** expenses.
-- "match" means a **Deterministic Category Match** when deciding whether an automatic write is allowed.
+- "match" means a **Deterministic Category Match**; model agreement is **Consensus**. Either earns `auto` only through the **Trust Policy**.
 - "auto-learning" means creating **Category Memory** on commit; consensus-only entries stay untrusted `auto` hints until two committed months agree.
 - "local rules" are manually curated **Local Rules**; generated **Category Memory** is a separate private store.
 - "merchant" in category memory means **Merchant Identity**, not the raw full statement description.
