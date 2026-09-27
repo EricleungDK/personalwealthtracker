@@ -847,6 +847,51 @@ def test_committed_human_decision_is_auto_next_month_via_memory(tmp_path, monkey
     assert row.authority is Authority.auto
 
 
+def test_all_digit_description_is_never_learned_as_empty_merchant(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("Apr", "May"))
+    _create_category_registry_config(config_dir)
+    first = _run_month(tmp_path, tracker, config_dir, "Apr", ["3084302062152494"], commit=True)
+    _fill_exception_sheet(first.review_xlsx_path, {"3084302062152494": "Traveling"})
+    committed = _run_month(
+        tmp_path,
+        tracker,
+        config_dir,
+        "Apr",
+        ["3084302062152494"],
+        commit=True,
+        review_decisions_path=first.review_xlsx_path,
+    )
+    assert committed.output_workbook_path is not None
+
+    next_month = _run_month(tmp_path, tracker, config_dir, "May", ["9999888877776666"])
+
+    assert next_month.categorized_transactions[0].categorization_method != "category_memory"
+    memory = tmp_path / "data" / "category_memory" / "category_memory.json"
+    assert '"merchant_identity": ""' not in memory.read_text(encoding="utf-8")
+
+
+def test_legacy_empty_merchant_memory_entry_never_matches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tracker = tmp_path / "tracker.xlsx"
+    config_dir = tmp_path / "config"
+    _create_multi_month_tracker(tracker, ("May",))
+    _create_category_registry_config(config_dir)
+    memory_dir = tmp_path / "data" / "category_memory"
+    memory_dir.mkdir(parents=True)
+    _write(
+        memory_dir / "category_memory.json",
+        '{"mappings": [{"category": "Traveling", "merchant_identity": "", '
+        '"provenance": "human", "source_transaction_ids": ["legacy"]}]}',
+    )
+
+    result = _run_month(tmp_path, tracker, config_dir, "May", ["9999888877776666"])
+
+    assert result.categorized_transactions[0].categorization_method != "category_memory"
+
+
 def test_accepted_subscription_proposal_registers_leaf_under_services_on_commit_only(
     tmp_path, monkeypatch
 ):
