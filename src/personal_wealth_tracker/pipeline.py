@@ -48,6 +48,8 @@ def run_pipeline(
     suggester: Suggester | None = None,
     blank_accepts: bool = True,
     carry_review_decisions: bool = False,
+    backups_dir: Path = Path("data/backups"),
+    processed_dir: Path = Path("data/processed"),
 ) -> RunResult:
     """`carry_review_decisions` rewrites the default Exception Sheet with the decisions prefilled."""
     month = normalize_month(month)
@@ -114,12 +116,12 @@ def run_pipeline(
 
     output_workbook_path = None
     if commit and not review_count:
-        create_backup(tracker_path, Path("data/backups"))
+        create_backup(tracker_path, backups_dir)
         output_workbook_path = commit_updates(
             tracker_path,
             updates,
             config,
-            Path("data/processed"),
+            processed_dir,
             structure_changes=structure_changes,
         )
         persist_category_registry_additions(config_dir, category_registry_additions)
@@ -192,6 +194,8 @@ def run_monthly(
     output_dir: Path,
     category_memory_dir: Path,
     dry_run: bool = False,
+    backups_dir: Path = Path("data/backups"),
+    processed_dir: Path = Path("data/processed"),
 ) -> RunResult:
     """Newest statement, inferred month, filled Exception Sheet reused; commits unless dry-run.
 
@@ -219,6 +223,8 @@ def run_monthly(
         local_llm_suggestions=True,
         blank_accepts=not unreviewed,
         carry_review_decisions=True,
+        backups_dir=backups_dir,
+        processed_dir=processed_dir,
     )
     return replace(result, exception_sheet_unreviewed=unreviewed)
 
