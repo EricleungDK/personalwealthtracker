@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from openpyxl import Workbook
 
 from personal_wealth_tracker.categorizer import categorize_transactions
@@ -21,6 +22,14 @@ from personal_wealth_tracker.utils import TRANSACTION_ID_SCHEME_VERSION
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "nordea_account_statement.redacted.pdf"
+
+
+@pytest.fixture(autouse=True)
+def _default_config_dir(tmp_path_factory, monkeypatch):
+    """CLI calls without --config-dir read ./config; give them a synthetic one."""
+    cwd = tmp_path_factory.mktemp("cwd")
+    _create_default_cli_config(cwd / "config")
+    monkeypatch.chdir(cwd)
 
 
 def test_import_confirmed_review_decision_into_category_memory(tmp_path):
@@ -984,6 +993,44 @@ def _write_review_workbook_decisions(
         metadata_sheet.append([key, value])
     workbook.save(path)
     workbook.close()
+
+
+def _create_default_cli_config(config_dir: Path) -> None:
+    config_dir.mkdir(parents=True)
+    _write_text(
+        config_dir / "settings.yaml",
+        """
+tracker:
+  currency: "DKK"
+statement:
+  currency: "DKK"
+""",
+    )
+    _write_text(
+        config_dir / "categories.yaml",
+        """
+category_registry:
+  - label: "Living expenses"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Food& Drinks (monthly)"
+      - "Shopping (monthly)"
+      - "Traveling"
+      - "Parent B"
+  - label: "Services"
+    type: "parent"
+    allow_new_children: true
+    children:
+      - "Mobile phone (monthly)"
+      - "Apple Cloud"
+      - "Fitness"
+  - label: "Income (net)"
+    type: "derived"
+aliases: {}
+""",
+    )
+    _write_text(config_dir / "rules.yaml", "{}\n")
 
 
 def _create_category_registry_config(config_dir: Path) -> None:

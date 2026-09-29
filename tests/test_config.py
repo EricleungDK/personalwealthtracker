@@ -225,13 +225,13 @@ def test_load_config_rejects_guidance_alias_to_unknown_leaf(tmp_path):
     )
 
 
-def test_guidance_alias_example_is_synthetic_and_real_file_is_ignored(tmp_path):
+def test_guidance_alias_example_is_synthetic_and_real_file_is_ignored(example_config_dir):
     example = Path("config/guidance_aliases.local.example.yaml")
-    for name in ("settings.yaml", "categories.yaml", "rules.yaml"):
-        _write(tmp_path / name, Path("config", name).read_text(encoding="utf-8"))
-    _write(tmp_path / "guidance_aliases.local.yaml", example.read_text(encoding="utf-8"))
+    _write(
+        example_config_dir / "guidance_aliases.local.yaml", example.read_text(encoding="utf-8")
+    )
 
-    aliases = load_config(tmp_path).guidance_aliases
+    aliases = load_config(example_config_dir).guidance_aliases
 
     assert aliases
     assert all("EXAMPLE" in pattern for pattern in aliases)

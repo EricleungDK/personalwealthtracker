@@ -3,5 +3,5 @@
 # Each entry maps a merchant pattern (case-insensitive substring) to a leaf category.
 # Matched directly after Category Memory and also shown to the local Suggester.
 
-"CANTEEN EXAMPLE NORTH": "Lunch (monthly)"
-"CANTEEN EXAMPLE SOUTH": "Lunch (monthly)"
+"CAFETERIA EXAMPLE NORTH": "Restaurants"
+"CAFETERIA EXAMPLE SOUTH": "Restaurants"
