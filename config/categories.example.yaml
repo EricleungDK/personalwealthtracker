@@ -1,0 +1,73 @@
+# Public sample. Copy to config/categories.yaml (ignored by Git) and match the labels to the
+# rows of your own tracker workbook. Every leaf needs a description: the Suggester reads it.
+
+category_registry:
+- label: Assets
+  type: parent
+  allow_new_children: true
+  children:
+  - label: Cash savings
+    description: "Transfers into or the balance of the savings account."
+  - label: Brokerage account
+    description: "Brokerage holdings value or purchases."
+  - label: Pension account
+    description: "Pension account balance or contributions."
+- label: Cashflow
+  type: derived
+- label: Card refund
+  description: "Refund credited back from a card purchase (incoming card refund)."
+- label: Credit card payment
+  description: "Payment of the credit card bill (outgoing card settlement)."
+- label: Income (net)
+  type: derived
+- label: Full-time job (net)
+  description: "Net salary paid by the employer."
+- label: Other income
+  description: "Any income that is not salary."
+- label: Living expenses
+  type: parent
+  allow_new_children: true
+  children:
+  - label: Rent (monthly)
+    description: "Monthly rent for the home."
+  - label: Groceries (monthly)
+    description: "Groceries and drinks from supermarkets and bakeries."
+  - label: Restaurants
+    description: "Eating out at restaurants, cafes, bars and takeaway; not groceries."
+  - label: Transportation
+    description: "Public transport, taxis, bike rentals and fuel."
+  - label: Entertainment
+    description: "Cinema, concerts, events, games and other leisure."
+- label: Services
+  type: parent
+  allow_new_children: true
+  children:
+  - label: Mobile phone (monthly)
+    description: "Mobile phone plan bill."
+  - label: Internet (monthly)
+    description: "Home internet bill."
+  - label: Streaming subscription
+    description: "Video or music streaming subscription."
+  - label: Cloud services
+    description: "Cloud storage or services subscription."
+- label: Insurance
+  type: parent
+  allow_new_children: true
+  children:
+  - label: Home insurance (yearly)
+    description: "Yearly home insurance premium."
+- label: Investments
+  type: parent
+  allow_new_children: true
+  children:
+  - label: Brokerage contributions
+    description: "Monthly transfer into the brokerage account."
+  - label: Pension contributions
+    description: "Monthly contribution to the pension account."
+- label: Total net worth
+  type: derived
+aliases:
+  Rent: Rent (monthly)
+  Groceries: Groceries (monthly)
+  Mobile phone: Mobile phone (monthly)
+  Internet: Internet (monthly)

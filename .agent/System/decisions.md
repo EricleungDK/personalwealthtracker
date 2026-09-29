@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-27
 
-The product decisions that are in force, grouped by topic. Each line gives the rule and, after the dash, why it exists. Bigger design decisions have ADRs in `docs/adr/`. Detailed history lives in git, the GitHub issues (#2-#20) and the historical `.agent/issues/` files.
+The product decisions that are in force, grouped by topic. Each line gives the rule and, after the dash, why it exists. Bigger design decisions have ADRs in `docs/adr/`. Detailed history lives in git, the GitHub issues (#2-#20).
 
 ## Product Boundary
 
@@ -50,7 +50,7 @@ The product decisions that are in force, grouped by topic. Each line gives the r
 
 ## Proxy Split Transfers
 
-- One Revolut top-up may pay for fixed family allocations (Parent A, Parent B). Base amounts are in source currency and multiplied by a configured conversion rate. Allocations are rounded to two decimals before the residual is calculated (2026-05-21).
+- One transfer to an intermediary account may pay for several fixed allocations. Base amounts are in source currency and multiplied by a configured conversion rate. Allocations are rounded to two decimals before the residual is calculated (2026-05-21).
 - A split happens only when the transfer covers every allocation. An exact match leaves no residual. A larger transfer adds a Residual Review Line. The residual is never learned into memory (2026-05-21).
 - `monthly_limit` is a configurable safety threshold. Candidates beyond it fail closed and go to review (2026-05-26).
 - Concrete triggers and amounts belong in the ignored `config/rules.local.yaml` (2026-05-21).

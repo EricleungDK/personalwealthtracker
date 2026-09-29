@@ -121,7 +121,7 @@ Use `--statement-format nordea-pdf` for a PDF; expect more review because PDFs c
 
 A Proxy Split Transfer is one bank transfer to an intermediary account used as evidence for several tracker allocations. Personal split rules belong in ignored `config/rules.local.yaml`.
 
-For the Revolut family-transfer pattern, the configured fixed allocation is `8000 * 0.82 = 6560 DKK` for `Parent A` and `4000 * 0.82 = 3280 DKK` for `Parent B`; a matching Revolut expense must cover the full `9840 DKK` before it is split. Methods in the outputs:
+For an example rule with two fixed allocations, `8000 * 0.82 = 6560 DKK` for `Parent A` and `4000 * 0.82 = 3280 DKK` for `Parent B`, a matching transfer must cover the full `9840 DKK` before it is split. Methods in the outputs:
 
 - `proxy_split_source`: the original transfer, kept for audit and excluded from workbook totals.
 - `proxy_split_allocation`: a counted fixed allocation such as `Parent A` or `Parent B`.

@@ -1,8 +1,20 @@
+import shutil
 from pathlib import Path
 
 import pytest
 
 PROJECT_CONFIG_DIR = Path(__file__).parents[1] / "config"
+EXAMPLE_CONFIG_NAMES = ("settings", "categories", "rules")
+
+
+@pytest.fixture
+def example_config_dir(tmp_path):
+    """The committed public sample config, copied under its loadable names."""
+    config_dir = tmp_path / "example-config"
+    config_dir.mkdir()
+    for name in EXAMPLE_CONFIG_NAMES:
+        shutil.copy(PROJECT_CONFIG_DIR / f"{name}.example.yaml", config_dir / f"{name}.yaml")
+    return config_dir
 
 
 @pytest.fixture(autouse=True)

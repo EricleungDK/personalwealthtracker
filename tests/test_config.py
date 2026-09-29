@@ -1,7 +1,6 @@
 from pathlib import Path
 from decimal import Decimal
 import difflib
-import shutil
 import subprocess
 
 import pytest
@@ -184,8 +183,8 @@ trust_policy:
     )
 
 
-def test_project_settings_set_operator_trust_policy():
-    config = load_config(Path("config"))
+def test_example_settings_set_default_trust_policy(example_config_dir):
+    config = load_config(example_config_dir)
 
     assert config.trust_policy == TrustPolicySettings()
 
@@ -325,28 +324,27 @@ proxy_split_rules:
         load_config(tmp_path)
 
 
-def test_project_config_includes_mastercard_refund_category_and_directional_rules():
-    config = load_config(Path("config"))
+def test_example_config_includes_card_refund_category_and_directional_rules(example_config_dir):
+    config = load_config(example_config_dir)
 
-    mastercard_rules = [
+    card_rules = [
         rule
         for rule in config.rules
-        if "mastercard" in {keyword.lower() for keyword in rule.match_keywords}
+        if "synthetic card" in {keyword.lower() for keyword in rule.match_keywords}
     ]
 
-    assert "Mastercard refund" in config.categories
-    assert [(rule.category, rule.direction, rule.confidence) for rule in mastercard_rules] == [
-        ("Mastercard refund", "income", 0.98),
-        ("Nordea Credit Card", "expense", 0.98),
+    assert "Card refund" in config.categories
+    assert [(rule.category, rule.direction, rule.confidence) for rule in card_rules] == [
+        ("Card refund", "income", 0.98),
+        ("Credit card payment", "expense", 0.98),
     ]
 
 
-def test_project_config_exposes_parent_leaf_category_registry():
-    config = load_config(Path("config"))
+def test_example_config_exposes_parent_leaf_category_registry(example_config_dir):
+    config = load_config(example_config_dir)
 
     assert "Rent (monthly)" in config.category_registry.leaf_categories
-    assert "Parent B" in config.category_registry.leaf_categories
-    assert "Shopping (monthly)" in config.category_registry.leaf_categories
+    assert "Groceries (monthly)" in config.category_registry.leaf_categories
     assert "Living expenses" in config.category_registry.parent_categories
     assert "Services" in config.category_registry.parent_categories
     assert "Insurance" in config.category_registry.parent_categories
@@ -355,11 +353,11 @@ def test_project_config_exposes_parent_leaf_category_registry():
     assert "Insurance" in config.category_registry.new_leaf_parent_categories
     assert "Living expenses" not in config.categories
     assert "Insurance" not in config.categories
-    assert "Taxes" not in config.categories
+    assert "Cashflow" not in config.categories
 
 
-def test_project_config_describes_every_leaf_category():
-    config = load_config(Path("config"))
+def test_example_config_describes_every_leaf_category(example_config_dir):
+    config = load_config(example_config_dir)
 
     glossary = config.category_registry.leaf_glossary
 
@@ -367,9 +365,8 @@ def test_project_config_describes_every_leaf_category():
     assert [leaf for leaf, description in glossary.items() if not description.strip()] == []
 
 
-def test_project_config_stays_described_after_registering_new_leaves(tmp_path):
-    config_dir = tmp_path / "config"
-    shutil.copytree(Path("config"), config_dir)
+def test_example_config_stays_described_after_registering_new_leaves(example_config_dir):
+    config_dir = example_config_dir
     categories_yaml = config_dir / "categories.yaml"
     before = categories_yaml.read_text(encoding="utf-8")
     additions = (
@@ -430,17 +427,16 @@ def test_registering_new_leaf_keeps_crlf_line_endings_and_fills_empty_children(t
     )
 
 
-def test_project_config_adds_restaurants_entertainment_and_no_generic_subscriptions_leaf():
-    config = load_config(Path("config"))
-    registry = config.category_registry
+def test_example_config_has_no_generic_subscriptions_leaf(example_config_dir):
+    registry = load_config(example_config_dir).category_registry
 
     for leaf in ("Restaurants", "Entertainment"):
         assert registry.is_leaf_category(leaf)
     assert not registry.is_leaf_category("Subscriptions")
     assert registry.allows_new_leaf_children("Services")
-    assert "Disney+" in registry.children_by_parent["Services"]
+    assert "Streaming subscription" in registry.children_by_parent["Services"]
     assert "Restaurants" in registry.children_by_parent["Living expenses"]
-    assert "Food& Drinks (monthly)" in registry.children_by_parent["Living expenses"]
+    assert "Groceries (monthly)" in registry.children_by_parent["Living expenses"]
 
 
 def test_load_config_exposes_leaf_glossary_with_blank_missing_descriptions(tmp_path):

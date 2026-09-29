@@ -9,7 +9,7 @@ The Local Wealth-Tracker Agent helps with setup, statement import, review artifa
 Public package artifacts are safe to commit and distribute:
 
 - `src/personal_wealth_tracker/` reusable CLI and workflow code.
-- `config/settings.yaml`, `config/categories.yaml`, and `config/rules.yaml` sample public configuration.
+- `config/settings.example.yaml`, `config/categories.example.yaml`, and `config/rules.example.yaml` synthetic sample configuration.
 - `config/rules.local.example.yaml`, `config/guidance_aliases.local.example.yaml`, and `config/profile.example.yaml` sample public configuration for local overlays and profile paths.
 - `docs/` user-facing workflow, project maps, and public/private boundary documentation.
 - `.agent/System/` durable architecture, data-contract, domain-language, and privacy notes for coding agents.
@@ -43,8 +43,8 @@ Use these paths for the current incubation repo and future setup workflow:
 
 | Purpose | Public sample | Private local path |
 |---------|---------------|--------------------|
-| Runtime settings | `config/settings.yaml` | none yet (`config/settings.local.yaml` is not loaded; edit `settings.yaml` locally) |
-| Category registry | `config/categories.yaml` | future local overlay only when explicitly supported |
+| Runtime settings | `config/settings.example.yaml` | `config/settings.yaml` (ignored; copy the sample, or run `wealth-tracker setup`) |
+| Category registry | `config/categories.example.yaml` | `config/categories.yaml` (ignored; copy the sample, or run `wealth-tracker setup`) |
 | Rule examples | `config/rules.local.example.yaml` | `config/rules.local.yaml` |
 | Guidance Aliases | `config/guidance_aliases.local.example.yaml` | `config/guidance_aliases.local.yaml` |
 | Profile examples | `config/profile.example.yaml` | `profiles/<profile>.local.yaml` |

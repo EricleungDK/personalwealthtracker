@@ -30,8 +30,7 @@ personalwealthtracker/
 │   ├── Tasks/
 │   │   └── context.md
 │   ├── System/
-│   └── issues/          # historical local issues 001-040, read-only
-├── docs/                # operator docs, adr/, agents/, superpowers/specs/
+├── docs/                # operator docs, adr/, agents/
 ├── src/personal_wealth_tracker/
 ├── tests/
 ├── scripts/
@@ -40,7 +39,7 @@ personalwealthtracker/
 
 ## Issue Tracking
 
-GitHub Issues in `EricleungDK/personalwealthtracker` is canonical (since 2026-09-25); see `docs/agents/issue-tracker.md`. `.agent/issues/` (local issues 001-040 and `kanban.md`) is historical and read-only; do not add new local issues.
+GitHub Issues in `EricleungDK/personalwealthtracker` is canonical (since 2026-09-25); see `docs/agents/issue-tracker.md`. Do not add local issue files.
 
 ## Implementation Guidance
 

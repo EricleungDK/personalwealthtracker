@@ -129,6 +129,15 @@ def test_committed_csv_fixtures_are_redacted_and_do_not_require_real_csv_paths()
     assert "!tests/fixtures/**/*.csv" in gitignore
 
 
+def test_personal_config_is_ignored_and_public_samples_are_committed():
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    for name in ("settings", "categories", "rules"):
+        assert f"config/{name}.yaml" in gitignore
+        assert (REPO_ROOT / "config" / f"{name}.example.yaml").exists()
+    assert "config/*.local.yaml" in gitignore
+
+
 def test_project_overview_documents_maps_components_scripts_and_terms():
     overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
 
@@ -274,7 +283,7 @@ def test_local_llm_mode_documentation_is_in_sync():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     workflow = (REPO_ROOT / "docs" / "monthly_workflow.md").read_text(encoding="utf-8")
     overview = (REPO_ROOT / "docs" / "project_overview.md").read_text(encoding="utf-8")
-    settings = (REPO_ROOT / "config" / "settings.yaml").read_text(encoding="utf-8")
+    settings = (REPO_ROOT / "config" / "settings.example.yaml").read_text(encoding="utf-8")
     data_contracts = (REPO_ROOT / ".agent" / "System" / "data_contracts.md").read_text(
         encoding="utf-8"
     )

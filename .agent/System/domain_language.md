@@ -158,7 +158,7 @@ _Avoid_: Random review row ID, fake bank transaction ID
 
 **Proxy Split Conversion Rate**:
 A user-maintained fixed conversion rate used to convert configured proxy split allocation amounts into tracker currency.
-_Avoid_: Live exchange rate, inferred Revolut rate
+_Avoid_: Live exchange rate, inferred exchange rate
 
 **Proxy Split Base Amount**:
 A configured source-currency amount in a proxy split allocation before applying the proxy split conversion rate.

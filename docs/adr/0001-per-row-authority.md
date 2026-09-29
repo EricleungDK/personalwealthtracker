@@ -20,9 +20,9 @@ and a one-line `authority_reason`, decided by one pure Trust Policy
 - Evidence: tier (categorization method), suggested category, confidence,
   model votes with source and confidence, agreement count, import provenance.
 - Row facts: amount.
-- Policy from `config/settings.yaml` `trust_policy`: `auto_max_amount`
-  (1000), `min_agreement` (2), `never_auto_categories` (Rent, Parent B, Parent A, both
-  insurances, three investment leaves, salary); `min_confidence` from
+- Policy from `settings.yaml` `trust_policy`: `auto_max_amount`
+  (1000), `min_agreement` (2), `never_auto_categories` (Rent, salary; add
+  your own high-stakes leaves); `min_confidence` from
   `confidence_thresholds.auto_write`.
 
 Only Trusted Statement Adapter rows can reach `auto`. Monthly Review

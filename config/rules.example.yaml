@@ -1,0 +1,39 @@
+# Public sample with synthetic merchants only. Copy to config/rules.yaml (ignored by Git).
+# Keep real merchant names, amounts and personal categories in ignored files
+# (config/rules.yaml, config/rules.local.yaml).
+
+historical_mappings:
+  "SYNTHETIC STREAMING": "Streaming subscription"
+  "SYNTHETIC CLOUD": "Cloud services"
+
+rules:
+  - category: "Card refund"
+    match_keywords: ["synthetic card"]
+    direction: "income"
+    confidence: 0.98
+  - category: "Credit card payment"
+    match_keywords: ["synthetic card"]
+    direction: "expense"
+    confidence: 0.98
+  - category: "Rent (monthly)"
+    match_keywords: ["rent", "husleje"]
+    direction: "expense"
+    confidence: 0.95
+  - category: "Groceries (monthly)"
+    match_keywords: ["synthetic grocer"]
+    direction: "expense"
+    confidence: 0.90
+  - category: "Mobile phone (monthly)"
+    match_keywords: ["synthetic telecom"]
+    direction: "expense"
+    confidence: 0.95
+  - category: "Full-time job (net)"
+    match_keywords: ["salary", "payroll"]
+    direction: "income"
+    confidence: 0.95
+
+recurring_rules: []
+
+fixed_rows:
+  - "Rent (monthly)"
+  - "Streaming subscription"

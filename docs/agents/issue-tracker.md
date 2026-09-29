@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Repo: `EricleungDK/personalwealthtracker`. GitHub Issues is the canonical tracker from 2026-09-25. `.agent/issues/` holds the historical local issues 001-040, their PRDs and `kanban.md`; it is read-only and gets no new issues.
+Repo: `EricleungDK/personalwealthtracker`. GitHub Issues is the canonical tracker from 2026-09-25. There are no local issue files.
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
