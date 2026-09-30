@@ -10,10 +10,10 @@
 ![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)
 
 <a href="docs/assets/demo.mp4">
-  <img src="docs/assets/demo.gif" alt="wealth-tracker demo: setup, monthly run, exception sheet, commit" width="900">
+  <img src="docs/assets/demo.gif" alt="wealth-tracker demo on synthetic data: setup, monthly run where rules, Category Memory and two local models settle five of seven rows, an Exception Sheet decision for the two held rows, then a re-run that commits the month in place with a backup" width="900">
 </a>
 
-<sub>30-second demo on synthetic data · <a href="docs/assets/demo.mp4">MP4</a> · regenerate with <code>scripts/record_demo.py</code></sub>
+<sub>25-second demo on synthetic data, real CLI run · local model waits cut and labelled · <a href="docs/assets/demo.mp4">MP4</a> · <a href="docs/assets/demo-recording.json">recording record</a> · regenerate with <code>scripts/record_demo.py</code></sub>
 
 </div>
 
@@ -133,7 +133,7 @@ The full public/private boundary: [docs/public_private_boundary.md](docs/public_
 
 ```bash
 uv run pytest                              # full suite
-.venv/bin/python scripts/record_demo.py    # re-render the demo from a real synthetic run
+.venv/bin/python scripts/record_demo.py    # re-render the demo (needs ffmpeg + Ollama models)
 ```
 
 Built test-first. Contributions welcome — keep fixtures synthetic.

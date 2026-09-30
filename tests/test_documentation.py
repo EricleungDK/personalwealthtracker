@@ -32,8 +32,22 @@ def test_readme_links_reference_docs_and_demo():
         "scripts/record_demo.py",
     ]:
         assert phrase in readme
-    assert (REPO_ROOT / "docs" / "assets" / "demo.gif").exists()
-    assert (REPO_ROOT / "docs" / "assets" / "demo.mp4").exists()
+    for name in ["demo.gif", "demo.mp4", "demo.webm", "demo-poster.png", "demo-recording.json"]:
+        assert (REPO_ROOT / "docs" / "assets" / name).exists()
+
+
+def test_readme_demo_caption_matches_recording_record():
+    import json
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    record = json.loads(
+        (REPO_ROOT / "docs" / "assets" / "demo-recording.json").read_text(encoding="utf-8")
+    )
+
+    assert record["data"] == "synthetic"
+    assert f"{round(record['duration_seconds'])}-second demo on synthetic data" in readme
+    assert "local model waits cut" in readme
+    assert "docs/assets/demo-recording.json" in readme
 
 
 def test_monthly_workflow_documents_operator_checklist():

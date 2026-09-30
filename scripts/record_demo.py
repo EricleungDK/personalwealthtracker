@@ -1,76 +1,179 @@
-"""Render the README demo (docs/assets/demo.mp4 + demo.gif) from a real synthetic run.
+"""Render the README demo from a real synthetic run.
 
-Runs the real CLI in a temp workspace with synthetic data only, captures its output,
-then draws terminal frames with Pillow and encodes them with ffmpeg.
+Runs the real CLI in a temp workspace on synthetic data only, with the local Ollama
+models, then draws terminal and Exception Sheet frames at 2x with Pillow and scales them
+down with ffmpeg. Model waits are cut and labelled with their measured length.
 
-    .venv/bin/python scripts/record_demo.py
+    .venv/bin/python scripts/record_demo.py [--models gemma4:e4b gemma4:12b]
+
+Writes docs/assets/demo.{gif,mp4,webm}, demo-poster.png and demo-recording.json.
 """
 
 from __future__ import annotations
 
+import argparse
+import csv
+import datetime as dt
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
+from decimal import Decimal
 from pathlib import Path
 
 import openpyxl
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import demo_timeline as timeline
+
+from personal_wealth_tracker.config import load_config
+from personal_wealth_tracker.trust_policy import Evidence, RowFacts, decide_authority
+
 ASSETS = ROOT / "docs" / "assets"
 CLI = [sys.executable, "-m", "personal_wealth_tracker.cli"]
+OLLAMA = "http://localhost:11434"
 
-W, H, FPS = 1280, 720, 20
+W, H, K = 1280, 720, 2  # logical size; frames are drawn at K times and scaled down
+FPS, GIF_FPS, GIF_W = 20, 15, 960
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-BG, WIN, BAR = "#010409", "#0d1117", "#161b22"
-FG, DIM, GREEN, YELLOW, BLUE, RED = "#e6edf3", "#7d8590", "#3fb950", "#d29922", "#58a6ff", "#f85149"
+BG, WIN, BAR, LINE = "#010409", "#0d1117", "#161b22", "#30363d"
+FG, DIM, GREEN, YELLOW, BLUE, PURPLE = (
+    "#e6edf3", "#7d8590", "#3fb950", "#d29922", "#58a6ff", "#bc8cff")
+HOW_COLOUR = {"rule": BLUE, "memory": PURPLE, "consensus": GREEN}
 
-mono = ImageFont.truetype(FONT, 20)
-mono_b = ImageFont.truetype(FONT_BOLD, 20)
-small = ImageFont.truetype(FONT, 16)
-title_f = ImageFont.truetype(SANS_BOLD, 56)
-sub_f = ImageFont.truetype(SANS, 26)
-cap_f = ImageFont.truetype(SANS, 22)
+STATEMENT = """﻿Booking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled
+2026/04/01;25000,00;25000,00;DKK;SYNTHETIC EMPLOYER;Synthetic payroll;;;Yes
+2026/04/03;-299,00;24701,00;DKK;SYNTHETIC FIBER NET;Synthetic internet;;;Yes
+2026/04/05;-450,25;24251,00;DKK;SYNTHETIC GROCER;Synthetic groceries;;;Yes
+2026/04/07;-320,00;23931,00;DKK;METRO TRANSIT CARD;Monthly transit pass;;;Yes
+2026/04/08;-149,00;23782,00;DKK;SYNTHETIC TELECOM;Synthetic phone;;;Yes
+2026/04/12;-79,00;23703,00;DKK;CLOUD STORAGE SUBSCRIPTION;Monthly cloud storage;;;Yes
+2026/04/20;-1450,00;22253,00;DKK;SYNTHETIC HOME INSURANCE;Quarterly home insurance;;;Yes
+"""
+# One decision from a prior synthetic month, so Category Memory has something to recall.
+PRIOR_DECISION = (
+    "transaction_id,date,description,amount,direction,confirmed_category,confirmed\n"
+    "synthetic-2026-03,2026-03-03,SYNTHETIC FIBER NET,-299.00,expense,Internet (monthly),yes\n"
+)
+STATEMENT_NAME = "synthetic-nordea-2026-04.csv"
+PICK = "SYNTHETIC HOME INSURANCE"
 
-LINE_H = 30
-X0, Y0 = 70, 110
+
+def font(path: str, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(path, size * K)
+
+
+mono, mono_b, small = font(FONT, 20), font(FONT_BOLD, 20), font(FONT, 16)
+title_f, sub_f, cap_f = font(SANS_BOLD, 56), font(SANS, 26), font(SANS, 22)
+LINE_H, X0, Y0 = 30, 70, 110
 MAX_LINES = (H - Y0 - 60) // LINE_H
+
+
+def s(*values: float) -> tuple[int, ...]:
+    return tuple(int(v * K) for v in values)
 
 
 # ---------- real run ----------------------------------------------------------------
 
 
-def run(cmd: list[str], cwd: Path) -> str:
+def run(cmd: list[str], cwd: Path) -> tuple[str, float]:
     env = {"PYTHONPATH": str(ROOT / "src"), "PATH": "/usr/bin:/bin"}
+    start = time.monotonic()
     out = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, check=True)
-    return out.stdout.strip()
+    return out.stdout.strip(), time.monotonic() - start
 
 
-def capture() -> dict[str, str]:
+def require_models(models: list[str]) -> None:
+    with urllib.request.urlopen(f"{OLLAMA}/api/tags", timeout=5) as response:
+        installed = {m["name"] for m in json.load(response)["models"]}
+    missing = [m for m in models if m not in installed]
+    if missing:
+        raise SystemExit(f"Ollama is missing {missing}; pull them or pass --models.")
+
+
+def use_models(settings: Path, models: list[str]) -> None:
+    keys = {"  model:": models[0], "  second_model:": models[1]}
+    lines = [next((f'{k} "{v}"' for k, v in keys.items() if line.startswith(k)), line)
+             for line in settings.read_text(encoding="utf-8").splitlines()]
+    settings.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def held_reasons(ws: Path, rows: list[dict]) -> dict[str, str]:
+    """The real trust policy's reason for each held row."""
+    policy = load_config(ws / "config").trust_policy
+    return {
+        r["transaction_id"]: decide_authority(
+            Evidence(tier=r["method"], category=r["category"], confidence=float(r["confidence"])),
+            RowFacts(amount=Decimal(r["amount"])),
+            policy,
+        ).reason
+        for r in rows
+        if r["review_required"] == "True"
+    }
+
+
+def decide(sheet_path: Path) -> tuple[list[list], list[str], str]:
+    """Blank accepts the payroll suggestion; the insurance row gets a dropdown pick.
+
+    Returns the sheet as shown, the pick's real dropdown window, and the pick.
+    """
+    wb = openpyxl.load_workbook(sheet_path)
+    ws = wb["Review Required"]
+    header = [c.value for c in ws[1]]
+    rows = [[c.value for c in r] for r in ws.iter_rows(min_row=2)]
+    for i, row in enumerate(rows, start=2):
+        if row[header.index("description")] == PICK:
+            pick = row[header.index("suggested_category")]
+            cell = ws.cell(i, header.index("manual_category") + 1)
+            cell.value = pick
+            listed = next(v for v in ws.data_validations.dataValidation
+                          if cell.coordinate in v.sqref)
+            column = listed.formula1.split("!$")[1][0]
+            options = [c.value for c in wb["Decision Options"][column] if c.value]
+    wb.save(sheet_path)
+    at = options.index(pick)
+    return [header, *rows], options[at - 1:at + 2], pick
+
+
+def capture(models: list[str]) -> dict:
     tmp = Path(tempfile.mkdtemp())
     try:
-        setup = run(CLI + ["setup", "--workspace", "my-wealth"], tmp)
+        setup, _ = run(CLI + ["setup", "--workspace", "my-wealth"], tmp)
         ws = tmp / "my-wealth"
-        shutil.copy(ws / "examples/synthetic-nordea-transactions.csv", ws / "data/raw_statements")
-        shutil.copy(ws / "templates/local-wealth-tracker-template.xlsx", ws / "Net Worth Tracker.xlsx")
-        first = run(CLI + ["monthly"], ws)
-        sheet = ws / "reports/review_required_2026_apr.xlsx"
-        wb = openpyxl.load_workbook(sheet)
-        row = [c.value for c in wb["Review Required"][2]]
-        wb["Review Required"]["E2"] = row[3]  # accept the suggestion
-        wb.save(sheet)
-        second = run(CLI + ["monthly"], ws)
-        return {"setup": setup, "first": first, "second": second, "row": row}
+        use_models(ws / "config" / "settings.yaml", models)
+        (tmp / "prior.csv").write_text(PRIOR_DECISION, encoding="utf-8")
+        run(CLI + ["learn-category-memory", "--decisions", str(tmp / "prior.csv")], ws)
+        (ws / "data" / "raw_statements" / STATEMENT_NAME).write_text(STATEMENT, encoding="utf-8")
+
+        first, first_wait = run(CLI + ["monthly"], ws)
+        with open(ws / "reports" / "categorized_transactions_2026_apr.csv", encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        settled = timeline.settle_rows(rows, held_reasons(ws, rows))
+        if not any(r.how == "consensus" for r in settled):
+            raise SystemExit("No row settled by local consensus; check the models.")
+        sheet, options, pick = decide(ws / "reports" / "review_required_2026_apr.xlsx")
+        second, second_wait = run(CLI + ["monthly"], ws)
+        if "month committed" not in second:
+            raise SystemExit(f"Re-run did not commit:\n{second}")
+        backups = sorted(p.name for p in (ws / "data" / "backups").iterdir())
+        return {"setup": setup, "first": first, "second": second, "settled": settled,
+                "sheet": sheet, "options": options, "pick": pick, "backups": backups, "waits": [first_wait, second_wait]}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-# ---------- drawing -----------------------------------------------------------------
+# ---------- drawing (coordinates are logical; s() scales them) -----------------------
 
 
 def colour_for(line: str) -> list[tuple[str, str]]:
@@ -78,190 +181,288 @@ def colour_for(line: str) -> list[tuple[str, str]]:
         return [(line, FG)]
     key, val = line.split(":", 1)
     colour = FG
-    if key == "Rows in review" and val.strip() != "0":
-        colour = YELLOW
-    elif key == "Rows in review" or "committed" in val:
-        colour = GREEN
-    elif key == "Pending amount" and not val.strip().startswith("0.00"):
-        colour = YELLOW
+    if key == "Rows in review":
+        colour = YELLOW if val.strip() != "0" else GREEN
     elif key == "Auto rows":
         colour = GREEN
     elif key == "Next action":
-        colour = BLUE
+        colour = GREEN if "committed" in val else BLUE
     return [(key + ":", DIM), (val, colour)]
 
 
-def window(title: str = "wealth-tracker — synthetic demo") -> tuple[Image.Image, ImageDraw.ImageDraw]:
-    img = Image.new("RGB", (W, H), BG)
+def window(title: str) -> tuple[Image.Image, ImageDraw.ImageDraw]:
+    img = Image.new("RGB", s(W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((30, 30, W - 30, H - 30), 14, fill=WIN, outline="#30363d")
-    d.rounded_rectangle((30, 30, W - 30, 80), 14, fill=BAR)
-    d.rectangle((30, 60, W - 30, 80), fill=BAR)
+    d.rounded_rectangle(s(30, 30, W - 30, H - 30), 14 * K, fill=WIN, outline=LINE, width=K)
+    d.rounded_rectangle(s(30, 30, W - 30, 80), 14 * K, fill=BAR)
+    d.rectangle(s(30, 60, W - 30, 80), fill=BAR)
     for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")):
-        d.ellipse((52 + i * 26, 47, 66 + i * 26, 61), fill=c)
-    tw = d.textlength(title, font=small)
-    d.text(((W - tw) / 2, 45), title, font=small, fill=DIM)
+        d.ellipse(s(52 + i * 26, 47, 66 + i * 26, 61), fill=c)
+    tw = d.textlength(title, font=small) / K
+    d.text(s((W - tw) / 2, 45), title, font=small, fill=DIM)
     return img, d
 
 
-def draw_lines(lines: list[list[tuple[str, str]]], cursor: bool) -> Image.Image:
-    img, d = window()
+def terminal(lines: list, cursor: bool) -> Image.Image:
+    img, d = window("wealth-tracker — synthetic demo")
     shown = lines[-MAX_LINES:]
     for i, segs in enumerate(shown):
         x, y = X0, Y0 + i * LINE_H
         for text, colour in segs:
-            f = mono_b if colour in (GREEN,) and text.startswith("❯") else mono
-            d.text((x, y), text, font=f, fill=colour)
-            x += d.textlength(text, font=f)
+            face = mono_b if text.startswith("❯") else mono
+            d.text(s(x, y), text, font=face, fill=colour)
+            x += d.textlength(text, font=face) / K
         if cursor and i == len(shown) - 1:
-            d.rectangle((x + 2, y + 3, x + 13, y + 25), fill=FG)
+            d.rectangle(s(x + 2, y + 3, x + 13, y + 25), fill=FG)
+    return img
+
+
+def card(title: str, sub: str, foot: str) -> Image.Image:
+    img = Image.new("RGB", s(W, H), BG)
+    d = ImageDraw.Draw(img)
+    for face, text, y, c in ((title_f, title, 250, FG), (sub_f, sub, 340, DIM), (cap_f, foot, 420, GREEN)):
+        tw = d.textlength(text, font=face) / K
+        d.text(s((W - tw) / 2, y), text, font=face, fill=c)
+    return img
+
+
+def fit(d: ImageDraw.ImageDraw, text: str, face, width: float) -> str:
+    while d.textlength(text, font=face) / K > width and len(text) > 1:
+        text = text[:-2] + "…"
+    return text
+
+
+def settled_view(settled: list, shown: int) -> Image.Image:
+    img, d = window("How April settled — reports/categorized_transactions_2026_apr.csv")
+    cols = [("transaction", 400), ("amount", 150), ("category", 300), ("settled by", 260)]
+    x0, y = 80, 110
+    x = x0
+    for name, w in cols:
+        d.text(s(x, y), name, font=small, fill=DIM)
+        x += w
+    d.line(s(x0, y + 30, W - 80, y + 30), fill=LINE, width=K)
+    for i, row in enumerate(settled[:shown]):
+        ry = y + 48 + i * 50
+        if row.held:
+            d.rounded_rectangle(s(x0 - 14, ry - 10, W - 66, ry + 38), 8 * K, fill="#2b2111")
+        colour = YELLOW if row.held else HOW_COLOUR[row.how]
+        x = x0
+        for (name, w), text in zip(cols, (row.description, row.amount, row.category, row.how)):
+            d.text(s(x, ry), fit(d, text, mono, w - 20), font=mono,
+                   fill=colour if name == "settled by" else FG)
+            x += w
+    if shown == len(settled):
+        d.text(s(x0, H - 110), timeline.summary(settled), font=cap_f, fill=GREEN)
+    return img
+
+
+def sheet_view(sheet: list[list], picked: str, dropdown: list[str] | None, highlight: int) -> Image.Image:
+    img, d = window("reports/review_required_2026_apr.xlsx — Exception Sheet")
+    header, rows = sheet[0], sheet[1:]
+    show = [("description", 330), ("amount", 140), ("suggested_category", 270), ("manual_category", 300)]
+    x0, y = 60, 150
+    d.text(s(x0, 100), "Only rows the trust policy won't auto-accept land here.", font=cap_f, fill=DIM)
+    x = x0
+    for name, w in show:
+        d.rectangle(s(x, y, x + w, y + 40), fill="#21262d", outline=LINE, width=K)
+        d.text(s(x + 10, y + 11), name, font=small, fill=DIM)
+        x += w
+    for r, row in enumerate(rows):
+        ry = y + 40 + r * 50
+        x = x0
+        for name, w in show:
+            active = name == "manual_category"
+            is_pick = active and row[header.index("description")] == PICK
+            value = picked if is_pick else str(row[header.index(name)] or "")
+            d.rectangle(s(x, ry, x + w, ry + 50), fill="#0f2a1a" if is_pick and picked else WIN,
+                        outline=GREEN if is_pick else LINE, width=2 * K if is_pick else K)
+            if active and not value:
+                d.text(s(x + 10, ry + 16), "blank → accept", font=small, fill=DIM)
+            else:
+                d.text(s(x + 10, ry + 16), fit(d, value, small, w - 20), font=small,
+                       fill=GREEN if active else FG)
+            if is_pick and dropdown is not None:
+                d.text(s(x + w - 26, ry + 14), "▾", font=small, fill=GREEN)
+                for i, option in enumerate(dropdown):
+                    oy = ry + 50 + i * 34
+                    d.rectangle(s(x, oy, x + w, oy + 34), fill="#1f6feb" if i == highlight else BAR,
+                                outline=LINE, width=K)
+                    d.text(s(x + 10, oy + 8), option, font=small, fill=FG)
+            x += w
+    ty = 360
+    for key, value in (("blank", "accept"), ("NONE", "reject"), ("dropdown", "pick a category")):
+        d.text(s(x0, ty), f"{key:>9}", font=mono_b, fill=YELLOW)
+        d.text(s(x0 + 140, ty), f"→ {value}", font=mono, fill=FG)
+        ty += 38
     return img
 
 
 class Movie:
+    """Unique frames with hold durations; long holds cost nothing to store."""
+
     def __init__(self) -> None:
-        self.frames: list[Image.Image] = []
+        self.shots: list[tuple[Image.Image, float]] = []
+
+    @property
+    def seconds(self) -> float:
+        return sum(t for _, t in self.shots)
 
     def hold(self, img: Image.Image, seconds: float) -> None:
-        self.frames.extend([img] * max(1, int(seconds * FPS)))
+        self.shots.append((img, max(1, round(seconds * FPS)) / FPS))
 
-    def fade(self, a: Image.Image, b: Image.Image, seconds: float = 0.4) -> None:
+    def fade(self, a: Image.Image, b: Image.Image, seconds: float = 0.35) -> None:
         n = int(seconds * FPS)
         for i in range(n):
-            self.frames.append(Image.blend(a, b, (i + 1) / n))
+            self.hold(Image.blend(a, b, (i + 1) / n), 1 / FPS)
 
 
 def prompt(cmd: str) -> list[tuple[str, str]]:
     return [("❯ ", GREEN), (cmd, FG)]
 
 
-def type_cmd(m: Movie, lines: list, cmd: str, cps: float = 28) -> None:
+def type_cmd(m: Movie, lines: list, cmd: str, chars_per_frame: int = 2) -> None:
     lines.append(prompt(""))
-    m.hold(draw_lines(lines, True), 0.35)
-    step = max(1, int(cps / FPS))
-    for i in range(0, len(cmd) + 1, step):
+    m.hold(terminal(lines, True), 0.25)
+    for i in range(0, len(cmd) + 1, chars_per_frame):
         lines[-1] = prompt(cmd[:i])
-        m.hold(draw_lines(lines, True), 1 / FPS)
+        m.hold(terminal(lines, True), 1 / FPS)
     lines[-1] = prompt(cmd)
-    m.hold(draw_lines(lines, True), 0.3)
+    m.hold(terminal(lines, True), 0.2)
 
 
-def print_out(m: Movie, lines: list, text: str, per_line: float = 0.07) -> None:
+def print_out(m: Movie, lines: list, text: str, per_line: float = 0.08) -> None:
     for raw in text.splitlines():
         lines.append(colour_for(raw))
-        m.hold(draw_lines(lines, False), per_line)
+        m.hold(terminal(lines, False), per_line)
 
 
-def comment(lines: list, text: str) -> None:
-    lines.append([("# " + text, DIM)])
+def wait_cut(m: Movie, lines: list, seconds: float, models: list[str]) -> None:
+    lines.append([("… " + timeline.model_wait_label(seconds, models), YELLOW)])
+    m.hold(terminal(lines, False), 1.0)
 
 
-def card(title: str, sub: str, foot: str = "") -> Image.Image:
-    img = Image.new("RGB", (W, H), BG)
-    d = ImageDraw.Draw(img)
-    for f, text, y, c in ((title_f, title, 250, FG), (sub_f, sub, 340, DIM), (cap_f, foot, 420, GREEN)):
-        tw = d.textlength(text, font=f)
-        d.text(((W - tw) / 2, y), text, font=f, fill=c)
-    return img
-
-
-def sheet(row: list, filled: str) -> Image.Image:
-    img, d = window("review_required_2026_apr.xlsx — Exception Sheet")
-    cols = [("date", 130), ("description", 230), ("amount", 120), ("suggested_category", 250),
-            ("manual_category", 250), ("reason", 200)]
-    vals = [row[0], row[1], row[2], row[3], filled, row[5]]
-    x, y = 60, 130
-    d.text((x, 100), "Only rows the Trust Policy won't auto-accept land here.", font=cap_f, fill=DIM)
-    cx = x
-    for (name, w), v in zip(cols, vals):
-        d.rectangle((cx, y, cx + w, y + 40), fill="#21262d", outline="#30363d")
-        d.text((cx + 10, y + 11), name, font=small, fill=DIM)
-        active = name == "manual_category"
-        d.rectangle((cx, y + 40, cx + w, y + 90), fill="#0f2a1a" if active and filled else WIN,
-                    outline=GREEN if active else "#30363d", width=2 if active else 1)
-        text = str(v or "")
-        while d.textlength(text, font=small) > w - 16:
-            text = text[:-2] + "…"
-        d.text((cx + 10, y + 55), text, font=small, fill=GREEN if active else FG)
-        cx += w
-    tips = [("blank", "accept suggestion"), ("NONE", "reject row"), ("category", "override")]
-    ty = 300
-    for k, v in tips:
-        d.text((x, ty), f"{k:>9}", font=mono_b, fill=YELLOW)
-        d.text((x + 140, ty), f"→ {v}", font=mono, fill=FG)
-        ty += 38
-    d.text((x, 470), "Save the sheet, re-run `wealth-tracker monthly`. Decisions are remembered.",
-           font=cap_f, fill=DIM)
-    return img
+def only(text: str, keys: tuple[str, ...]) -> str:
+    return "\n".join(line for line in text.splitlines() if line.split(":", 1)[0] in keys)
 
 
 # ---------- storyboard --------------------------------------------------------------
 
 
-def build(out: dict) -> Movie:
+def build(out: dict, models: list[str]) -> Movie:
     m = Movie()
-    intro = card("wealth-tracker", "Bank CSV  →  your Excel net-worth tracker", "100% local · dry-run first · writes only to a copy")
-    m.hold(intro, 2.4)
+    intro = card("Personal Wealth Tracker", "Bank CSV  →  your Excel net-worth workbook",
+                 "local-first · synthetic data")
+    m.hold(intro, 1.6)
 
     lines: list = []
-    first = draw_lines(lines, True)
-    m.fade(intro, first)
-    comment(lines, "1. create a workspace (synthetic data only)")
-    type_cmd(m, lines, "wealth-tracker setup --workspace my-wealth")
-    print_out(m, lines, out["setup"])
-    m.hold(draw_lines(lines, False), 1.2)
-
-    lines = []
-    comment(lines, "2. drop this month's bank export in, run the month")
-    type_cmd(m, lines, "cd my-wealth && cp examples/*.csv data/raw_statements/")
+    m.fade(intro, terminal(lines, True))
+    type_cmd(m, lines, "wealth-tracker setup --workspace my-wealth", 3)
+    print_out(m, lines, only(out["setup"], ("Workspace", "Files written")), 0.1)
+    type_cmd(m, lines, f"cd my-wealth && cp ~/{STATEMENT_NAME} data/raw_statements/", 4)
     type_cmd(m, lines, "wealth-tracker monthly")
-    print_out(m, lines, out["first"], 0.12)
-    before_sheet = draw_lines(lines, False)
-    m.hold(before_sheet, 3.0)
+    wait_cut(m, lines, out["waits"][0], models)
+    print_out(m, lines, only(out["first"], (
+        "Month", "Auto rows", "Rows in review", "Exception sheet")), 0.12)
+    before = terminal(lines, False)
+    m.hold(before, 1.6)
 
-    suggestion = out["row"][3]
-    empty = sheet(out["row"], "")
-    m.fade(before_sheet, empty)
-    m.hold(empty, 1.2)
-    for i in range(1, len(suggestion) + 1):
-        m.hold(sheet(out["row"], suggestion[:i]), 1 / FPS)
-    filled = sheet(out["row"], suggestion)
-    m.hold(filled, 2.6)
+    settled = out["settled"]
+    m.fade(before, settled_view(settled, 0))
+    for n in range(1, len(settled) + 1):
+        m.hold(settled_view(settled, n), 0.22)
+    done = settled_view(settled, len(settled))
+    m.hold(done, 2.4)
 
-    lines = []
-    comment(lines, "3. re-run: nothing left in review → month committed")
-    after = draw_lines(lines, True)
-    m.fade(filled, after)
+    sheet = out["sheet"]
+    options = out["options"]
+    empty = sheet_view(sheet, "", None, -1)
+    m.fade(done, empty)
+    m.hold(empty, 0.9)
+    for step in (-1, 0, 1):
+        m.hold(sheet_view(sheet, "", options, step), 0.35)
+    filled = sheet_view(sheet, out["pick"], None, -1)
+    m.hold(filled, 1.8)
+
+    lines = [[("# re-run: nothing left in review → month committed", DIM)]]
+    m.fade(filled, terminal(lines, True))
     type_cmd(m, lines, "wealth-tracker monthly")
-    print_out(m, lines, out["second"], 0.12)
-    m.hold(draw_lines(lines, False), 3.5)
+    wait_cut(m, lines, out["waits"][1], models)
+    print_out(m, lines, only(out["second"], (
+        "Auto rows", "Rows in review", "Output workbook", "Next action")), 0.12)
+    type_cmd(m, lines, "ls data/backups", 3)
+    print_out(m, lines, "\n".join(out["backups"]), 0.1)
+    end = terminal(lines, False)
+    m.hold(end, 2.2)
 
-    outro = card("Your month, categorised.", "Original workbook untouched · backup + audit trail every run",
+    outro = card("Month committed in place.", "Backup kept · Category Memory learned · audit trail",
                  "github.com/EricleungDK/personalwealthtracker")
-    m.fade(draw_lines(lines, False), outro, 0.6)
-    m.hold(outro, 2.5)
+    m.fade(end, outro, 0.5)
+    m.hold(outro, 1.6)
     return m
 
 
-def encode(m: Movie) -> None:
+# ---------- encoding ----------------------------------------------------------------
+
+
+def ffmpeg(*args: str) -> None:
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], check=True)
+
+
+def encode(m: Movie) -> dict[str, str]:
     ASSETS.mkdir(parents=True, exist_ok=True)
-    frames_dir = Path(tempfile.mkdtemp())
+    work = Path(tempfile.mkdtemp())
     try:
-        for i, f in enumerate(m.frames):
-            f.save(frames_dir / f"{i:05d}.png")
-        pattern = str(frames_dir / "%05d.png")
-        mp4 = ASSETS / "demo.mp4"
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", pattern,
-                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart",
-                        str(mp4)], check=True)
-        gif = ASSETS / "demo.gif"
-        vf = "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64[p];[b][p]paletteuse=dither=none"
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(mp4), "-vf", vf, str(gif)], check=True)
+        concat, saved = [], {}
+        for img, seconds in m.shots:
+            if id(img) not in saved:
+                saved[id(img)] = work / f"{len(saved):05d}.png"
+                img.save(saved[id(img)])
+            concat.append(f"file '{saved[id(img)]}'\nduration {seconds:.4f}")
+        concat.append(f"file '{saved[id(m.shots[-1][0])]}'")
+        (work / "shots.txt").write_text("\n".join(concat) + "\n", encoding="utf-8")
+        source = ["-f", "concat", "-safe", "0", "-i", str(work / "shots.txt")]
+        down = f"fps={FPS},scale={W}:{H}:flags=lanczos"
+        ffmpeg(*source, "-vf", down, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+               "-movflags", "+faststart", str(ASSETS / "demo.mp4"))
+        ffmpeg(*source, "-vf", down, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "42",
+               "-deadline", "good", "-cpu-used", "1", "-row-mt", "1", str(ASSETS / "demo.webm"))
+        gif = (f"fps={GIF_FPS},scale={GIF_W}:-1:flags=lanczos,split[a][b];"
+               "[a]palettegen=max_colors=128:stats_mode=diff[p];"
+               "[b][p]paletteuse=dither=none:diff_mode=rectangle")
+        ffmpeg(*source, "-vf", gif, str(ASSETS / "demo.gif"))
     finally:
-        shutil.rmtree(frames_dir, ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)
+    return {"gif": "demo.gif", "mp4": "demo.mp4", "webm": "demo.webm", "poster": "demo-poster.png"}
+
+
+def revision() -> str:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    dirty = git("status", "--porcelain", "--", "scripts", "src")
+    return git("rev-parse", "HEAD") + ("-dirty" if dirty else "")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--models", nargs=2, default=["gemma4:e4b", "gemma4:12b"])
+    models = parser.parse_args().models
+    require_models(models)
+    out = capture(models)
+    movie = build(out, models)
+    timeline.check_duration(movie.seconds)
+    files = encode(movie)
+    poster = settled_view(out["settled"], len(out["settled"]))
+    poster.resize((W, H), Image.LANCZOS).save(ASSETS / "demo-poster.png", optimize=True)
+    timeline.check_media((ASSETS / "demo.gif").stat().st_size, GIF_FPS)
+    record = timeline.recording_record(
+        revision=revision(), recorded=dt.datetime.now().astimezone().date().isoformat(), width=W, height=H,
+        capture_scale=K, fps=FPS, duration=movie.seconds,
+        waits=[round(w, 1) for w in out["waits"]], models=models, files=files)
+    (ASSETS / "demo-recording.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(record, indent=2))
 
 
 if __name__ == "__main__":
-    movie = build(capture())
-    encode(movie)
-    print(f"{len(movie.frames) / FPS:.1f}s → {ASSETS / 'demo.mp4'}, {ASSETS / 'demo.gif'}")
+    main()
