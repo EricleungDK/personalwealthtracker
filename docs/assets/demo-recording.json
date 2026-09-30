@@ -1,0 +1,25 @@
+{
+  "source_revision": "8543ba97f391068d646ef23982abe19cb15ada3a",
+  "recorded": "2026-09-30",
+  "data": "synthetic",
+  "width": 1280,
+  "height": 720,
+  "capture_scale": 2,
+  "fps": 20,
+  "duration_seconds": 24.9,
+  "model_waits_cut_seconds": [
+    28.9,
+    13.2
+  ],
+  "models": [
+    "gemma4:e4b",
+    "gemma4:12b"
+  ],
+  "files": {
+    "gif": "demo.gif",
+    "mp4": "demo.mp4",
+    "webm": "demo.webm",
+    "poster": "demo-poster.png"
+  },
+  "script": "scripts/record_demo.py"
+}
