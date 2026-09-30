@@ -1,15 +1,15 @@
 {
-  "source_revision": "8543ba97f391068d646ef23982abe19cb15ada3a",
+  "source_revision": "ad8a6ad4301d10da7747e982289898c97827b332",
   "recorded": "2026-09-30",
   "data": "synthetic",
   "width": 1280,
   "height": 720,
   "capture_scale": 2,
   "fps": 20,
-  "duration_seconds": 24.9,
+  "duration_seconds": 23.4,
   "model_waits_cut_seconds": [
-    28.9,
-    13.2
+    275.0,
+    95.2
   ],
   "models": [
     "gemma4:e4b",
