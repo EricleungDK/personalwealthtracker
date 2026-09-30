@@ -1,7 +1,6 @@
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 from personal_wealth_tracker.categorizer import categorize_transactions
 from personal_wealth_tracker.category_memory import CategoryMemory, CategoryMemoryMapping
@@ -273,41 +272,43 @@ def test_low_confidence_rule_requires_review():
     assert "below the auto threshold" in result.authority_reason
 
 
-def test_project_config_maps_mastercard_by_transaction_direction():
-    config = load_config(Path("config"))
+def test_example_config_maps_card_by_transaction_direction(example_config_dir):
+    config = load_config(example_config_dir)
 
     negative, positive = categorize_transactions(
         [
-            _transaction("MASTERCARD", "-4000.00"),
-            _transaction("MASTERCARD", "400.00"),
+            _transaction("SYNTHETIC CARD", "-4000.00"),
+            _transaction("SYNTHETIC CARD", "400.00"),
         ],
         config,
     )
 
-    assert negative.suggested_category == "Nordea Credit Card"
+    assert negative.suggested_category == "Credit card payment"
     assert negative.confidence == 0.98
     assert negative.authority is Authority.review
     assert "above the auto cap" in negative.authority_reason
-    assert positive.suggested_category == "Mastercard refund"
+    assert positive.suggested_category == "Card refund"
     assert positive.confidence == 0.98
     assert positive.authority is Authority.auto
 
 
-def test_project_config_uses_csv_merchant_descriptions_for_known_categories_only():
-    config = load_config(Path("config"))
+def test_example_config_uses_csv_merchant_descriptions_for_known_categories_only(
+    example_config_dir,
+):
+    config = load_config(example_config_dir)
 
-    google_one, cbb_mobil, mobilepay_rejsekort = categorize_transactions(
+    cloud, telecom, unknown = categorize_transactions(
         [
-            _transaction("GOOGLE ONE", "-25.00"),
-            _transaction("CBB MOBIL", "-99.00"),
-            _transaction("MobilePay Rejsekort", "-150.00"),
+            _transaction("SYNTHETIC CLOUD", "-25.00"),
+            _transaction("SYNTHETIC TELECOM", "-99.00"),
+            _transaction("UNKNOWN MERCHANT", "-150.00"),
         ],
         config,
     )
 
-    assert google_one.suggested_category == "Google Cloud"
-    assert not google_one.review_required
-    assert cbb_mobil.suggested_category == "Mobile phone (monthly)"
-    assert not cbb_mobil.review_required
-    assert mobilepay_rejsekort.suggested_category is None
-    assert mobilepay_rejsekort.review_required
+    assert cloud.suggested_category == "Cloud services"
+    assert not cloud.review_required
+    assert telecom.suggested_category == "Mobile phone (monthly)"
+    assert not telecom.review_required
+    assert unknown.suggested_category is None
+    assert unknown.review_required

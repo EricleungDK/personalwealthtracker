@@ -23,11 +23,11 @@ A short snapshot of where the project stands. Keep it small: settled decisions g
 | Privacy rules | `.agent/System/security_privacy.md` |
 | Operator how-to | `docs/monthly_workflow.md`, `docs/cli_reference.md` |
 | Open work | GitHub Issues (`gh issue list`) |
-| History (May-June 2026) | `.agent/issues/` (frozen), `docs/Daily_blogpost/`, git log |
+| History | git log, GitHub Issues |
 
 ## Open Questions
 
-- Investment statement evidence (ISSUE-005/006) is blocked until a redacted sample statement and a workbook mapping are available. This also needs the USD→DKK rate config shape and the report/audit fields.
+- Investment statement evidence is blocked until a redacted sample statement and a workbook mapping are available. This also needs the USD→DKK rate config shape and the report/audit fields.
 - Crypto and digital assets need a dedicated valuation source first.
 - Hosted judgment (ADR 0005) waits for a future opt-in adapter.
 

@@ -80,13 +80,6 @@ class LocalLLMSettings:
 DEFAULT_NEVER_AUTO_CATEGORIES = frozenset(
     {
         "Rent (monthly)",
-        "Parent B",
-        "Parent A",
-        "Home insurance (yearly)",
-        "Liability insurance (yearly)",
-        "Pension A",
-        "Pension B",
-        "Stock investment plan",
         "Full-time job (net)",
     }
 )

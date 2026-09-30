@@ -5,8 +5,7 @@ Related: [0001](0001-per-row-authority.md), [0002](0002-local-two-model-consensu
 
 ## Context
 
-The trust-tier benchmark (`docs/superpowers/plans/2026-09-25-trust-tier-design.md`)
-compared local Consensus with hosted judgment (TypeSafe Jev). Jev as a
+The trust-tier benchmark (2026-09-25) compared local Consensus with hosted judgment (TypeSafe Jev). Jev as a
 verifier was slightly more precise, but it sends merchant text off the
 machine, its confidence alone was not a usable authority, and the difference
 sat inside gold-label noise. A later private rerun through the Suggester port (not the design

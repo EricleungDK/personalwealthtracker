@@ -63,7 +63,7 @@ If anything needs you, open `reports/review_required_<year>_<mon>.xlsx` (e.g. `r
 
 ### Optional: local LLM suggestions
 
-Install [Ollama](https://ollama.com) and pull the models in [`config/settings.yaml`](config/settings.yaml) (`gemma4:26b`, `gemma4:12b`, fallback `qwen3:14b`). `monthly` uses them automatically when running; on single-statement runs pass `--local-llm-suggestions` to ask the two local Ollama models. No model running? Everything still works; unmatched rows simply go to the Exception Sheet.
+Install [Ollama](https://ollama.com) and pull the models in [`config/settings.example.yaml`](config/settings.example.yaml) (`gemma4:26b`, `gemma4:12b`, fallback `qwen3:14b`). `monthly` uses them automatically when running; on single-statement runs pass `--local-llm-suggestions` to ask the two local Ollama models. No model running? Everything still works; unmatched rows simply go to the Exception Sheet.
 
 ## How it works
 
@@ -105,6 +105,7 @@ This handles real finances, so the defaults are paranoid:
 - Real statements, workbooks, reports, backups, memory and `*.local.yaml` rules are all in `.gitignore`.
 - Tests use only synthetic or redacted fixtures.
 - Private merchant rules live in ignored `config/rules.local.yaml` (start from `rules.local.example.yaml`).
+- Your own `config/settings.yaml`, `categories.yaml` and `rules.yaml` are ignored too; copy the synthetic `config/*.example.yaml` samples (or run `setup`) and edit them.
 
 The full public/private boundary: [docs/public_private_boundary.md](docs/public_private_boundary.md).
 

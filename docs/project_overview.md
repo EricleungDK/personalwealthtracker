@@ -40,7 +40,7 @@ Read this diagram as:
 - `src/personal_wealth_tracker` is where the application logic lives.
 - `config` contains committed shared rules; private merchant-specific rules and proxy split rules belong in ignored local files such as `rules.local.yaml`.
 - `docs` is the user-facing place to understand and operate the project.
-- `.agent` is the working memory for coding agents. `.agent/issues/` is the historical local tracker; GitHub Issues is canonical since 2026-09-25.
+- `.agent` is the working memory for coding agents. GitHub Issues is canonical since 2026-09-25.
 
 ## Monthly Run Flow
 
@@ -169,7 +169,7 @@ The script is not part of the monthly operator workflow. It exists so tests can 
 - [.agent/System/data_contracts.md](../.agent/System/data_contracts.md) - expected data shapes and safety contracts.
 - [cli_reference.md](cli_reference.md) - every command and flag.
 - [adr/](adr/) - architecture decisions for the monthly flow (authority, consensus, atomic commit, memory, hosted judgment, row insertion).
-- [GitHub Issues](https://github.com/EricleungDK/personalwealthtracker/issues) - canonical issue tracker; [.agent/issues/kanban.md](../.agent/issues/kanban.md) is the historical local tracker.
+- [GitHub Issues](https://github.com/EricleungDK/personalwealthtracker/issues) - canonical issue tracker.
 
 ## Glossary
 

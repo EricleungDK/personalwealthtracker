@@ -244,7 +244,7 @@ A proxy split transfer whose tracker-currency amount is smaller than the configu
 
 Residual review decisions apply to the current monthly run only and should not be imported into Category Memory, because the residual represents a leftover allocation rather than a stable merchant identity.
 
-Recurring proxy split rules should support a monthly application limit. The Revolut family split rule should default to at most one automatic application per reporting month, but the private local rule may raise `monthly_limit` when multiple same-month transfers are intentional. Candidates beyond the configured limit should require review instead of auto-splitting all candidates.
+Recurring proxy split rules should support a monthly application limit. A proxy split rule should default to at most one automatic application per reporting month, but the private local rule may raise `monthly_limit` when multiple same-month transfers are intentional. Candidates beyond the configured limit should require review instead of auto-splitting all candidates.
 
 Categorized output should preserve the original source transaction as a proxy split source line for audit and should add separate proxy split allocation lines for the configured category allocations. The source line should not directly contribute to workbook totals; allocation lines contribute to their configured categories. If a residual amount exists, a residual review line should be emitted separately.
 

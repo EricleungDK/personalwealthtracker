@@ -6,8 +6,7 @@ Related: [0001](0001-per-row-authority.md), [0003](0003-blank-means-accept-atomi
 ## Context
 
 Local model suggestions were always `review`, so every unmatched row needed a
-manual decision each month. The trust-tier benchmark
-(`docs/superpowers/plans/2026-09-25-trust-tier-design.md`) measured
+manual decision each month. The trust-tier benchmark (2026-09-25) measured
 `gemma4:26b` + `gemma4:12b` agreement at 66 of 111 rows auto with 4 wrong,
 while a single model's self-reported confidence was not a usable authority.
 Hosted judgment (Jev) scored slightly better but sends merchant text off the

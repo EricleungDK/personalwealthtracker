@@ -1,0 +1,40 @@
+# Public sample. Copy to config/settings.yaml (ignored by Git) and edit for your own tracker,
+# or run `wealth-tracker setup` to generate a private workspace.
+
+tracker:
+  sheet_name: "Net worth"
+  currency: "DKK"
+  category_column: 2
+  year_header_row: 2
+  month_header_row: 3
+
+statement:
+  provider: "nordea"
+  parser: "nordea_account_statement"
+  currency: "DKK"
+
+confidence_thresholds:
+  auto_write: 0.85
+  review_required: 0.60
+  reject_below: 0.60
+
+writer:
+  overwrite_fixed_rows: false
+  highlight_auto_filled_cells: false
+
+local_llm:
+  provider: "ollama"
+  endpoint: "http://localhost:11434"
+  model: "gemma4:26b"
+  second_model: "gemma4:12b"
+  fallback_model: "qwen3:14b"
+  timeout_seconds: 180
+  keep_alive: "30m"
+  include_raw_description: false
+
+trust_policy:
+  auto_max_amount: 1000
+  min_agreement: 2
+  never_auto_categories:
+    - "Rent (monthly)"
+    - "Full-time job (net)"

@@ -10,7 +10,13 @@ build/
 
 # Local agent tooling
 .agents/
+.claude/
 skills-lock.json
+
+# Personal notes and background (never public)
+docs/Daily_blogpost/
+MVP1 Plan.txt
+personal_wealth_tracker_project_case_background.md
 
 # Secrets and local credentials
 .env
@@ -18,6 +24,11 @@ skills-lock.json
 credentials.json
 token.json
 config/*.local.yaml
+
+# Personal config; committed samples are config/*.example.yaml
+config/settings.yaml
+config/categories.yaml
+config/rules.yaml
 
 # Sensitive financial inputs and generated outputs
 bank-statement.pdf

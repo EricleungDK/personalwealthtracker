@@ -80,7 +80,7 @@ def test_trust_policy_decides_authority_from_evidence_row_and_policy(
         assert reason in decision.reason
 
 
-def test_trust_policy_defaults_match_operator_policy():
+def test_trust_policy_defaults_are_generic():
     policy = TrustPolicySettings()
 
     assert policy.auto_max_amount == Decimal(1000)
@@ -88,13 +88,6 @@ def test_trust_policy_defaults_match_operator_policy():
     assert policy.never_auto_categories == frozenset(
         {
             "Rent (monthly)",
-            "Parent B",
-            "Parent A",
-            "Home insurance (yearly)",
-            "Liability insurance (yearly)",
-            "Pension A",
-            "Pension B",
-            "Stock investment plan",
             "Full-time job (net)",
         }
     )
