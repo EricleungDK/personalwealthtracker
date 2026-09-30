@@ -298,7 +298,7 @@ def sheet_view(sheet: list[list], picked: str, dropdown: list[str] | None, highl
 
 
 class Movie:
-    """Unique frames with hold durations; long holds cost nothing to store."""
+    """Unique frames with hold durations; hard cuts keep the GIF small."""
 
     def __init__(self) -> None:
         self.shots: list[tuple[Image.Image, float]] = []
@@ -310,10 +310,6 @@ class Movie:
     def hold(self, img: Image.Image, seconds: float) -> None:
         self.shots.append((img, max(1, round(seconds * FPS)) / FPS))
 
-    def fade(self, a: Image.Image, b: Image.Image, seconds: float = 0.35) -> None:
-        n = int(seconds * FPS)
-        for i in range(n):
-            self.hold(Image.blend(a, b, (i + 1) / n), 1 / FPS)
 
 
 def prompt(cmd: str) -> list[tuple[str, str]]:
@@ -355,7 +351,6 @@ def build(out: dict, models: list[str]) -> Movie:
     m.hold(intro, 1.6)
 
     lines: list = []
-    m.fade(intro, terminal(lines, True))
     type_cmd(m, lines, "wealth-tracker setup --workspace my-wealth", 3)
     print_out(m, lines, only(out["setup"], ("Workspace", "Files written")), 0.1)
     type_cmd(m, lines, f"cd my-wealth && cp ~/{STATEMENT_NAME} data/raw_statements/", 4)
@@ -367,7 +362,7 @@ def build(out: dict, models: list[str]) -> Movie:
     m.hold(before, 1.6)
 
     settled = out["settled"]
-    m.fade(before, settled_view(settled, 0))
+    m.hold(settled_view(settled, 0), 0.3)
     for n in range(1, len(settled) + 1):
         m.hold(settled_view(settled, n), 0.22)
     done = settled_view(settled, len(settled))
@@ -376,7 +371,6 @@ def build(out: dict, models: list[str]) -> Movie:
     sheet = out["sheet"]
     options = out["options"]
     empty = sheet_view(sheet, "", None, -1)
-    m.fade(done, empty)
     m.hold(empty, 0.9)
     for step in (-1, 0, 1):
         m.hold(sheet_view(sheet, "", options, step), 0.35)
@@ -384,7 +378,6 @@ def build(out: dict, models: list[str]) -> Movie:
     m.hold(filled, 1.8)
 
     lines = [[("# re-run: nothing left in review → month committed", DIM)]]
-    m.fade(filled, terminal(lines, True))
     type_cmd(m, lines, "wealth-tracker monthly")
     wait_cut(m, lines, out["waits"][1], models)
     print_out(m, lines, only(out["second"], (
@@ -396,7 +389,6 @@ def build(out: dict, models: list[str]) -> Movie:
 
     outro = card("Month committed in place.", "Backup kept · Category Memory learned · audit trail",
                  "github.com/EricleungDK/personalwealthtracker")
-    m.fade(end, outro, 0.5)
     m.hold(outro, 1.6)
     return m
 
