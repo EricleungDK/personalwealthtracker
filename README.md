@@ -13,7 +13,7 @@
   <img src="docs/assets/demo.gif" alt="wealth-tracker demo on synthetic data: setup, monthly run where rules, Category Memory and two local models settle five of seven rows, an Exception Sheet decision for the two held rows, then a re-run that commits the month in place with a backup" width="900">
 </a>
 
-<sub>23-second demo on synthetic data, real CLI run · local model waits cut and labelled · <a href="docs/assets/demo.mp4">MP4</a> · <a href="docs/assets/demo-recording.json">recording record</a> · regenerate with <code>scripts/record_demo.py</code></sub>
+<sub>23-second demo on synthetic data, real CLI run · frames drawn from the run's output files; the sheet decision is scripted and Category Memory starts with one seeded decision · local model waits cut and labelled · <a href="docs/assets/demo.mp4">MP4</a> · <a href="docs/assets/demo-recording.json">recording record</a> · regenerate with <code>scripts/record_demo.py</code></sub>
 
 </div>
 
