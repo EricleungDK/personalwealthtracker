@@ -67,10 +67,16 @@ def test_summary_orders_rule_first_and_skips_zero():
     )
 
 
-def test_model_wait_label_names_models_and_real_duration():
+def test_model_wait_label_counts_models_and_shows_real_duration():
     label = demo.model_wait_label(51.3, ["gemma4:e4b", "gemma4:12b"])
 
-    assert label == "local models gemma4:e4b + gemma4:12b · 51 s wait cut"
+    assert label == "local consensus, 2 models · 51 s wait cut"
+
+
+def test_settler_names_are_the_summary_names():
+    rows = [row("t5", "SYNTHETIC GROCER", "-450.25", "Groceries (monthly)", "rule", "False")]
+
+    assert demo.settle_rows(rows, {})[0].how == "rules"
 
 
 @pytest.mark.parametrize("seconds", [14.9, 30.1])

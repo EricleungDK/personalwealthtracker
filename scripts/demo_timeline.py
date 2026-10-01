@@ -25,11 +25,9 @@ class SettledRow:
 
 
 def _settler(method: str) -> str:
-    if method in SETTLERS:
-        return SETTLERS[method].removesuffix("s")
     if method.startswith("local_llm"):
         return "consensus"
-    return method
+    return SETTLERS.get(method, method)
 
 
 def _short_reason(reason: str) -> str:
@@ -60,17 +58,17 @@ def settle_rows(rows: list[dict], held_reasons: dict[str, str]) -> list[SettledR
 
 
 def summary(settled: list[SettledRow]) -> str:
-    counts = {"rules": 0, "memory": 0, "consensus": 0}
+    counts = dict.fromkeys(("rules", "memory", "consensus"), 0)
     for item in settled:
         if not item.held:
-            counts["rules" if item.how == "rule" else item.how] += 1
+            counts[item.how] += 1
     parts = [f"{name} {n}" for name, n in counts.items() if n]
     parts.append(f"held for you {sum(item.held for item in settled)}")
     return " · ".join(parts)
 
 
 def model_wait_label(seconds: float, models: list[str]) -> str:
-    return f"local models {' + '.join(models)} · {seconds:.0f} s wait cut"
+    return f"local consensus, {len(models)} models · {seconds:.0f} s wait cut"
 
 
 def check_duration(seconds: float) -> None:

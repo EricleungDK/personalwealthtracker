@@ -15,12 +15,14 @@ import argparse
 import csv
 import datetime as dt
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.request
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
@@ -40,8 +42,8 @@ ASSETS = ROOT / "docs" / "assets"
 CLI = [sys.executable, "-m", "personal_wealth_tracker.cli"]
 OLLAMA = "http://localhost:11434"
 
-W, H, K = 1280, 720, 2  # logical size; frames are drawn at K times and scaled down
-FPS, GIF_FPS, GIF_W = 20, 15, 960
+W, H, SCALE = 1280, 720, 2  # logical size; frames are drawn at SCALE times, then scaled down
+FPS, GIF_FPS = 20, 15
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -50,7 +52,7 @@ SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 BG, WIN, BAR, LINE = "#010409", "#0d1117", "#161b22", "#30363d"
 FG, DIM, GREEN, YELLOW, BLUE, PURPLE = (
     "#e6edf3", "#7d8590", "#3fb950", "#d29922", "#58a6ff", "#bc8cff")
-HOW_COLOUR = {"rule": BLUE, "memory": PURPLE, "consensus": GREEN}
+HOW_COLOUR = {"rules": BLUE, "memory": PURPLE, "consensus": GREEN}
 
 STATEMENT = """﻿Booking date;Amount;Balance;Currency;Name;Title;Sender;Recipient;Reconciled
 2026/04/01;25000,00;25000,00;DKK;SYNTHETIC EMPLOYER;Synthetic payroll;;;Yes
@@ -71,17 +73,18 @@ PICK = "SYNTHETIC HOME INSURANCE"
 
 
 def font(path: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(path, size * K)
+    return ImageFont.truetype(path, size * SCALE)
 
 
-mono, mono_b, small = font(FONT, 20), font(FONT_BOLD, 20), font(FONT, 16)
+mono, mono_b, small = font(FONT, 24), font(FONT_BOLD, 24), font(FONT, 16)
+table_f, cell_f = font(FONT, 22), font(FONT, 20)
 title_f, sub_f, cap_f = font(SANS_BOLD, 56), font(SANS, 26), font(SANS, 22)
-LINE_H, X0, Y0 = 30, 70, 110
+LINE_H, X0, Y0 = 38, 64, 112
 MAX_LINES = (H - Y0 - 60) // LINE_H
 
 
-def s(*values: float) -> tuple[int, ...]:
-    return tuple(int(v * K) for v in values)
+def px(*values: float) -> tuple[int, ...]:
+    return tuple(int(v * SCALE) for v in values)
 
 
 # ---------- real run ----------------------------------------------------------------
@@ -94,12 +97,17 @@ def run(cmd: list[str], cwd: Path) -> tuple[str, float]:
     return out.stdout.strip(), time.monotonic() - start
 
 
-def require_models(models: list[str]) -> None:
+def ready_models(models: list[str]) -> None:
     with urllib.request.urlopen(f"{OLLAMA}/api/tags", timeout=5) as response:
         installed = {m["name"] for m in json.load(response)["models"]}
     missing = [m for m in models if m not in installed]
     if missing:
         raise SystemExit(f"Ollama is missing {missing}; pull them or pass --models.")
+    for model in models:  # load now, so the labelled wait is inference rather than a cold start
+        body = json.dumps({"model": model, "keep_alive": "30m"}).encode()
+        request = urllib.request.Request(f"{OLLAMA}/api/generate", body,
+                                         {"Content-Type": "application/json"})
+        urllib.request.urlopen(request, timeout=600).read()
 
 
 def use_models(settings: Path, models: list[str]) -> None:
@@ -139,23 +147,43 @@ def decide(sheet_path: Path) -> tuple[list[list], list[str], str]:
             cell.value = pick
             listed = next(v for v in ws.data_validations.dataValidation
                           if cell.coordinate in v.sqref)
-            column = listed.formula1.split("!$")[1][0]
+            column = re.search(r"!\$([A-Z]+)\$", listed.formula1).group(1)
             options = [c.value for c in wb["Decision Options"][column] if c.value]
     wb.save(sheet_path)
     at = options.index(pick)
     return [header, *rows], options[at - 1:at + 2], pick
 
 
-def capture(models: list[str]) -> dict:
+@dataclass(frozen=True)
+class Run:
+    """What the real run produced; the storyboard draws only from this."""
+
+    setup: str
+    first: str
+    second: str
+    settled: list[timeline.SettledRow]
+    sheet: list[list]
+    options: list[str]
+    pick: str
+    backups: list[str]
+    waits: tuple[float, float]
+
+
+def workspace(tmp: Path, models: list[str]) -> tuple[Path, str]:
+    """A fresh synthetic workspace: one remembered decision, April's export dropped in."""
+    setup, _ = run(CLI + ["setup", "--workspace", "my-wealth"], tmp)
+    ws = tmp / "my-wealth"
+    use_models(ws / "config" / "settings.yaml", models)
+    (tmp / "prior.csv").write_text(PRIOR_DECISION, encoding="utf-8")
+    run(CLI + ["learn-category-memory", "--decisions", str(tmp / "prior.csv")], ws)
+    (ws / "data" / "raw_statements" / STATEMENT_NAME).write_text(STATEMENT, encoding="utf-8")
+    return ws, setup
+
+
+def capture(models: list[str]) -> Run:
     tmp = Path(tempfile.mkdtemp())
     try:
-        setup, _ = run(CLI + ["setup", "--workspace", "my-wealth"], tmp)
-        ws = tmp / "my-wealth"
-        use_models(ws / "config" / "settings.yaml", models)
-        (tmp / "prior.csv").write_text(PRIOR_DECISION, encoding="utf-8")
-        run(CLI + ["learn-category-memory", "--decisions", str(tmp / "prior.csv")], ws)
-        (ws / "data" / "raw_statements" / STATEMENT_NAME).write_text(STATEMENT, encoding="utf-8")
-
+        ws, setup = workspace(tmp, models)
         first, first_wait = run(CLI + ["monthly"], ws)
         with open(ws / "reports" / "categorized_transactions_2026_apr.csv", encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh))
@@ -167,13 +195,13 @@ def capture(models: list[str]) -> dict:
         if "month committed" not in second:
             raise SystemExit(f"Re-run did not commit:\n{second}")
         backups = sorted(p.name for p in (ws / "data" / "backups").iterdir())
-        return {"setup": setup, "first": first, "second": second, "settled": settled,
-                "sheet": sheet, "options": options, "pick": pick, "backups": backups, "waits": [first_wait, second_wait]}
+        return Run(setup, first, second, settled, sheet, options, pick, backups,
+                   (first_wait, second_wait))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-# ---------- drawing (coordinates are logical; s() scales them) -----------------------
+# ---------- drawing (coordinates are logical; px() scales them) -----------------------
 
 
 def colour_for(line: str) -> list[tuple[str, str]]:
@@ -191,15 +219,15 @@ def colour_for(line: str) -> list[tuple[str, str]]:
 
 
 def window(title: str) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-    img = Image.new("RGB", s(W, H), BG)
+    img = Image.new("RGB", px(W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle(s(30, 30, W - 30, H - 30), 14 * K, fill=WIN, outline=LINE, width=K)
-    d.rounded_rectangle(s(30, 30, W - 30, 80), 14 * K, fill=BAR)
-    d.rectangle(s(30, 60, W - 30, 80), fill=BAR)
+    d.rounded_rectangle(px(30, 30, W - 30, H - 30), 14 * SCALE, fill=WIN, outline=LINE, width=SCALE)
+    d.rounded_rectangle(px(30, 30, W - 30, 80), 14 * SCALE, fill=BAR)
+    d.rectangle(px(30, 60, W - 30, 80), fill=BAR)
     for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")):
-        d.ellipse(s(52 + i * 26, 47, 66 + i * 26, 61), fill=c)
-    tw = d.textlength(title, font=small) / K
-    d.text(s((W - tw) / 2, 45), title, font=small, fill=DIM)
+        d.ellipse(px(52 + i * 26, 47, 66 + i * 26, 61), fill=c)
+    tw = d.textlength(title, font=small) / SCALE
+    d.text(px((W - tw) / 2, 45), title, font=small, fill=DIM)
     return img, d
 
 
@@ -210,90 +238,90 @@ def terminal(lines: list, cursor: bool) -> Image.Image:
         x, y = X0, Y0 + i * LINE_H
         for text, colour in segs:
             face = mono_b if text.startswith("❯") else mono
-            d.text(s(x, y), text, font=face, fill=colour)
-            x += d.textlength(text, font=face) / K
+            d.text(px(x, y), text, font=face, fill=colour)
+            x += d.textlength(text, font=face) / SCALE
         if cursor and i == len(shown) - 1:
-            d.rectangle(s(x + 2, y + 3, x + 13, y + 25), fill=FG)
+            d.rectangle(px(x + 2, y + 3, x + 15, y + 30), fill=FG)
     return img
 
 
 def card(title: str, sub: str, foot: str) -> Image.Image:
-    img = Image.new("RGB", s(W, H), BG)
+    img = Image.new("RGB", px(W, H), BG)
     d = ImageDraw.Draw(img)
     for face, text, y, c in ((title_f, title, 250, FG), (sub_f, sub, 340, DIM), (cap_f, foot, 420, GREEN)):
-        tw = d.textlength(text, font=face) / K
-        d.text(s((W - tw) / 2, y), text, font=face, fill=c)
+        tw = d.textlength(text, font=face) / SCALE
+        d.text(px((W - tw) / 2, y), text, font=face, fill=c)
     return img
 
 
 def fit(d: ImageDraw.ImageDraw, text: str, face, width: float) -> str:
-    while d.textlength(text, font=face) / K > width and len(text) > 1:
+    while d.textlength(text, font=face) / SCALE > width and len(text) > 1:
         text = text[:-2] + "…"
     return text
 
 
 def settled_view(settled: list, shown: int) -> Image.Image:
     img, d = window("How April settled — reports/categorized_transactions_2026_apr.csv")
-    cols = [("transaction", 400), ("amount", 150), ("category", 300), ("settled by", 260)]
-    x0, y = 80, 110
+    cols = [("transaction", 380), ("amount", 130), ("category", 320), ("settled by", 280)]
+    x0, y = 84, 108
     x = x0
     for name, w in cols:
-        d.text(s(x, y), name, font=small, fill=DIM)
+        d.text(px(x, y), name, font=small, fill=DIM)
         x += w
-    d.line(s(x0, y + 30, W - 80, y + 30), fill=LINE, width=K)
+    d.line(px(x0, y + 30, W - 80, y + 30), fill=LINE, width=SCALE)
     for i, row in enumerate(settled[:shown]):
-        ry = y + 48 + i * 50
+        ry = y + 50 + i * 58
         if row.held:
-            d.rounded_rectangle(s(x0 - 14, ry - 10, W - 66, ry + 38), 8 * K, fill="#2b2111")
+            d.rounded_rectangle(px(x0 - 16, ry - 12, W - 68, ry + 42), 8 * SCALE, fill="#2b2111")
         colour = YELLOW if row.held else HOW_COLOUR[row.how]
         x = x0
         for (name, w), text in zip(cols, (row.description, row.amount, row.category, row.how)):
-            d.text(s(x, ry), fit(d, text, mono, w - 20), font=mono,
+            d.text(px(x, ry), fit(d, text, table_f, w - 12), font=table_f,
                    fill=colour if name == "settled by" else FG)
             x += w
     if shown == len(settled):
-        d.text(s(x0, H - 110), timeline.summary(settled), font=cap_f, fill=GREEN)
+        d.text(px(x0, H - 104), timeline.summary(settled), font=sub_f, fill=GREEN)
     return img
 
 
 def sheet_view(sheet: list[list], picked: str, dropdown: list[str] | None, highlight: int) -> Image.Image:
     img, d = window("reports/review_required_2026_apr.xlsx — Exception Sheet")
     header, rows = sheet[0], sheet[1:]
-    show = [("description", 330), ("amount", 140), ("suggested_category", 270), ("manual_category", 300)]
-    x0, y = 60, 150
-    d.text(s(x0, 100), "Only rows the trust policy won't auto-accept land here.", font=cap_f, fill=DIM)
+    show = [("description", 350), ("amount", 150), ("suggested_category", 300), ("manual_category", 340)]
+    x0, y = 70, 160
+    d.text(px(x0, 108), "Only rows the trust policy won't auto-accept land here.", font=cap_f, fill=DIM)
     x = x0
     for name, w in show:
-        d.rectangle(s(x, y, x + w, y + 40), fill="#21262d", outline=LINE, width=K)
-        d.text(s(x + 10, y + 11), name, font=small, fill=DIM)
+        d.rectangle(px(x, y, x + w, y + 44), fill="#21262d", outline=LINE, width=SCALE)
+        d.text(px(x + 12, y + 11), name, font=cell_f, fill=DIM)
         x += w
     for r, row in enumerate(rows):
-        ry = y + 40 + r * 50
+        ry = y + 44 + r * 56
         x = x0
         for name, w in show:
             active = name == "manual_category"
             is_pick = active and row[header.index("description")] == PICK
             value = picked if is_pick else str(row[header.index(name)] or "")
-            d.rectangle(s(x, ry, x + w, ry + 50), fill="#0f2a1a" if is_pick and picked else WIN,
-                        outline=GREEN if is_pick else LINE, width=2 * K if is_pick else K)
+            d.rectangle(px(x, ry, x + w, ry + 56), fill="#0f2a1a" if is_pick and picked else WIN,
+                        outline=GREEN if is_pick else LINE, width=2 * SCALE if is_pick else SCALE)
             if active and not value:
-                d.text(s(x + 10, ry + 16), "blank → accept", font=small, fill=DIM)
+                d.text(px(x + 12, ry + 16), "blank → accept", font=cell_f, fill=DIM)
             else:
-                d.text(s(x + 10, ry + 16), fit(d, value, small, w - 20), font=small,
+                d.text(px(x + 12, ry + 16), fit(d, value, cell_f, w - 20), font=cell_f,
                        fill=GREEN if active else FG)
             if is_pick and dropdown is not None:
-                d.text(s(x + w - 26, ry + 14), "▾", font=small, fill=GREEN)
+                d.text(px(x + w - 30, ry + 16), "▾", font=cell_f, fill=GREEN)
                 for i, option in enumerate(dropdown):
-                    oy = ry + 50 + i * 34
-                    d.rectangle(s(x, oy, x + w, oy + 34), fill="#1f6feb" if i == highlight else BAR,
-                                outline=LINE, width=K)
-                    d.text(s(x + 10, oy + 8), option, font=small, fill=FG)
+                    oy = ry + 56 + i * 40
+                    d.rectangle(px(x, oy, x + w, oy + 40), fill="#1f6feb" if i == highlight else BAR,
+                                outline=LINE, width=SCALE)
+                    d.text(px(x + 12, oy + 8), option, font=cell_f, fill=FG)
             x += w
-    ty = 360
+    ty = 440
     for key, value in (("blank", "accept"), ("NONE", "reject"), ("dropdown", "pick a category")):
-        d.text(s(x0, ty), f"{key:>9}", font=mono_b, fill=YELLOW)
-        d.text(s(x0 + 140, ty), f"→ {value}", font=mono, fill=FG)
-        ty += 38
+        d.text(px(x0, ty), f"{key:>9}", font=mono_b, fill=YELLOW)
+        d.text(px(x0 + 170, ty), f"→ {value}", font=mono, fill=FG)
+        ty += 46
     return img
 
 
@@ -337,14 +365,14 @@ def wait_cut(m: Movie, lines: list, seconds: float, models: list[str]) -> None:
     m.hold(terminal(lines, False), 1.0)
 
 
-def only(text: str, keys: tuple[str, ...]) -> str:
+def keep_lines(text: str, keys: tuple[str, ...]) -> str:
     return "\n".join(line for line in text.splitlines() if line.split(":", 1)[0] in keys)
 
 
 # ---------- storyboard --------------------------------------------------------------
 
 
-def build(out: dict, models: list[str]) -> Movie:
+def build(out: Run, models: list[str]) -> Movie:
     m = Movie()
     intro = card("Personal Wealth Tracker", "Bank CSV  →  your Excel net-worth workbook",
                  "local-first · synthetic data")
@@ -352,38 +380,38 @@ def build(out: dict, models: list[str]) -> Movie:
 
     lines: list = []
     type_cmd(m, lines, "wealth-tracker setup --workspace my-wealth", 3)
-    print_out(m, lines, only(out["setup"], ("Workspace", "Files written")), 0.1)
+    print_out(m, lines, keep_lines(out.setup, ("Workspace", "Files written")), 0.1)
     type_cmd(m, lines, f"cd my-wealth && cp ~/{STATEMENT_NAME} data/raw_statements/", 4)
     type_cmd(m, lines, "wealth-tracker monthly")
-    wait_cut(m, lines, out["waits"][0], models)
-    print_out(m, lines, only(out["first"], (
+    wait_cut(m, lines, out.waits[0], models)
+    print_out(m, lines, keep_lines(out.first, (
         "Month", "Auto rows", "Rows in review", "Exception sheet")), 0.12)
     before = terminal(lines, False)
     m.hold(before, 1.6)
 
-    settled = out["settled"]
+    settled = out.settled
     m.hold(settled_view(settled, 0), 0.3)
     for n in range(1, len(settled) + 1):
         m.hold(settled_view(settled, n), 0.22)
     done = settled_view(settled, len(settled))
     m.hold(done, 2.4)
 
-    sheet = out["sheet"]
-    options = out["options"]
+    sheet = out.sheet
+    options = out.options
     empty = sheet_view(sheet, "", None, -1)
     m.hold(empty, 0.9)
     for step in (-1, 0, 1):
         m.hold(sheet_view(sheet, "", options, step), 0.35)
-    filled = sheet_view(sheet, out["pick"], None, -1)
+    filled = sheet_view(sheet, out.pick, None, -1)
     m.hold(filled, 1.8)
 
     lines = [[("# re-run: nothing left in review → month committed", DIM)]]
     type_cmd(m, lines, "wealth-tracker monthly")
-    wait_cut(m, lines, out["waits"][1], models)
-    print_out(m, lines, only(out["second"], (
+    wait_cut(m, lines, out.waits[1], models)
+    print_out(m, lines, keep_lines(out.second, (
         "Auto rows", "Rows in review", "Output workbook", "Next action")), 0.12)
     type_cmd(m, lines, "ls data/backups", 3)
-    print_out(m, lines, "\n".join(out["backups"]), 0.1)
+    print_out(m, lines, "\n".join(out.backups), 0.1)
     end = terminal(lines, False)
     m.hold(end, 2.2)
 
@@ -418,7 +446,7 @@ def encode(m: Movie) -> dict[str, str]:
                "-movflags", "+faststart", str(ASSETS / "demo.mp4"))
         ffmpeg(*source, "-vf", down, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "42",
                "-deadline", "good", "-cpu-used", "1", "-row-mt", "1", str(ASSETS / "demo.webm"))
-        gif = (f"fps={GIF_FPS},scale={GIF_W}:-1:flags=lanczos,split[a][b];"
+        gif = (f"fps={GIF_FPS},scale={W}:{H}:flags=lanczos,split[a][b];"
                "[a]palettegen=max_colors=128:stats_mode=diff[p];"
                "[b][p]paletteuse=dither=none:diff_mode=rectangle")
         ffmpeg(*source, "-vf", gif, str(ASSETS / "demo.gif"))
@@ -440,18 +468,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--models", nargs=2, default=["gemma4:e4b", "gemma4:12b"])
     models = parser.parse_args().models
-    require_models(models)
+    ready_models(models)
     out = capture(models)
     movie = build(out, models)
     timeline.check_duration(movie.seconds)
     files = encode(movie)
-    poster = settled_view(out["settled"], len(out["settled"]))
+    poster = settled_view(out.settled, len(out.settled))
     poster.resize((W, H), Image.LANCZOS).save(ASSETS / "demo-poster.png", optimize=True)
     timeline.check_media((ASSETS / "demo.gif").stat().st_size, GIF_FPS)
     record = timeline.recording_record(
         revision=revision(), recorded=dt.datetime.now().astimezone().date().isoformat(), width=W, height=H,
-        capture_scale=K, fps=FPS, duration=movie.seconds,
-        waits=[round(w, 1) for w in out["waits"]], models=models, files=files)
+        capture_scale=SCALE, fps=FPS, duration=movie.seconds,
+        waits=[round(w, 1) for w in out.waits], models=models, files=files)
     (ASSETS / "demo-recording.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
 

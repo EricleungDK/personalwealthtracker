@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-09-27
+Last updated: 2026-10-01
 
 A short snapshot of where the project stands. Keep it small: settled decisions go to `../System/decisions.md`, and task tracking lives in GitHub Issues.
 
@@ -22,6 +22,7 @@ A short snapshot of where the project stands. Keep it small: settled decisions g
 | File formats | `.agent/System/data_contracts.md` |
 | Privacy rules | `.agent/System/security_privacy.md` |
 | Operator how-to | `docs/monthly_workflow.md`, `docs/cli_reference.md` |
+| README demo | `scripts/record_demo.py` (real synthetic run; needs ffmpeg + two local Ollama models), pure parts in `scripts/demo_timeline.py`, outputs + record in `docs/assets/` |
 | Open work | GitHub Issues (`gh issue list`) |
 | History | git log, GitHub Issues |
 
