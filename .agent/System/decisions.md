@@ -59,6 +59,7 @@ The product decisions that are in force, grouped by topic. Each line gives the r
 
 - Ollama is called through its HTTP API, not the CLI. A provider failure never fails the run; the rows stay in review (2026-05-27).
 - A Suggester can return only an existing leaf, `NONE`, or a subscription leaf proposal. Answers that name a leaf outside the list count as `NONE` (2026-09-25, #6, #14).
+- `load_config` rejects configs where `local_llm.model`, `second_model` and a non-empty `fallback_model` are not all different, with an exact name match after trimming whitespace. The check covers defaulted values too. With a duplicate voter, Consensus can never reach 2, so every model row goes to review at twice the cost (2026-11-17, ADR 0002).
 
 ## Public Package
 
