@@ -245,7 +245,7 @@ def _local_llm_settings(doc: Any) -> LocalLLMSettings:
         doc = {}
     if not isinstance(doc, dict):
         raise ValueError("Expected local_llm settings to be a mapping.")
-    return LocalLLMSettings(
+    settings = LocalLLMSettings(
         provider=str(doc.get("provider", "ollama")),
         endpoint=str(doc.get("endpoint", "http://localhost:11434")).rstrip("/"),
         model=str(doc.get("model", "gemma4:26b")),
@@ -255,6 +255,30 @@ def _local_llm_settings(doc: Any) -> LocalLLMSettings:
         keep_alive=str(doc.get("keep_alive", "30m")),
         include_raw_description=bool(doc.get("include_raw_description", False)),
     )
+    _require_distinct_voters(settings)
+    return settings
+
+
+def _require_distinct_voters(settings: LocalLLMSettings) -> None:
+    """Consensus needs two different models (ADR 0002); one model must never vote twice."""
+    model = settings.model.strip()
+    second_model = settings.second_model.strip()
+    if second_model == model:
+        raise ValueError(
+            f"local_llm.model and local_llm.second_model are both {model!r}, so one model "
+            "would vote twice and no row could reach Consensus. Set local_llm.second_model "
+            "to a different installed model."
+        )
+    fallback = settings.fallback_model.strip()
+    if not fallback:
+        return
+    for key, voter in (("local_llm.model", model), ("local_llm.second_model", second_model)):
+        if fallback == voter:
+            raise ValueError(
+                f"local_llm.fallback_model and {key} are both {fallback!r}; both voters share "
+                "the fallback, so one model could vote twice. Set local_llm.fallback_model to "
+                'a different installed model, or to "" for no fallback.'
+            )
 
 
 def _guidance_aliases(doc: dict[str, Any], registry: CategoryRegistry) -> dict[str, str]:

@@ -208,6 +208,45 @@ def test_cli_reports_pipeline_validation_errors_without_traceback(monkeypatch, c
     assert captured.out == ""
 
 
+def test_cli_rejects_config_where_one_model_would_vote_twice(tmp_path, capsys):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.yaml").write_text(
+        "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\n"
+        'local_llm:\n  model: "gemma4:12b"\n',
+        encoding="utf-8",
+    )
+    (config_dir / "categories.yaml").write_text(
+        "categories:\n  - Public Category\naliases: {}\n", encoding="utf-8"
+    )
+    (config_dir / "rules.yaml").write_text("{}\n", encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--tracker",
+            str(tmp_path / "tracker.xlsx"),
+            "--statement",
+            str(tmp_path / "statement.csv"),
+            "--config-dir",
+            str(config_dir),
+            "--year",
+            "2026",
+            "--month",
+            "Apr",
+            "--output-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "local_llm.second_model" in captured.err
+    assert "gemma4:12b" in captured.err
+    assert "different installed model" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
 def test_cli_defaults_statement_format_to_auto(monkeypatch, tmp_path):
     captured = {}
 
