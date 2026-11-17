@@ -33,6 +33,11 @@ Trust Policy (ADR 0001).
   `fallback_model` `qwen3:14b`. The fallback is a different model so a
   missing voter cannot be replaced by the other voter's model; agreement
   counts distinct sources as a second guard.
+- Since 2026-11-17 this rule is enforced when the config is loaded.
+  `load_config` rejects `second_model` equal to `model`, which includes the
+  defaulted `second_model`. It also rejects a non-empty `fallback_model`
+  equal to either voter. Names are compared exactly after trimming
+  whitespace, and tags are not normalised.
 
 ## Consequences
 

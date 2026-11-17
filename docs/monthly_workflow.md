@@ -99,6 +99,14 @@ Prompt context is minimized: the statement merchant text (raw, so digits like `7
 
 Without a running local model the run still completes: provider failures, timeouts, and invalid or low-confidence answers are recorded in the report's `Local LLM Mode` section and audit log, and the affected rows become ordinary exceptions.
 
+The three model names must differ, because one model must never vote twice. The run stops when it loads the config, before it categorizes or writes anything, and exits 1 when `second_model` equals `model`, which includes leaving `second_model` out while `model` is `gemma4:12b`, its default. It also stops when a non-empty `fallback_model` equals either voter:
+
+```text
+local_llm.model and local_llm.second_model are both 'gemma4:12b', so one model would vote twice and no row could reach Consensus. Set local_llm.second_model to a different installed model.
+```
+
+To fix this, set `second_model` (or `fallback_model`) in `config/settings.yaml` to another model you have pulled. For example, use `model: "gemma4:26b"` with `second_model: "gemma4:12b"`. Set `fallback_model: ""` to run without a fallback. Names are compared exactly, so `gemma4` and `gemma4:latest` count as different models.
+
 ## 8. Per-Month Command (Older Months, PDF Fallback)
 
 `monthly` always uses the newest CSV. For another month, or a PDF when no CSV export exists, run the per-month command. It does not ask the local models unless `--local-llm-suggestions` is given, and it is a dry run unless `--commit` is given. A commit here learns Category Memory and adds new leaves exactly as in step 5; with `--review-decisions` pointing at the month's Exception Sheet, the refreshed sheet is written to `review_required_<year>_<mon>_after_decisions.xlsx`, leaving yours untouched:

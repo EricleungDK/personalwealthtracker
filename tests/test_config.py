@@ -12,6 +12,7 @@ from personal_wealth_tracker.config import (
     persist_category_registry_additions,
 )
 from personal_wealth_tracker.models import CategoryRegistryAddition
+from personal_wealth_tracker.setup_workspace import initialize_local_workspace
 
 
 def test_load_config_merges_ignored_local_rules(tmp_path):
@@ -141,6 +142,102 @@ local_llm:
     assert config.local_llm.timeout_seconds == 5.0
     assert config.local_llm.keep_alive == "5m"
     assert config.local_llm.include_raw_description is True
+
+
+def test_load_config_rejects_second_model_equal_to_model(tmp_path):
+    _write_local_llm_config(
+        tmp_path,
+        """
+  model: "gemma4:26b"
+  second_model: " gemma4:26b "
+  fallback_model: "qwen3:14b"
+""",
+    )
+
+    with pytest.raises(ValueError) as error:
+        load_config(tmp_path)
+
+    message = str(error.value)
+    assert "local_llm.model" in message
+    assert "local_llm.second_model" in message
+    assert "gemma4:26b" in message
+    assert "different installed model" in message
+
+
+def test_load_config_rejects_model_equal_to_default_second_model(tmp_path):
+    _write_local_llm_config(tmp_path, '  model: "gemma4:12b"\n')
+
+    with pytest.raises(ValueError) as error:
+        load_config(tmp_path)
+
+    message = str(error.value)
+    assert "local_llm.model" in message
+    assert "local_llm.second_model" in message
+    assert "gemma4:12b" in message
+    assert "different installed model" in message
+
+
+@pytest.mark.parametrize(
+    ("fallback_model", "colliding_key"),
+    [("gemma4:26b", "local_llm.model"), ("gemma4:12b", "local_llm.second_model")],
+)
+def test_load_config_rejects_fallback_model_equal_to_a_voter(
+    tmp_path, fallback_model, colliding_key
+):
+    _write_local_llm_config(
+        tmp_path,
+        f"""
+  model: "gemma4:26b"
+  second_model: "gemma4:12b"
+  fallback_model: "{fallback_model}"
+""",
+    )
+
+    with pytest.raises(ValueError) as error:
+        load_config(tmp_path)
+
+    message = str(error.value)
+    assert "local_llm.fallback_model" in message
+    assert colliding_key in message
+    assert fallback_model in message
+    assert "different installed model" in message
+
+
+def test_load_config_allows_empty_fallback_model(tmp_path):
+    _write_local_llm_config(
+        tmp_path,
+        """
+  model: "gemma4:26b"
+  second_model: "gemma4:12b"
+  fallback_model: ""
+""",
+    )
+
+    config = load_config(tmp_path)
+
+    assert config.local_llm.fallback_model == ""
+
+
+def test_example_settings_load_with_distinct_consensus_voters(example_config_dir):
+    config = load_config(example_config_dir)
+
+    assert (
+        config.local_llm.model,
+        config.local_llm.second_model,
+        config.local_llm.fallback_model,
+    ) == ("gemma4:26b", "gemma4:12b", "qwen3:14b")
+
+
+def test_setup_workspace_settings_load_with_distinct_consensus_voters(tmp_path):
+    initialize_local_workspace(tmp_path / "workspace")
+
+    config = load_config(tmp_path / "workspace" / "config")
+
+    assert (
+        config.local_llm.model,
+        config.local_llm.second_model,
+        config.local_llm.fallback_model,
+    ) == ("gemma4:26b", "gemma4:12b", "qwen3:14b")
 
 
 def test_load_config_defaults_trust_policy_settings(tmp_path):
@@ -596,3 +693,13 @@ aliases:
 
 def _write(path: Path, content: str) -> None:
     path.write_text(content.lstrip(), encoding="utf-8")
+
+
+def _write_local_llm_config(config_dir: Path, local_llm_body: str) -> None:
+    _write(
+        config_dir / "settings.yaml",
+        "tracker:\n  currency: DKK\nstatement:\n  currency: DKK\nlocal_llm:\n"
+        + local_llm_body.lstrip("\n"),
+    )
+    _write(config_dir / "categories.yaml", "categories:\n  - Public Category\naliases: {}\n")
+    _write(config_dir / "rules.yaml", "{}\n")
