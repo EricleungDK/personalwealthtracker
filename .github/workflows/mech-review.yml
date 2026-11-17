@@ -1,0 +1,21 @@
+name: mech-review
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  mech-review:
+    uses: EricleungDK/ekit/.github/workflows/mech-review.yml@v0
+    with:
+      stack: python
+      test-paths: |
+        tests/**
+      protected-paths: |
+        .github/**
+      # src/ layout: pytest's pythonpath=["src"] imports the checkout, so only the
+      # runtime deps are installed (an editable install would import head's code on base).
+      setup-command: >-
+        python3 -c "import tomllib; print('\n'.join(tomllib.load(open('caller/pyproject.toml', 'rb'))['project']['dependencies']))"
+        > "$RUNNER_TEMP/runtime-deps.txt"
+        && python3 -m pip install --quiet -r "$RUNNER_TEMP/runtime-deps.txt"
