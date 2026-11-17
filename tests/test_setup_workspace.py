@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from openpyxl import load_workbook
 
 from personal_wealth_tracker.cli import main

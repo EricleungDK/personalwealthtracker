@@ -461,11 +461,6 @@ def _write_categorized_csv(path: Path, categorized: list[CategorizedTransaction]
 def _write_review_csv(
     path: Path, categorized: list[CategorizedTransaction], updates: list[TrackerUpdate]
 ) -> None:
-    update_by_transaction = {
-        transaction_id: update
-        for update in updates
-        for transaction_id in update.source_transactions
-    }
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["type", "id", "date_or_cell", "amount", "category", "reason"])
